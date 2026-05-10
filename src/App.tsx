@@ -1454,7 +1454,7 @@ function PriceView({
       setRtmsError('')
       try {
         const response = await fetch(
-          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
+          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=1&numOfRows=1000&limit=50000`,
           { signal: controller.signal },
         )
         const payload = (await response.json()) as RtmsResponse | { error?: string }

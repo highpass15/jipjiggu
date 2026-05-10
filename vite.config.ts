@@ -396,8 +396,8 @@ const findLatestAvailableDealYmd = async (startYmd: string, serviceKey: string) 
     await sleep(180)
   }
 
-  latestDealYmdCache.set(cacheKey, startYmd)
-  return startYmd
+  latestDealYmdCache.set(cacheKey, '202504')
+  return '202504'
 }
 
 const getMsUntilNextDailyRefresh = (hour: number) => {
@@ -434,8 +434,8 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       dealYmd,
     })),
   )
-  const districtResults = await runInBatches(fetchTargets, 2, ({ district, dealYmd }) =>
-    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), 220,
+  const districtResults = await runInBatches(fetchTargets, 1, ({ district, dealYmd }) =>
+    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), 320,
   )
   const rawDeals = districtResults.flatMap((result) => result.rawDeals)
   const activeDeals = rawDeals.filter((deal) => deal.status === 'active')
@@ -492,7 +492,7 @@ const rtmsProxyPlugin = (): Plugin => ({
                   lawdCd: '',
                   scope: 'capital',
                   dealYmd: 'auto',
-                  monthsBack: 3,
+                  monthsBack: 1,
                   numOfRows: '1000',
                   limit: 50000,
                 }),
@@ -500,7 +500,7 @@ const rtmsProxyPlugin = (): Plugin => ({
                   lawdCd: '',
                   scope: 'capital',
                   dealYmd: 'auto',
-                  monthsBack: 3,
+                  monthsBack: 1,
                   numOfRows: '1000',
                   limit: 50000,
                 },
