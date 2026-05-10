@@ -605,5 +605,8 @@ const rtmsProxyPlugin = (): Plugin => ({
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    allowedHosts: ['jipjiggu.onrender.com', '.onrender.com'],
+  },
   plugins: [rtmsProxyPlugin(), react()],
 })
