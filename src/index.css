@@ -1,0 +1,59 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --bg: #eef4f2;
+  --surface: #f7fbfa;
+  --surface-raised: #ffffff;
+  --text: #34403e;
+  --text-strong: #111827;
+  --text-muted: #73817e;
+  --border: rgba(22, 37, 34, 0.13);
+  --border-soft: rgba(22, 37, 34, 0.08);
+  --accent: #0b9f8a;
+  --accent-soft: rgba(12, 181, 155, 0.12);
+  --blue: #246bfe;
+  --soft-blue: rgba(36, 107, 254, 0.1);
+  --green: #108b59;
+  --soft-green: rgba(16, 139, 89, 0.1);
+  --orange: #b56a00;
+  --soft-orange: rgba(245, 158, 11, 0.13);
+  --rose: #e23d68;
+  --soft-rose: rgba(226, 61, 104, 0.1);
+  --shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 18px 40px rgba(15, 23, 42, 0.14);
+  --shadow-xl: 0 28px 88px rgba(15, 23, 42, 0.18);
+  --font-sans:
+    Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Noto Sans KR', sans-serif;
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+button,
+input {
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(36, 107, 254, 0.28);
+  outline-offset: 2px;
+}

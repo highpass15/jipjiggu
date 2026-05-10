@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jipjiggu
+    env: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run dev -- --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: VITE_KAKAO_MAP_JS_KEY
+        sync: false
+      - key: MOLIT_APT_TRADE_SERVICE_KEY
+        sync: false
+      - key: MOLIT_BUILDING_LEDGER_SERVICE_KEY
+        sync: false
