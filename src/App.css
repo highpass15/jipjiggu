@@ -1952,6 +1952,35 @@ h1 {
   gap: 8px;
 }
 
+.price-range-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.price-range-row .number-field {
+  grid-template-columns: 1fr;
+  gap: 7px;
+  padding: 10px;
+  border: 0;
+  border-radius: 14px;
+  background: #f8fbfa;
+}
+
+.price-range-row .number-field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.price-range-row .number-field div {
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
 .select-field {
   min-width: 0;
   display: grid;
@@ -2035,6 +2064,46 @@ h1 {
   gap: 13px;
   align-items: center;
   padding: 14px;
+}
+
+.recommend-empty {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 18px 16px;
+  border: 1px dashed rgba(12, 181, 155, 0.34);
+  border-radius: 18px;
+  background: #f8fbfa;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.recommend-empty svg {
+  color: var(--accent);
+}
+
+.recommend-empty strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.recommend-empty p {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.rank-badge {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
 }
 
 .score-ring {

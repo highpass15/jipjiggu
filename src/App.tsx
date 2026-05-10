@@ -975,6 +975,8 @@ function App() {
   const [maxSubwayMinutes, setMaxSubwayMinutes] = useState(10)
   const [officeArea, setOfficeArea] = useState<OfficeArea>('강남')
   const [maxCommuteMinutes, setMaxCommuteMinutes] = useState(40)
+  const [minTradePriceEok, setMinTradePriceEok] = useState(0)
+  const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
   const contentPanelRef = useRef<HTMLElement | null>(null)
 
   const handleHomeClick = useCallback(() => {
@@ -1055,9 +1057,16 @@ function App() {
 
   const recommendationBudgetEok = Math.max(3.5, (assets + income * 4.2 - debt) / 10000)
   const recommendationStretchEok = recommendationBudgetEok * 1.12
+  const normalizedMinTradePriceEok = Math.min(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
+  const normalizedMaxTradePriceEok = Math.max(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
   const recommendedApartments = useMemo<RecommendedApartment[]>(
     () =>
       apartments
+        .filter(
+          (apartment) =>
+            apartment.priceEok >= normalizedMinTradePriceEok &&
+            apartment.priceEok <= normalizedMaxTradePriceEok,
+        )
         .map((apartment) => {
           const apartmentPyeong = Number(apartment.pyeong.replace('평', ''))
           const budgetDistance = Math.abs(apartment.priceEok - recommendationBudgetEok)
@@ -1077,6 +1086,7 @@ function App() {
             recommendationScore,
             commuteToOffice,
             fitReasons: [
+              `${formatEok(apartment.priceEok)} 실거래`,
               `${officeArea} ${commuteToOffice}분`,
               `역 도보 ${apartment.subwayMinutes}분`,
               `${apartment.pyeong} 추천`,
@@ -1088,7 +1098,15 @@ function App() {
             b.recommendationScore - a.recommendationScore ||
             a.budgetDistance - b.budgetDistance,
         ),
-    [officeArea, maxCommuteMinutes, maxSubwayMinutes, preferredPyeong, recommendationBudgetEok],
+    [
+      officeArea,
+      maxCommuteMinutes,
+      maxSubwayMinutes,
+      normalizedMaxTradePriceEok,
+      normalizedMinTradePriceEok,
+      preferredPyeong,
+      recommendationBudgetEok,
+    ],
   )
 
   return (
@@ -1187,6 +1205,10 @@ function App() {
               setMaxSubwayMinutes={setMaxSubwayMinutes}
               setOfficeArea={setOfficeArea}
               setMaxCommuteMinutes={setMaxCommuteMinutes}
+              minTradePriceEok={minTradePriceEok}
+              maxTradePriceEok={maxTradePriceEok}
+              setMinTradePriceEok={setMinTradePriceEok}
+              setMaxTradePriceEok={setMaxTradePriceEok}
               budget={recommendationBudgetEok}
               stretch={recommendationStretchEok}
               apartments={recommendedApartments}
@@ -1884,7 +1906,6 @@ function ApartmentMap({
           </button>
         </div>
         <div className="map-side-tools" aria-label="지도 보기 옵션">
-          <button type="button">총액</button>
           <button type="button">거리</button>
           <button type="button">면적</button>
         </div>
@@ -2559,6 +2580,10 @@ function AiView({
   setMaxSubwayMinutes,
   setOfficeArea,
   setMaxCommuteMinutes,
+  minTradePriceEok,
+  maxTradePriceEok,
+  setMinTradePriceEok,
+  setMaxTradePriceEok,
   budget,
   stretch,
   apartments,
@@ -2577,6 +2602,10 @@ function AiView({
   setMaxSubwayMinutes: (value: number) => void
   setOfficeArea: (value: OfficeArea) => void
   setMaxCommuteMinutes: (value: number) => void
+  minTradePriceEok: number
+  maxTradePriceEok: number
+  setMinTradePriceEok: (value: number) => void
+  setMaxTradePriceEok: (value: number) => void
   budget: number
   stretch: number
   apartments: RecommendedApartment[]
@@ -2645,6 +2674,10 @@ function AiView({
             onChange={(value) => setMaxCommuteMinutes(Number(value))}
           />
         </div>
+        <div className="price-range-row" aria-label="실거래 가격대">
+          <NumberField label="최소 가격" value={minTradePriceEok} unit="억" onChange={setMinTradePriceEok} />
+          <NumberField label="최대 가격" value={maxTradePriceEok} unit="억" onChange={setMaxTradePriceEok} />
+        </div>
       </section>
 
       <button className="primary-action ai-search-action" type="button" onClick={handleRecommendationSearch}>
@@ -2668,7 +2701,15 @@ function AiView({
           <section className="recommend-empty">
             <Sparkles size={20} />
             <strong>조건을 고른 뒤 검색하기를 눌러주세요</strong>
-            <p>예산, 평형, 역 도보, 직장 거리 조건을 반영해 적합도 순으로 5개 단지를 보여드립니다.</p>
+            <p>예산, 가격대, 평형, 역 도보, 직장 거리 조건을 반영해 적합도 순으로 5개 단지를 보여드립니다.</p>
+          </section>
+        )}
+
+        {hasSearched && searchResults.length === 0 && (
+          <section className="recommend-empty">
+            <Search size={20} />
+            <strong>조건에 맞는 단지가 아직 없습니다</strong>
+            <p>가격대를 조금 넓히거나 직장 거리·역 도보 조건을 완화해서 다시 검색해보세요.</p>
           </section>
         )}
 
