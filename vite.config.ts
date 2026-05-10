@@ -288,36 +288,59 @@ const fetchDistrictTrades = async (
   dealYmd: string,
   numOfRows: string,
 ) => {
-  const params = new URLSearchParams({
-    serviceKey,
-    LAWD_CD: district.code,
-    DEAL_YMD: dealYmd,
-    numOfRows,
-    pageNo: '1',
-  })
-  const apiResponse = await fetch(
-    `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${params.toString()}`,
-  )
-  const xml = await apiResponse.text()
+  const fetchPage = async (pageNo: number) => {
+    const params = new URLSearchParams({
+      serviceKey,
+      LAWD_CD: district.code,
+      DEAL_YMD: dealYmd,
+      numOfRows,
+      pageNo: String(pageNo),
+    })
+    const apiResponse = await fetch(
+      `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${params.toString()}`,
+    )
+    const raw = await apiResponse.text()
 
-  if (!apiResponse.ok) {
+    if (!apiResponse.ok) {
+      throw new Error(raw || apiResponse.statusText)
+    }
+
+    const parsed = parser.parse(raw) as RtmsParsedResponse
+    const body = parsed.response?.body
+    const rawItems = asArray<RtmsApiItem>(body?.items?.item)
+
+    return {
+      totalCount: numberValue(body?.totalCount),
+      rawDeals: rawItems.map((item) => normalizeRtmsItem(item, district)),
+    }
+  }
+
+  try {
+    const firstPage = await fetchPage(1)
+    const rowCount = Math.max(Number(numOfRows) || 1000, 1)
+    const pageCount = Math.ceil(firstPage.totalCount / rowCount)
+    const remainingPages =
+      pageCount > 1
+        ? await runInBatches(
+            Array.from({ length: pageCount - 1 }, (_, index) => index + 2),
+            3,
+            (pageNo) => fetchPage(pageNo),
+          )
+        : []
+
+    return {
+      district,
+      totalCount: firstPage.totalCount,
+      rawDeals: [firstPage, ...remainingPages].flatMap((page) => page.rawDeals),
+      error: '',
+    }
+  } catch (error) {
     return {
       district,
       totalCount: 0,
       rawDeals: [] as ReturnType<typeof normalizeRtmsItem>[],
-      error: xml || apiResponse.statusText,
+      error: error instanceof Error ? error.message : 'RTMS API 호출 실패',
     }
-  }
-
-  const parsed = parser.parse(xml) as RtmsParsedResponse
-  const body = parsed.response?.body
-  const rawItems = asArray<RtmsApiItem>(body?.items?.item)
-
-  return {
-    district,
-    totalCount: numberValue(body?.totalCount),
-    rawDeals: rawItems.map((item) => normalizeRtmsItem(item, district)),
-    error: '',
   }
 }
 
@@ -439,17 +462,17 @@ const rtmsProxyPlugin = (): Plugin => ({
                   lawdCd: '',
                   scope: 'capital',
                   dealYmd: getDefaultDealYmd(),
-                  monthsBack: 36,
-                  numOfRows: '10',
-                  limit: 2000,
+                  monthsBack: 12,
+                  numOfRows: '1000',
+                  limit: 8000,
                 }),
                 {
                   lawdCd: '',
                   scope: 'capital',
                   dealYmd: getDefaultDealYmd(),
-                  monthsBack: 36,
-                  numOfRows: '10',
-                  limit: 2000,
+                  monthsBack: 12,
+                  numOfRows: '1000',
+                  limit: 8000,
                 },
               ] as const,
             ]
@@ -491,8 +514,8 @@ const rtmsProxyPlugin = (): Plugin => ({
         scope: incomingUrl.searchParams.get('scope') || 'capital',
         dealYmd: incomingUrl.searchParams.get('dealYmd') || getDefaultDealYmd(),
         monthsBack: Math.min(Math.max(Number(incomingUrl.searchParams.get('monthsBack')) || 1, 1), 84),
-        numOfRows: String(Math.min(Number(incomingUrl.searchParams.get('numOfRows')) || 10, 20)),
-        limit: Math.min(Number(incomingUrl.searchParams.get('limit')) || 240, 2000),
+        numOfRows: String(Math.min(Number(incomingUrl.searchParams.get('numOfRows')) || 1000, 1000)),
+        limit: Math.min(Number(incomingUrl.searchParams.get('limit')) || 8000, 12000),
       }
       const cacheKey = rtmsCacheKey(query)
       rtmsQueries.set(cacheKey, query)

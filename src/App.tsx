@@ -104,6 +104,26 @@ type LiveRtmsDeal = {
   registeredAt: string
 }
 
+type UserListing = {
+  id: string
+  aptName: string
+  address: string
+  detailAddress: string
+  priceEok: number
+  pyeong: number
+  floor: number
+  ownerName: string
+  ownerPhone: string
+  memo: string
+  photos: Array<{
+    id: string
+    name: string
+    dataUrl: string
+  }>
+  verificationStatus: 'owner-checking' | 'verified'
+  createdAt: string
+}
+
 type RtmsMeta = {
   source: string
   lawdCd: string
@@ -241,10 +261,11 @@ type MapValueMarker = {
   subLabel: string
   lat: number
   lng: number
-  tone: 'sale' | 'direct' | 'office'
+  tone: 'sale' | 'direct' | 'office' | 'listing'
   dealCount?: number
   relatedDeals: LiveRtmsDeal[]
   nearbyDeals?: LiveRtmsDeal[]
+  listing?: UserListing
 }
 
 declare global {
@@ -489,6 +510,32 @@ const apartments: Apartment[] = [
     tags: ['광명', '가성비', '7호선'],
   },
   {
+    name: '인덕원센트럴자이',
+    region: '경기 의왕시 내손동',
+    station: '인덕원역 12분',
+    pyeong: '34평',
+    subwayMinutes: 12,
+    commuteMinutes: { 강남: 38, 여의도: 48, 광화문: 56, 판교: 27 },
+    lat: 37.3939,
+    lng: 126.9778,
+    markerPosition: { x: 52, y: 58 },
+    priceEok: 14.4,
+    previousEok: 13.9,
+    recentDeals: [
+      { date: '25.04.10', priceEok: 14.4 },
+      { date: '25.03.06', priceEok: 14.1 },
+      { date: '25.01.17', priceEok: 13.9 },
+    ],
+    volume: 6,
+    fit: 85,
+    verified: '실거래 확인중',
+    households: 2540,
+    parkingSpaces: 3302,
+    floorAreaRatio: 245,
+    approvalYear: 2019,
+    tags: ['인덕원', 'GTX권', '의왕'],
+  },
+  {
     name: '송도더샵센트럴파크',
     region: '인천 연수구 송도동',
     station: '센트럴파크역 6분',
@@ -654,6 +701,7 @@ const normalizeSearchText = (value: string) =>
     .toLowerCase()
     .replace(/\s+/g, '')
     .replaceAll('레미안', '래미안')
+    .replaceAll('세트럴', '센트럴')
 
 const fuzzyIncludes = (target: string, query: string) => {
   let cursor = 0
@@ -671,6 +719,7 @@ const apartmentSearchAliases: Record<string, string> = {
   '래미안 원베일리': '반포래미안 반포원베일리 래미안원베일리 레미안원베일리',
   헬리오시티: '송파헬리오 가락헬리오',
   판교푸르지오그랑블: '판교푸르지오 판교그랑블',
+  인덕원센트럴자이: '인덕원센트럴 인덕원세트럴 인덕원자이 내손동센트럴자이 의왕인덕원',
 }
 
 const matchesApartmentQuery = (apartment: Apartment, query: string) => {
@@ -684,11 +733,8 @@ const matchesApartmentQuery = (apartment: Apartment, query: string) => {
 
 const formatEok = (amount: number) => `${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(1)}억`
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
-const formatDealMonth = (dealYmd: string) => `${dealYmd.slice(0, 4)}.${dealYmd.slice(4, 6)}`
-const formatDealRange = (meta: RtmsMeta) =>
-  meta.fromDealYmd && meta.toDealYmd
-    ? `${formatDealMonth(meta.fromDealYmd)}~${formatDealMonth(meta.toDealYmd)}`
-    : formatDealMonth(meta.dealYmd)
+const formatListingStatus = (status: UserListing['verificationStatus']) =>
+  status === 'verified' ? '실소유자 확인 완료' : '실소유자 확인중'
 const getDefaultRtmsDealYmd = () => {
   const date = new Date()
   date.setMonth(date.getMonth() - 1)
@@ -849,55 +895,22 @@ const calculateNearbySixMonthChange = (deals: LiveRtmsDeal[]) => {
   return changes.reduce((sum, change) => sum + change.changeRate, 0) / changes.length
 }
 
+const formatNearbyComparisonNames = (deals: LiveRtmsDeal[], currentAptName: string) => {
+  const uniqueNames = Array.from(
+    new Set(
+      deals
+        .map((deal) => deal.aptName.trim())
+        .filter((name) => name && name !== currentAptName),
+    ),
+  )
+
+  if (uniqueNames.length === 0) return ''
+
+  const visibleNames = uniqueNames.slice(0, 2).join(', ')
+  return `(${visibleNames}${uniqueNames.length > 2 ? ' 등' : ''})`
+}
+
 const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
-
-const registeredTimestamp = (registeredAt: string) => {
-  const normalized = registeredAt.trim()
-
-  if (!normalized) return 0
-
-  const [year, month, day] = normalized.split('.').map(Number)
-  if (!year || !month || !day) return 0
-
-  return new Date(2000 + year, month - 1, day).getTime()
-}
-
-const buildReportedMomentum = (deals: LiveRtmsDeal[]) => {
-  const reportedDeals = deals.filter((deal) => registeredTimestamp(deal.registeredAt) > 0)
-  const latestReportTime = Math.max(...reportedDeals.map((deal) => registeredTimestamp(deal.registeredAt)), 0)
-  const latestReportedDeals = latestReportTime
-    ? reportedDeals.filter((deal) => registeredTimestamp(deal.registeredAt) === latestReportTime)
-    : deals.slice(0, 12)
-
-  const ranking = latestReportedDeals
-    .map((deal) => {
-      const previousDeal = deals
-        .filter(
-          (candidate) =>
-            candidate.aptSeq === deal.aptSeq &&
-            candidate.pyeong === deal.pyeong &&
-            dealTimestamp(candidate) < dealTimestamp(deal),
-        )
-        .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))[0]
-      const changeRate = previousDeal
-        ? ((deal.priceEok - previousDeal.priceEok) / Math.max(previousDeal.priceEok, 0.1)) * 100
-        : null
-
-      return {
-        deal,
-        previousDeal,
-        changeRate,
-      }
-    })
-    .sort((a, b) => (b.changeRate ?? -999) - (a.changeRate ?? -999))
-
-  return {
-    latestReportTime,
-    latestReportDate: latestReportTime ? formatShortDate(new Date(latestReportTime).toISOString().slice(0, 10)) : '',
-    reportedCount: latestReportedDeals.length,
-    ranking,
-  }
-}
 
 const estimateDealFacts = (deal: LiveRtmsDeal) => {
   const aptSeed = deal.aptSeq
@@ -977,6 +990,10 @@ function App() {
   const [maxCommuteMinutes, setMaxCommuteMinutes] = useState(40)
   const [minTradePriceEok, setMinTradePriceEok] = useState(0)
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
+  const [userListings, setUserListings] = useState<UserListing[]>([])
+  const [focusListing, setFocusListing] = useState<UserListing | null>(null)
+  const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
+  const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
   const contentPanelRef = useRef<HTMLElement | null>(null)
 
   const handleHomeClick = useCallback(() => {
@@ -1030,19 +1047,69 @@ function App() {
 
     if (normalized.length < 2) return []
 
-    return apartments.filter((apartment) => matchesApartmentQuery(apartment, normalized)).slice(0, 5)
-  }, [query])
+    const apartmentSuggestions = apartments
+      .filter((apartment) => matchesApartmentQuery(apartment, normalized))
+      .slice(0, 3)
+      .map((apartment) => ({
+        id: `sample-${apartment.name}`,
+        title: apartment.name,
+        subtitle: `${apartment.region} · ${apartment.pyeong}`,
+        apartment,
+        deal: null as LiveRtmsDeal | null,
+      }))
+    const liveDealSuggestions = Array.from(
+      capitalLiveDeals
+        .reduce((group, deal) => {
+          const key = deal.aptSeq || `${deal.aptName}-${deal.address}`
+          const current = group.get(key)
+          if (!current || dealTimestamp(deal) > dealTimestamp(current)) {
+            group.set(key, deal)
+          }
+          return group
+        }, new Map<string, LiveRtmsDeal>())
+        .values(),
+    )
+      .filter((deal) => {
+        const target = normalizeSearchText(`${deal.aptName} ${deal.address} ${deal.legalDong}`)
+        const normalizedQuery = normalizeSearchText(normalized)
+        return target.includes(normalizedQuery) || fuzzyIncludes(target, normalizedQuery)
+      })
+      .slice(0, 5 - apartmentSuggestions.length)
+      .map((deal) => ({
+        id: `live-${deal.aptSeq || deal.id}`,
+        title: deal.aptName,
+        subtitle: `${deal.address} · ${deal.pyeong}평 · ${formatShortDate(deal.dealDate)}`,
+        apartment: null as Apartment | null,
+        deal,
+      }))
+
+    return [...apartmentSuggestions, ...liveDealSuggestions]
+  }, [capitalLiveDeals, query])
 
   const handleSearchChange = (value: string) => {
     setQuery(value)
     setFocusApartment(null)
   }
 
-  const handleSearchSuggestionClick = (apartment: Apartment) => {
-    setQuery(apartment.name)
-    setFocusApartment(apartment)
+  const handleSearchSuggestionClick = (suggestion: (typeof searchSuggestions)[number]) => {
+    setQuery(suggestion.title)
+    setFocusApartment(suggestion.apartment)
+    setFocusLiveDeal(suggestion.deal)
+    setFocusListing(null)
     setMode('prices')
     setSearchFocused(false)
+  }
+
+  const handleListingCreate = (listing: UserListing) => {
+    setUserListings((currentListings) => [listing, ...currentListings])
+    setFocusListing(listing)
+    setFocusApartment(null)
+    setFocusLiveDeal(null)
+    setMode('prices')
+
+    window.setTimeout(() => {
+      contentPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }, 60)
   }
 
   const brokerage = useMemo(() => {
@@ -1121,9 +1188,11 @@ function App() {
           >
             <Home size={20} />
           </button>
-          <div className="brand-lockup">
-            <strong>집직구</strong>
-            <span>서울·경기·인천 직거래</span>
+          <div className="brand-lockup" aria-label="집직구">
+            <div className="brand-logo">
+              <img src="/jipjiggu-logo.png" alt="집직구" />
+            </div>
+            <span className="brand-subtitle">전국민 안심 직거래</span>
           </div>
           <button className="icon-button" aria-label="알림">
             <Bell size={20} />
@@ -1147,15 +1216,13 @@ function App() {
             <div className="search-suggestions" role="listbox" aria-label="추천 검색어">
               {searchSuggestions.map((apartment) => (
                 <button
-                  key={`${apartment.name}-suggestion`}
+                  key={`${apartment.id}-suggestion`}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => handleSearchSuggestionClick(apartment)}
                 >
-                  <strong>{apartment.name}</strong>
-                  <span>
-                    {apartment.region} · {apartment.pyeong}
-                  </span>
+                  <strong>{apartment.title}</strong>
+                  <span>{apartment.subtitle}</span>
                 </button>
               ))}
             </div>
@@ -1186,6 +1253,10 @@ function App() {
               selectedRegion={selectedRegion}
               setSelectedRegion={setSelectedRegion}
               focusApartment={focusApartment}
+              userListings={userListings}
+              focusListing={focusListing}
+              focusLiveDeal={focusLiveDeal}
+              onLiveDealsChange={setCapitalLiveDeals}
             />
           )}
 
@@ -1216,7 +1287,12 @@ function App() {
           )}
 
           {mode === 'listing' && (
-            <ListingView salePrice={salePrice} setSalePrice={setSalePrice} brokerage={brokerage} />
+            <ListingView
+              salePrice={salePrice}
+              setSalePrice={setSalePrice}
+              brokerage={brokerage}
+              onCreateListing={handleListingCreate}
+            />
           )}
 
           {mode === 'inheritance' && <InheritanceView />}
@@ -1276,16 +1352,22 @@ function PriceView({
   selectedRegion,
   setSelectedRegion,
   focusApartment,
+  userListings,
+  focusListing,
+  focusLiveDeal,
+  onLiveDealsChange,
 }: {
   apartments: Apartment[]
   selectedRegion: string
   setSelectedRegion: (region: string) => void
   focusApartment: Apartment | null
+  userListings: UserListing[]
+  focusListing: UserListing | null
+  focusLiveDeal: LiveRtmsDeal | null
+  onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
-  const [rtmsStatus, setRtmsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [rtmsError, setRtmsError] = useState('')
   const [syncTick, setSyncTick] = useState(0)
   const [filterOpen, setFilterOpen] = useState(false)
   const [mapFilters, setMapFilters] = useState<MapFilterState>(defaultMapFilters)
@@ -1363,12 +1445,9 @@ function PriceView({
     const controller = new AbortController()
 
     const fetchRtmsDeals = async () => {
-      setRtmsStatus('loading')
-      setRtmsError('')
-
       try {
         const response = await fetch(
-          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=36&numOfRows=10&limit=2000`,
+          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=12&numOfRows=1000&limit=8000`,
           { signal: controller.signal },
         )
         const payload = (await response.json()) as RtmsResponse | { error?: string }
@@ -1377,19 +1456,19 @@ function PriceView({
           throw new Error('error' in payload ? payload.error : 'RTMS API 호출 실패')
         }
 
-        setRtmsData(payload as RtmsResponse)
-        setRtmsStatus('ready')
+        const rtmsPayload = payload as RtmsResponse
+        setRtmsData(rtmsPayload)
+        onLiveDealsChange(rtmsPayload.deals)
       } catch (error) {
         if (controller.signal.aborted) return
-        setRtmsStatus('error')
-        setRtmsError(error instanceof Error ? error.message : 'RTMS API 호출 실패')
+        console.warn(error instanceof Error ? error.message : 'RTMS API 호출 실패')
       }
     }
 
     fetchRtmsDeals()
 
     return () => controller.abort()
-  }, [defaultDealYmd, rtmsScope, syncTick])
+  }, [defaultDealYmd, onLiveDealsChange, rtmsScope, syncTick])
 
   useEffect(() => {
     let timerId: number
@@ -1411,7 +1490,7 @@ function PriceView({
       <div className="section-title">
         <div>
           <span>실거래가</span>
-          <h2>최근 3년 거래가 지도</h2>
+          <h2>서울·경기·인천 실제 API 지도</h2>
         </div>
         <div className="view-switch" aria-label="보기 방식">
           <button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')} type="button">
@@ -1441,6 +1520,9 @@ function PriceView({
           apartments={apartments}
           liveDeals={mapDeals}
           activeFilterCount={activeFilterCount}
+          userListings={userListings}
+          focusListing={focusListing}
+          focusLiveDeal={focusLiveDeal}
           onFilterClick={() => setFilterOpen(true)}
           selectedMarker={selectedMapMarker}
           onSelectMarker={handleMapMarkerSelect}
@@ -1472,8 +1554,6 @@ function PriceView({
           <strong>{rtmsData ? `${filteredLiveDeals.filter((deal) => deal.tradeType === 'direct').length}건` : '확인중'}</strong>
         </div>
       </div>
-
-      <RtmsLivePanel data={rtmsData} status={rtmsStatus} error={rtmsError} />
 
       {filterOpen && (
         <MapFilterSheet
@@ -1559,75 +1639,6 @@ function MapFilterSheet({
   )
 }
 
-function RtmsLivePanel({
-  data,
-  status,
-  error,
-}: {
-  data: RtmsResponse | null
-  status: 'loading' | 'ready' | 'error'
-  error: string
-}) {
-  const momentum = data ? buildReportedMomentum(data.deals) : null
-  const rankedDeals = momentum?.ranking.slice(0, 5) ?? []
-
-  return (
-    <section className="rtms-live" aria-label="국토교통부 실거래가 상세 API 결과">
-      <div className="rtms-live-head">
-        <div>
-          <span>국토부 실거래 상세</span>
-          <h3>{data ? `${data.meta.district} 최신 신고 상승폭` : '어젯밤 신고 상승폭'}</h3>
-        </div>
-        <strong className={status === 'ready' ? 'ready' : ''}>
-          {status === 'loading' ? '불러오는 중' : status === 'error' ? '확인 필요' : '실제 API'}
-        </strong>
-      </div>
-
-      {status === 'error' ? (
-        <p className="rtms-error">{error}</p>
-      ) : (
-        <>
-          <div className="rtms-stats">
-            <div>
-              <span>신고 기준일</span>
-              <strong>{momentum?.latestReportDate || '-'}</strong>
-            </div>
-            <div>
-              <span>신고 건수</span>
-              <strong>{momentum ? `${momentum.reportedCount}건` : '-'}</strong>
-            </div>
-            <div>
-              <span>조회 범위</span>
-              <strong>{data ? formatDealRange(data.meta) : '-'}</strong>
-            </div>
-          </div>
-
-          <p className="rtms-caption">매일 새벽 2시 갱신 후, 전일 신고분 중 직전 거래 대비 상승폭이 큰 단지를 우선 보여줍니다.</p>
-
-          <div className="rtms-deal-list">
-            {rankedDeals.map(({ deal, changeRate }) => (
-              <article key={`${deal.id}-momentum`} className={deal.tradeType === 'direct' ? 'direct' : ''}>
-                <div>
-                  <strong>
-                    {deal.legalDong} · {deal.aptName}
-                  </strong>
-                  <span>
-                    {formatShortDate(deal.dealDate)} · {deal.pyeong}평 · {deal.floor}층 · {deal.tradeTypeLabel}
-                  </span>
-                </div>
-                <div>
-                  <em>{changeRate === null ? '첫 비교' : formatPercent(changeRate)}</em>
-                  <b>{formatEok(deal.priceEok)}</b>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
-  )
-}
-
 const apartmentMarkers = (apartments: Apartment[]): MapValueMarker[] =>
   apartments.map((apartment) => ({
     id: apartment.name,
@@ -1691,6 +1702,8 @@ const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) 
   return button
 }
 
+const MAX_GEOCODED_TRADE_MARKERS = 360
+
 const geocodeDealMarkers = async (
   kakao: KakaoNamespace,
   deals: LiveRtmsDeal[],
@@ -1709,17 +1722,20 @@ const geocodeDealMarkers = async (
         return group
       }, new Map<string, LiveRtmsDeal[]>())
       .entries(),
-  ).map(([groupId, relatedDeals]) => {
-    const history = dedupeDeals(relatedDeals)
-    const latestDeal = history[0]
+  )
+    .map(([groupId, relatedDeals]) => {
+      const history = dedupeDeals(relatedDeals)
+      const latestDeal = history[0]
 
-    return {
-      id: groupId,
-      latestDeal,
-      hasDirectDeal: history.some((deal) => deal.tradeType === 'direct'),
-      history,
-    }
-  })
+      return {
+        id: groupId,
+        latestDeal,
+        hasDirectDeal: history.some((deal) => deal.tradeType === 'direct'),
+        history,
+      }
+    })
+    .sort((a, b) => dealTimestamp(b.latestDeal) - dealTimestamp(a.latestDeal))
+    .slice(0, MAX_GEOCODED_TRADE_MARKERS)
 
   const markers: MapValueMarker[] = []
 
@@ -1771,10 +1787,55 @@ const geocodeDealMarkers = async (
   return markers
 }
 
+const geocodeListingMarkers = async (
+  kakao: KakaoNamespace,
+  listings: UserListing[],
+): Promise<MapValueMarker[]> => {
+  if (!kakao.maps.services || listings.length === 0) {
+    return []
+  }
+
+  const geocoder = new kakao.maps.services.Geocoder()
+  const statusOk = kakao.maps.services.Status.OK
+  const markers = await Promise.all(
+    listings.map(
+      (listing) =>
+        new Promise<MapValueMarker | null>((resolve) => {
+          geocoder.addressSearch(listing.address, (result, status) => {
+            if (status !== statusOk || !result[0]) {
+              resolve(null)
+              return
+            }
+
+            resolve({
+              id: `listing-${listing.id}`,
+              label: '매물',
+              aptName: listing.aptName,
+              address: listing.address,
+              tradeTypeLabel: formatListingStatus(listing.verificationStatus),
+              priceEok: listing.priceEok,
+              subLabel: `${listing.pyeong}평`,
+              lat: Number(result[0].y),
+              lng: Number(result[0].x),
+              tone: 'listing',
+              relatedDeals: [],
+              listing,
+            })
+          })
+        }),
+    ),
+  )
+
+  return markers.filter((marker): marker is MapValueMarker => Boolean(marker))
+}
+
 function ApartmentMap({
   apartments,
   liveDeals,
   activeFilterCount,
+  userListings,
+  focusListing,
+  focusLiveDeal,
   onFilterClick,
   selectedMarker,
   onSelectMarker,
@@ -1783,6 +1844,9 @@ function ApartmentMap({
   apartments: Apartment[]
   liveDeals: LiveRtmsDeal[]
   activeFilterCount: number
+  userListings: UserListing[]
+  focusListing: UserListing | null
+  focusLiveDeal: LiveRtmsDeal | null
   onFilterClick: () => void
   selectedMarker: MapValueMarker | null
   onSelectMarker: (marker: MapValueMarker, options?: { scrollToDetail?: boolean }) => void
@@ -1828,13 +1892,16 @@ function ApartmentMap({
         })
         kakaoMapRef.current = map
 
-        const liveMarkers = await geocodeDealMarkers(kakao, liveDeals)
+        const [liveMarkers, listingMarkers] = await Promise.all([
+          geocodeDealMarkers(kakao, liveDeals),
+          geocodeListingMarkers(kakao, userListings),
+        ])
         if (disposed) return
 
-        const markers = liveMarkers.length > 0 ? liveMarkers : apartmentMarkers(apartments)
-        if (!selectedMarkerRef.current && markers[0]) {
-          onSelectMarker(markers[0], { scrollToDetail: false })
-        }
+        const markers = [
+          ...listingMarkers,
+          ...(liveMarkers.length > 0 ? liveMarkers : apartmentMarkers(apartments)),
+        ]
         if (markers.length === 0) {
           setMapReady(true)
           return
@@ -1860,9 +1927,26 @@ function ApartmentMap({
           return overlay
         })
 
-        const primaryMarker = markers[0]
+        const focusedListingMarker = focusListing
+          ? listingMarkers.find((marker) => marker.listing?.id === focusListing.id)
+          : null
+        const focusedLiveMarker = focusLiveDeal
+          ? liveMarkers.find((marker) =>
+              marker.relatedDeals.some(
+                (deal) =>
+                  deal.id === focusLiveDeal.id ||
+                  (focusLiveDeal.aptSeq && deal.aptSeq === focusLiveDeal.aptSeq),
+              ),
+            )
+          : null
+        const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? markers[0]
         map.setCenter(new kakao.maps.LatLng(primaryMarker.lat, primaryMarker.lng))
         map.setLevel(4)
+
+        const focusedMarker = focusedListingMarker ?? focusedLiveMarker
+        if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
+          onSelectMarker(focusedMarker, { scrollToDetail: false })
+        }
 
         const updateDensity = () => {
           const compact = map.getLevel() >= 6
@@ -1882,14 +1966,14 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, kakaoKey, liveDeals, onSelectMarker])
+  }, [apartments, focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
 
   return (
     <section className="map-panel">
       <div className="map-toolbar">
         <span>
           <MapPin size={14} />
-          최근 3년 거래
+          실제 API 거래
         </span>
         <em>{mapReady ? 'Kakao 지도' : '미리보기 지도'}</em>
       </div>
@@ -2180,6 +2264,60 @@ function RoadviewPanel({ marker }: { marker: MapValueMarker }) {
   )
 }
 
+function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
+  const listing = marker.listing
+
+  if (!listing) return null
+
+  return (
+    <section className="detail-section listing-detail-card" aria-label={`${marker.aptName} 등록 매물 정보`}>
+      <div className="detail-section-head">
+        <span>
+          <ShieldCheck size={15} />
+          안심 직거래 매물
+        </span>
+        <em>{formatListingStatus(listing.verificationStatus)}</em>
+      </div>
+
+      <div className="listing-detail-price">
+        <div>
+          <span>희망가</span>
+          <strong>{formatEok(listing.priceEok)}</strong>
+        </div>
+        <div>
+          <span>평형·층</span>
+          <strong>
+            {listing.pyeong}평 · {listing.floor}층
+          </strong>
+        </div>
+      </div>
+
+      <p className="listing-detail-address">
+        {listing.address} · {listing.detailAddress}
+      </p>
+      <p className="listing-detail-memo">{listing.memo || '매도인이 사진과 설명을 등록한 직거래 매물입니다.'}</p>
+
+      {listing.photos.length > 0 ? (
+        <div className="listing-detail-photos" aria-label="매물 사진">
+          {listing.photos.map((photo) => (
+            <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
+          ))}
+        </div>
+      ) : (
+        <div className="listing-photo-empty">
+          <Camera size={18} />
+          <span>사진 등록 대기</span>
+        </div>
+      )}
+
+      <div className="owner-check-card">
+        <strong>실소유자 확인 단계</strong>
+        <p>등기부상 소유자, 연락처, 허위매물 여부를 중개사가 확인한 뒤 공개 상태로 전환합니다.</p>
+      </div>
+    </section>
+  )
+}
+
 function BuildingLedgerPanel({
   marker,
   latestDeal,
@@ -2243,7 +2381,9 @@ function AiTrendAnalysisPanel({
   history: LiveRtmsDeal[]
 }) {
   const ownTrend = calculateSixMonthChange(history)
-  const nearbyTrend = calculateNearbySixMonthChange(marker.nearbyDeals ?? [])
+  const nearbyDeals = marker.nearbyDeals ?? []
+  const nearbyTrend = calculateNearbySixMonthChange(nearbyDeals)
+  const nearbyComparisonNames = formatNearbyComparisonNames(nearbyDeals, marker.aptName)
   const gap = ownTrend && nearbyTrend !== null ? ownTrend.changeRate - nearbyTrend : null
   const directionLabel = ownTrend
     ? ownTrend.changeRate >= 0
@@ -2269,7 +2409,9 @@ function AiTrendAnalysisPanel({
 
       <div className="ai-trend-summary">
         <strong>{summary}</strong>
-        <p>인근 비교군은 같은 법정동 내 다른 아파트 실거래 사례를 기준으로 계산합니다.</p>
+        <p>
+          인근 비교군{nearbyComparisonNames}은 같은 법정동 내 다른 아파트 실거래 사례를 기준으로 계산합니다.
+        </p>
       </div>
 
       <div className="ai-trend-grid">
@@ -2323,6 +2465,7 @@ function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
 
 function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose: () => void }) {
   const { history, status } = useMarkerHistory(marker)
+  const listing = marker.listing
   const chartSourceDeals = [...history]
     .filter((deal) => deal.dealDate >= '2022-01-01')
     .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
@@ -2393,9 +2536,9 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
     <section id="trade-detail-panel" className="trade-detail" aria-label={`${marker.aptName} 실거래 상세`}>
       <div className="trade-detail-head">
         <div>
-          <span>{status === 'loading' ? '과거 추이 불러오는 중' : '실거래 상세'}</span>
+          <span>{listing ? '직거래 매물 상세' : status === 'loading' ? '과거 추이 불러오는 중' : '실거래 상세'}</span>
           <h3>{marker.aptName}</h3>
-          <p>{marker.address}</p>
+          <p>{listing ? `${marker.address} · ${listing.detailAddress}` : marker.address}</p>
         </div>
         <button className="round-link" type="button" aria-label="상세 닫기" onClick={onClose}>
           <ChevronRight size={18} />
@@ -2404,74 +2547,81 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
 
       <div className="trade-summary-grid">
         <div>
-          <span>최근 거래</span>
+          <span>{listing ? '희망가' : '최근 거래'}</span>
           <strong>{formatEok(latestDeal?.priceEok ?? marker.priceEok)}</strong>
         </div>
         <div>
           <span>평형</span>
-          <strong>{latestDeal ? `${latestDeal.pyeong}평` : marker.subLabel}</strong>
+          <strong>{listing ? `${listing.pyeong}평` : latestDeal ? `${latestDeal.pyeong}평` : marker.subLabel}</strong>
         </div>
         <div>
-          <span>구분</span>
-          <strong>{latestDeal?.tradeTypeLabel ?? marker.tradeTypeLabel ?? marker.label}</strong>
+          <span>{listing ? '검증' : '구분'}</span>
+          <strong>{listing ? formatListingStatus(listing.verificationStatus) : latestDeal?.tradeTypeLabel ?? marker.tradeTypeLabel ?? marker.label}</strong>
         </div>
       </div>
 
-      <div className="trend-card">
-        <div className="trend-card-head">
-          <span>
-            <LineChart size={15} />
-            과거 매매 추이
-          </span>
-          <em>{trendSummary}</em>
-        </div>
-
-        <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
-          <line x1={chartLeft} y1={chartTop} x2={chartLeft} y2={chartBottom} />
-          <line x1={chartLeft} y1={chartBottom} x2={chartRight} y2={chartBottom} />
-          {timeTicks.map((date) => {
-            const x = chartLeft + ((date.getTime() - startTime) / timeRange) * (chartRight - chartLeft)
-            return (
-              <g key={`${date.getFullYear()}-${date.getMonth()}`} className="trend-year">
-                <line x1={x} y1={chartTop} x2={x} y2={chartBottom} />
-                <text x={x} y={dateLabelY}>
-                  {formatTickLabel(date)}
-                </text>
-              </g>
-            )
-          })}
-          {points && <polyline points={points} />}
-          {chartDeals.map((deal, index) => {
-            const point = points.split(' ')[index]
-            const [cx, cy] = point.split(',').map(Number)
-            return <circle key={deal.id} cx={cx} cy={cy} r={index === chartDeals.length - 1 ? 5 : 3.5} />
-          })}
-          <text className="trend-value-label" x={chartLeft} y={maxLabelY}>
-            {formatEok(maxPrice)}
-          </text>
-          <text className="trend-value-label" x={chartLeft} y={minLabelY}>
-            {formatEok(minPrice)}
-          </text>
-        </svg>
-      </div>
-
-      <div className="history-list">
-        {history.slice(0, 5).map((deal) => (
-          <article key={deal.id}>
-            <div>
-              <strong>{formatShortDate(deal.dealDate)}</strong>
+      {!listing && (
+        <>
+          <div className="trend-card">
+            <div className="trend-card-head">
               <span>
-                {deal.pyeong}평 · {deal.floor || '-'}층 · {deal.tradeTypeLabel}
+                <LineChart size={15} />
+                과거 매매 추이
               </span>
+              <em>{trendSummary}</em>
             </div>
-            <b>{formatEok(deal.priceEok)}</b>
-          </article>
-        ))}
-      </div>
 
+            <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
+              <line x1={chartLeft} y1={chartTop} x2={chartLeft} y2={chartBottom} />
+              <line x1={chartLeft} y1={chartBottom} x2={chartRight} y2={chartBottom} />
+              {timeTicks.map((date) => {
+                const x = chartLeft + ((date.getTime() - startTime) / timeRange) * (chartRight - chartLeft)
+                return (
+                  <g key={`${date.getFullYear()}-${date.getMonth()}`} className="trend-year">
+                    <line x1={x} y1={chartTop} x2={x} y2={chartBottom} />
+                    <text x={x} y={dateLabelY}>
+                      {formatTickLabel(date)}
+                    </text>
+                  </g>
+                )
+              })}
+              {points && <polyline points={points} />}
+              {chartDeals.map((deal, index) => {
+                const point = points.split(' ')[index]
+                const [cx, cy] = point.split(',').map(Number)
+                return <circle key={deal.id} cx={cx} cy={cy} r={index === chartDeals.length - 1 ? 5 : 3.5} />
+              })}
+              <text className="trend-value-label" x={chartLeft} y={maxLabelY}>
+                {formatEok(maxPrice)}
+              </text>
+              <text className="trend-value-label" x={chartLeft} y={minLabelY}>
+                {formatEok(minPrice)}
+              </text>
+            </svg>
+          </div>
+
+          {history.length > 0 && (
+            <div className="history-list">
+              {history.slice(0, 5).map((deal) => (
+                <article key={deal.id}>
+                  <div>
+                    <strong>{formatShortDate(deal.dealDate)}</strong>
+                    <span>
+                      {deal.pyeong}평 · {deal.floor || '-'}층 · {deal.tradeTypeLabel}
+                    </span>
+                  </div>
+                  <b>{formatEok(deal.priceEok)}</b>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <ListingMediaPanel marker={marker} />
       <RoadviewPanel marker={marker} />
       <BuildingLedgerPanel marker={marker} latestDeal={latestDeal} />
-      <AiTrendAnalysisPanel marker={marker} history={history} />
+      {!listing && <AiTrendAnalysisPanel marker={marker} history={history} />}
       <ReviewsPanel marker={marker} />
     </section>
   )
@@ -2630,7 +2780,7 @@ function AiView({
 
       <div className="input-grid">
         <NumberField label="연소득" value={income} unit="만원" onChange={setIncome} />
-        <NumberField label="가용자산" value={assets} unit="만원" onChange={setAssets} />
+        <EokNumberField label="가용자산" valueManwon={assets} onChangeManwon={setAssets} />
         <NumberField label="기존부채" value={debt} unit="만원" onChange={setDebt} />
       </div>
 
@@ -2796,21 +2946,107 @@ function NumberField({
   )
 }
 
+function EokNumberField({
+  label,
+  valueManwon,
+  onChangeManwon,
+}: {
+  label: string
+  valueManwon: number
+  onChangeManwon: (value: number) => void
+}) {
+  const eokValue = Number((valueManwon / 10000).toFixed(1))
+
+  return (
+    <label className="number-field">
+      <span>{label}</span>
+      <div>
+        <input
+          type="number"
+          min="0"
+          step="0.1"
+          value={eokValue}
+          onChange={(event) => onChangeManwon(Math.round(Number(event.target.value) * 10000))}
+        />
+        <em>억원</em>
+      </div>
+    </label>
+  )
+}
+
 function ListingView({
   salePrice,
   setSalePrice,
   brokerage,
+  onCreateListing,
 }: {
   salePrice: number
   setSalePrice: (value: number) => void
   brokerage: { legalCapBothSides: number; jipjigguFee: number; savings: number }
+  onCreateListing: (listing: UserListing) => void
 }) {
+  const [registrationOpen, setRegistrationOpen] = useState(false)
+  const [aptName, setAptName] = useState('센트럴파크푸르지오써밋')
+  const [address, setAddress] = useState('경기 과천시 부림동 96')
+  const [detailAddress, setDetailAddress] = useState('101동 1103호')
+  const [listingPriceEok, setListingPriceEok] = useState(salePrice)
+  const [listingPyeong, setListingPyeong] = useState(24)
+  const [listingFloor, setListingFloor] = useState(11)
+  const [ownerName, setOwnerName] = useState('')
+  const [ownerPhone, setOwnerPhone] = useState('')
+  const [memo, setMemo] = useState('실거주 관리 상태 양호, 잔금일 협의 가능합니다.')
+  const [photos, setPhotos] = useState<UserListing['photos']>([])
   const steps = [
     { icon: LockKeyhole, title: '직접 탐색', detail: '매수인과 매도인이 매물과 조건을 직접 확인' },
     { icon: Building2, title: '위험 확인', detail: '공인중개사가 권리관계와 거래상 위험사항 사전 점검' },
     { icon: ClipboardCheck, title: '진위 검증', detail: '실소유자 일치 여부와 허위매물 여부 확인' },
     { icon: Landmark, title: '계약서 작성', detail: '중개상한 20% 수수료로 공인중개사와 계약서 작성' },
   ]
+  const canSubmitListing = Boolean(aptName.trim() && address.trim() && detailAddress.trim() && listingPriceEok > 0)
+
+  const handlePhotoChange = async (files: FileList | null) => {
+    if (!files) return
+
+    const selectedFiles = Array.from(files).slice(0, 6)
+    const previews = await Promise.all(
+      selectedFiles.map(
+        (file) =>
+          new Promise<UserListing['photos'][number]>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () =>
+              resolve({
+                id: `${file.name}-${file.lastModified}`,
+                name: file.name,
+                dataUrl: String(reader.result),
+              })
+            reader.readAsDataURL(file)
+          }),
+      ),
+    )
+
+    setPhotos(previews)
+  }
+
+  const handleSubmitListing = () => {
+    if (!canSubmitListing) return
+
+    onCreateListing({
+      id: `${Date.now()}`,
+      aptName: aptName.trim(),
+      address: address.trim(),
+      detailAddress: detailAddress.trim(),
+      priceEok: listingPriceEok,
+      pyeong: listingPyeong,
+      floor: listingFloor,
+      ownerName: ownerName.trim(),
+      ownerPhone: ownerPhone.trim(),
+      memo: memo.trim(),
+      photos,
+      verificationStatus: 'owner-checking',
+      createdAt: new Date().toISOString(),
+    })
+    setRegistrationOpen(false)
+  }
 
   return (
     <div className="view-stack">
@@ -2879,11 +3115,125 @@ function ListingView({
         <span>첫 거래 베타</span>
         <strong>매도인 수수료 0원 검토</strong>
         <p>초기 성공 사례 확보를 위해 서울·경기 검증 가능 매물을 우선 모집합니다.</p>
-        <button className="primary-action" type="button">
+        <button className="primary-action" type="button" onClick={() => setRegistrationOpen(true)}>
           매물 등록 시작
           <ChevronRight size={18} />
         </button>
       </section>
+
+      {registrationOpen && (
+        <section className="listing-registration" aria-label="직거래 매물 등록">
+          <div className="listing-registration-head">
+            <div>
+              <span>매물등록</span>
+              <h3>매물 정보 입력 후 실소유자 확인으로 넘어갑니다</h3>
+            </div>
+            <strong>허위매물 차단</strong>
+          </div>
+
+          <div className="listing-form-grid">
+            <label>
+              <span>아파트명</span>
+              <input value={aptName} onChange={(event) => setAptName(event.target.value)} />
+            </label>
+            <label>
+              <span>주소</span>
+              <input value={address} onChange={(event) => setAddress(event.target.value)} />
+            </label>
+            <label>
+              <span>동·호수</span>
+              <input value={detailAddress} onChange={(event) => setDetailAddress(event.target.value)} />
+            </label>
+            <div className="listing-form-row">
+              <label>
+                <span>희망가</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  value={listingPriceEok}
+                  onChange={(event) => setListingPriceEok(Number(event.target.value))}
+                />
+                <em>억원</em>
+              </label>
+              <label>
+                <span>평형</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={listingPyeong}
+                  onChange={(event) => setListingPyeong(Number(event.target.value))}
+                />
+                <em>평</em>
+              </label>
+              <label>
+                <span>층</span>
+                <input
+                  type="number"
+                  value={listingFloor}
+                  onChange={(event) => setListingFloor(Number(event.target.value))}
+                />
+                <em>층</em>
+              </label>
+            </div>
+            <label>
+              <span>소유자 성명</span>
+              <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="검증용" />
+            </label>
+            <label>
+              <span>연락처</span>
+              <input value={ownerPhone} onChange={(event) => setOwnerPhone(event.target.value)} placeholder="검증용" />
+            </label>
+            <label>
+              <span>매물 설명</span>
+              <textarea value={memo} onChange={(event) => setMemo(event.target.value)} rows={3} />
+            </label>
+          </div>
+
+          <label className="photo-uploader">
+            <Camera size={18} />
+            <span>사진 업로드</span>
+            <input type="file" accept="image/*" multiple onChange={(event) => void handlePhotoChange(event.target.files)} />
+          </label>
+
+          {photos.length > 0 && (
+            <div className="listing-photo-preview" aria-label="업로드 사진 미리보기">
+              {photos.map((photo) => (
+                <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
+              ))}
+            </div>
+          )}
+
+          <div className="owner-verification-flow">
+            <div className="active">
+              <strong>1</strong>
+              <span>매물정보 입력</span>
+            </div>
+            <div className="active">
+              <strong>2</strong>
+              <span>등기·실소유자 확인</span>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>지도 매물 노출</span>
+            </div>
+          </div>
+
+          <p className="listing-register-note">
+            등록 즉시 지도에는 노란 매물 박스로 반영하고, 실제 운영에서는 등기부·신분확인·소유자 일치 검증을 통과한 매물만 공개합니다.
+          </p>
+
+          <button
+            className="primary-action"
+            type="button"
+            disabled={!canSubmitListing}
+            onClick={handleSubmitListing}
+          >
+            실소유자 확인 단계로 이동
+            <ChevronRight size={18} />
+          </button>
+        </section>
+      )}
 
       <div className="safety-timeline">
         {steps.map((step) => {
