@@ -33,7 +33,7 @@ type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
   pyeong: 'all' | 'p25' | 'p34' | 'under25' | 'over40'
-  price: 'all' | 'under10' | 'between10and30' | 'over30'
+  price: 'all' | 'under5' | 'between5and10' | 'between10and20' | 'between20and40' | 'over40'
   households: 'all' | 'over500' | 'over1000' | 'over3000'
   approval: 'all' | 'within10' | 'within20' | 'over30'
   jeonseRatio: 'all' | 'over60' | 'over70'
@@ -102,6 +102,14 @@ type LiveRtmsDeal = {
   sellerType: string
   status: 'active' | 'cancelled'
   registeredAt: string
+}
+
+type SearchSuggestion = {
+  id: string
+  title: string
+  subtitle: string
+  apartment: Apartment | null
+  deal: LiveRtmsDeal | null
 }
 
 type UserListing = {
@@ -643,9 +651,11 @@ const mapFilterGroups = [
     label: '가격',
     options: [
       ['all', '전체'],
-      ['under10', '10억 이하'],
-      ['between10and30', '10~30억'],
-      ['over30', '30억 이상'],
+      ['under5', '5억 이하'],
+      ['between5and10', '5~10억'],
+      ['between10and20', '10~20억'],
+      ['between20and40', '20~40억'],
+      ['over40', '40억 이상'],
     ],
   },
   {
@@ -967,9 +977,11 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
   if (filters.pyeong === 'under25' && deal.pyeong > 25) return false
   if (filters.pyeong === 'over40' && deal.pyeong < 40) return false
 
-  if (filters.price === 'under10' && deal.priceEok > 10) return false
-  if (filters.price === 'between10and30' && (deal.priceEok < 10 || deal.priceEok > 30)) return false
-  if (filters.price === 'over30' && deal.priceEok < 30) return false
+  if (filters.price === 'under5' && deal.priceEok > 5) return false
+  if (filters.price === 'between5and10' && (deal.priceEok < 5 || deal.priceEok > 10)) return false
+  if (filters.price === 'between10and20' && (deal.priceEok < 10 || deal.priceEok > 20)) return false
+  if (filters.price === 'between20and40' && (deal.priceEok < 20 || deal.priceEok > 40)) return false
+  if (filters.price === 'over40' && deal.priceEok < 40) return false
 
   if (filters.households === 'over500' && facts.householdCount < 500) return false
   if (filters.households === 'over1000' && facts.householdCount < 1000) return false
@@ -1011,6 +1023,7 @@ function App() {
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
+  const [appToast, setAppToast] = useState('')
   const contentPanelRef = useRef<HTMLElement | null>(null)
 
   const handleHomeClick = useCallback(() => {
@@ -1059,7 +1072,14 @@ function App() {
     })
   }, [query, selectedRegion])
 
-  const searchSuggestions = useMemo(() => {
+  useEffect(() => {
+    if (!appToast) return
+
+    const timerId = window.setTimeout(() => setAppToast(''), 4200)
+    return () => window.clearTimeout(timerId)
+  }, [appToast])
+
+  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
     const normalized = query.trim()
 
     if (normalized.length < 2) return []
@@ -1102,6 +1122,51 @@ function App() {
 
     return [...apartmentSuggestions, ...liveDealSuggestions]
   }, [capitalLiveDeals, query])
+
+  const defaultSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    const latestLiveSuggestions = Array.from(
+      capitalLiveDeals
+        .reduce((group, deal) => {
+          const key = deal.aptSeq || `${deal.aptName}-${deal.address}`
+          const current = group.get(key)
+          if (!current || dealTimestamp(deal) > dealTimestamp(current)) {
+            group.set(key, deal)
+          }
+          return group
+        }, new Map<string, LiveRtmsDeal>())
+        .values(),
+    )
+      .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
+      .slice(0, 3)
+      .map((deal) => ({
+        id: `popular-live-${deal.aptSeq || deal.id}`,
+        title: deal.aptName,
+        subtitle: `${deal.address} · 최근 ${formatEok(deal.priceEok)}`,
+        apartment: null,
+        deal,
+      }))
+
+    const fallbackSuggestions = apartments
+      .filter(
+        (apartment) =>
+          !latestLiveSuggestions.some((suggestion) =>
+            normalizeSearchText(suggestion.title).includes(normalizeSearchText(apartment.name)),
+          ),
+      )
+      .slice(0, Math.max(0, 4 - latestLiveSuggestions.length))
+      .map((apartment) => ({
+        id: `popular-${apartment.name}`,
+        title: apartment.name,
+        subtitle: `${apartment.region} · ${apartment.pyeong}`,
+        apartment,
+        deal: null,
+      }))
+
+    return [...latestLiveSuggestions, ...fallbackSuggestions]
+  }, [capitalLiveDeals])
+
+  const visibleSearchSuggestions = query.trim().length < 2 ? defaultSearchSuggestions : searchSuggestions
+  const searchHasNoResults = searchFocused && query.trim().length >= 2 && searchSuggestions.length === 0
 
   const listingApartmentCandidates = useMemo<ListingApartmentCandidate[]>(() => {
     const candidates = new Map<string, ListingApartmentCandidate>()
@@ -1151,12 +1216,13 @@ function App() {
     setFocusApartment(null)
   }
 
-  const handleSearchSuggestionClick = (suggestion: (typeof searchSuggestions)[number]) => {
+  const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
     setQuery(suggestion.title)
     setFocusApartment(suggestion.apartment)
     setFocusLiveDeal(suggestion.deal)
     setFocusListing(null)
     setMode('prices')
+    setAppToast(`${suggestion.title} 실거래 상세를 열었습니다.`)
     setSearchFocused(false)
   }
 
@@ -1166,6 +1232,7 @@ function App() {
     setFocusApartment(null)
     setFocusLiveDeal(null)
     setMode('prices')
+    setAppToast('매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.')
 
     window.setTimeout(() => {
       contentPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1267,14 +1334,22 @@ function App() {
               value={query}
               onChange={(event) => handleSearchChange(event.target.value)}
               onFocus={() => setSearchFocused(true)}
+              onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
               placeholder="아파트, 지역, 역 이름 검색"
             />
             <SlidersHorizontal size={18} />
           </label>
 
-          {searchFocused && searchSuggestions.length > 0 && (
-            <div className="search-suggestions" role="listbox" aria-label="추천 검색어">
-              {searchSuggestions.map((apartment) => (
+          {searchFocused && (visibleSearchSuggestions.length > 0 || searchHasNoResults) && (
+            <div
+              className={searchHasNoResults ? 'search-suggestions empty' : 'search-suggestions'}
+              role="listbox"
+              aria-label="추천 검색어"
+            >
+              {query.trim().length < 2 && visibleSearchSuggestions.length > 0 && (
+                <span className="suggestion-kicker">많이 찾는 단지</span>
+              )}
+              {visibleSearchSuggestions.map((apartment) => (
                 <button
                   key={`${apartment.id}-suggestion`}
                   type="button"
@@ -1285,6 +1360,12 @@ function App() {
                   <span>{apartment.subtitle}</span>
                 </button>
               ))}
+              {searchHasNoResults && (
+                <div className="suggestion-empty">
+                  <strong>검색 결과가 아직 없습니다</strong>
+                  <span>아파트명은 붙여쓰기나 일부 이름으로도 다시 찾아볼 수 있어요.</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1375,6 +1456,13 @@ function App() {
             )
           })}
         </nav>
+
+        {appToast && (
+          <div className="app-toast" role="status">
+            <CheckCircle2 size={17} />
+            <span>{appToast}</span>
+          </div>
+        )}
       </section>
 
       <aside className="desktop-rail" aria-label="서비스 요약">
@@ -2018,7 +2106,7 @@ function ApartmentMap({
         }
 
         const updateDensity = () => {
-          const compact = map.getLevel() >= 6
+          const compact = map.getLevel() >= 6 || (markers.length > 45 && map.getLevel() >= 4)
           markerNodes.forEach((node) => node.classList.toggle('compact', compact))
         }
 
@@ -2826,10 +2914,9 @@ function AiView({
   apartments: RecommendedApartment[]
 }) {
   const [hasSearched, setHasSearched] = useState(false)
-  const [searchResults, setSearchResults] = useState<RecommendedApartment[]>([])
+  const searchResults = useMemo(() => (hasSearched ? apartments.slice(0, 5) : []), [apartments, hasSearched])
 
   const handleRecommendationSearch = () => {
-    setSearchResults(apartments.slice(0, 5))
     setHasSearched(true)
   }
 
