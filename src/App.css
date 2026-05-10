@@ -56,7 +56,6 @@
   width: 188px;
   max-height: 44px;
   object-fit: contain;
-  filter: drop-shadow(0 5px 9px rgba(0, 91, 83, 0.18));
 }
 
 .brand-symbol {
@@ -525,7 +524,8 @@ h1 {
 }
 
 .kakao-map,
-.fallback-map {
+.fallback-map,
+.map-data-status {
   position: absolute;
   inset: 0;
 }
@@ -548,6 +548,53 @@ h1 {
     linear-gradient(28deg, transparent 0 31%, rgba(245, 194, 84, 0.34) 31% 39%, transparent 39%),
     linear-gradient(150deg, transparent 0 44%, rgba(255, 255, 255, 0.7) 44% 48%, transparent 48%),
     #edf6f2;
+}
+
+.map-data-status {
+  z-index: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(12, 181, 155, 0.08), transparent 48%),
+    #eef7f4;
+}
+
+.map-data-status .road,
+.map-data-status .map-river,
+.map-data-status .map-park {
+  opacity: 0.72;
+}
+
+.map-data-message {
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  top: 50%;
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 16px;
+  border: 1px solid rgba(12, 181, 155, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-muted);
+  text-align: center;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.13);
+  transform: translateY(-50%);
+}
+
+.map-data-message strong {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.map-data-message p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.42;
+  font-weight: 750;
 }
 
 .map-filter-overlay,

@@ -154,16 +154,22 @@ const asArray = <T>(value: T | T[] | undefined): T[] => {
   return Array.isArray(value) ? value : [value]
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const runInBatches = async <T, R>(
   items: T[],
   batchSize: number,
   handler: (item: T) => Promise<R>,
+  delayMs = 0,
 ) => {
   const results: R[] = []
 
   for (let index = 0; index < items.length; index += batchSize) {
     const batch = items.slice(index, index + batchSize)
     results.push(...(await Promise.all(batch.map(handler))))
+    if (delayMs > 0 && index + batchSize < items.length) {
+      await sleep(delayMs)
+    }
   }
 
   return results
@@ -371,6 +377,29 @@ const getRecentDealYmds = (baseYmd: string, count: number) => {
   })
 }
 
+const latestDealYmdCache = new Map<string, string>()
+
+const findLatestAvailableDealYmd = async (startYmd: string, serviceKey: string) => {
+  const cacheKey = startYmd
+  const cached = latestDealYmdCache.get(cacheKey)
+  if (cached) return cached
+
+  const [probeDistrict] = seoulDistricts.filter((district) => district.code === '11680')
+  const probeMonths = getRecentDealYmds(startYmd, 24)
+
+  for (const dealYmd of probeMonths) {
+    const result = await fetchDistrictTrades(probeDistrict, serviceKey, dealYmd, '1')
+    if (!result.error && result.totalCount > 0) {
+      latestDealYmdCache.set(cacheKey, dealYmd)
+      return dealYmd
+    }
+    await sleep(180)
+  }
+
+  latestDealYmdCache.set(cacheKey, startYmd)
+  return startYmd
+}
+
 const getMsUntilNextDailyRefresh = (hour: number) => {
   const now = new Date()
   const nextRefresh = new Date(now)
@@ -388,7 +417,8 @@ const rtmsCacheKey = (query: RtmsQuery) =>
 
 const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   const group = targetGroups[query.scope] ?? targetGroups.capital
-  const dealYmds = getRecentDealYmds(query.dealYmd, query.monthsBack)
+  const resolvedDealYmd = query.dealYmd === 'auto' ? await findLatestAvailableDealYmd(getDefaultDealYmd(), serviceKey) : query.dealYmd
+  const dealYmds = getRecentDealYmds(resolvedDealYmd, query.monthsBack)
   const districts = query.lawdCd
     ? [
         {
@@ -404,8 +434,8 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       dealYmd,
     })),
   )
-  const districtResults = await runInBatches(fetchTargets, 8, ({ district, dealYmd }) =>
-    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows),
+  const districtResults = await runInBatches(fetchTargets, 2, ({ district, dealYmd }) =>
+    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), 220,
   )
   const rawDeals = districtResults.flatMap((result) => result.rawDeals)
   const activeDeals = rawDeals.filter((deal) => deal.status === 'active')
@@ -419,7 +449,7 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       lawdCd: query.lawdCd || '',
       scope: query.scope,
       district: query.lawdCd ? districts[0].name : group.label,
-      dealYmd: query.dealYmd,
+      dealYmd: resolvedDealYmd,
       fromDealYmd: dealYmds[dealYmds.length - 1],
       toDealYmd: dealYmds[0],
       monthsBack: query.monthsBack,
@@ -461,18 +491,18 @@ const rtmsProxyPlugin = (): Plugin => ({
                 rtmsCacheKey({
                   lawdCd: '',
                   scope: 'capital',
-                  dealYmd: getDefaultDealYmd(),
-                  monthsBack: 12,
+                  dealYmd: 'auto',
+                  monthsBack: 3,
                   numOfRows: '1000',
-                  limit: 8000,
+                  limit: 50000,
                 }),
                 {
                   lawdCd: '',
                   scope: 'capital',
-                  dealYmd: getDefaultDealYmd(),
-                  monthsBack: 12,
+                  dealYmd: 'auto',
+                  monthsBack: 3,
                   numOfRows: '1000',
-                  limit: 8000,
+                  limit: 50000,
                 },
               ] as const,
             ]
@@ -515,7 +545,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         dealYmd: incomingUrl.searchParams.get('dealYmd') || getDefaultDealYmd(),
         monthsBack: Math.min(Math.max(Number(incomingUrl.searchParams.get('monthsBack')) || 1, 1), 84),
         numOfRows: String(Math.min(Number(incomingUrl.searchParams.get('numOfRows')) || 1000, 1000)),
-        limit: Math.min(Number(incomingUrl.searchParams.get('limit')) || 8000, 12000),
+        limit: Math.min(Number(incomingUrl.searchParams.get('limit')) || 50000, 50000),
       }
       const cacheKey = rtmsCacheKey(query)
       rtmsQueries.set(cacheKey, query)

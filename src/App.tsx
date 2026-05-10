@@ -149,6 +149,8 @@ type RtmsResponse = {
   deals: LiveRtmsDeal[]
 }
 
+type RtmsStatus = 'loading' | 'ready' | 'error'
+
 type BuildingLedger = {
   source: string
   buildingName: string
@@ -740,6 +742,7 @@ const getDefaultRtmsDealYmd = () => {
   date.setMonth(date.getMonth() - 1)
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
+const getMapRtmsDealYmd = () => 'auto'
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
 const toDealYmd = (date: string) => date.slice(0, 7).replace('-', '')
 const oneMonthAverage = (apartment: Apartment) =>
@@ -1368,6 +1371,8 @@ function PriceView({
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
+  const [rtmsStatus, setRtmsStatus] = useState<RtmsStatus>('loading')
+  const [rtmsError, setRtmsError] = useState('')
   const [syncTick, setSyncTick] = useState(0)
   const [filterOpen, setFilterOpen] = useState(false)
   const [mapFilters, setMapFilters] = useState<MapFilterState>(defaultMapFilters)
@@ -1380,7 +1385,7 @@ function PriceView({
   )
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
-  const defaultDealYmd = useMemo(() => getDefaultRtmsDealYmd(), [])
+  const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
   const latestAverage =
     apartments.reduce((sum, apartment) => sum + apartment.priceEok, 0) / Math.max(apartments.length, 1)
   const totalVolume = apartments.reduce((sum, apartment) => sum + apartment.volume, 0)
@@ -1445,9 +1450,11 @@ function PriceView({
     const controller = new AbortController()
 
     const fetchRtmsDeals = async () => {
+      setRtmsStatus('loading')
+      setRtmsError('')
       try {
         const response = await fetch(
-          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=12&numOfRows=1000&limit=8000`,
+          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
           { signal: controller.signal },
         )
         const payload = (await response.json()) as RtmsResponse | { error?: string }
@@ -1459,9 +1466,13 @@ function PriceView({
         const rtmsPayload = payload as RtmsResponse
         setRtmsData(rtmsPayload)
         onLiveDealsChange(rtmsPayload.deals)
+        setRtmsStatus('ready')
       } catch (error) {
         if (controller.signal.aborted) return
-        console.warn(error instanceof Error ? error.message : 'RTMS API 호출 실패')
+        const message = error instanceof Error ? error.message : 'RTMS API 호출 실패'
+        console.warn(message)
+        setRtmsStatus('error')
+        setRtmsError(message)
       }
     }
 
@@ -1517,12 +1528,13 @@ function PriceView({
 
       {view === 'map' ? (
         <ApartmentMap
-          apartments={apartments}
           liveDeals={mapDeals}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
           focusListing={focusListing}
           focusLiveDeal={focusLiveDeal}
+          rtmsStatus={rtmsStatus}
+          rtmsError={rtmsError}
           onFilterClick={() => setFilterOpen(true)}
           selectedMarker={selectedMapMarker}
           onSelectMarker={handleMapMarkerSelect}
@@ -1702,7 +1714,7 @@ const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) 
   return button
 }
 
-const MAX_GEOCODED_TRADE_MARKERS = 360
+const MAX_GEOCODED_TRADE_MARKERS = 1200
 
 const geocodeDealMarkers = async (
   kakao: KakaoNamespace,
@@ -1830,23 +1842,25 @@ const geocodeListingMarkers = async (
 }
 
 function ApartmentMap({
-  apartments,
   liveDeals,
   activeFilterCount,
   userListings,
   focusListing,
   focusLiveDeal,
+  rtmsStatus,
+  rtmsError,
   onFilterClick,
   selectedMarker,
   onSelectMarker,
   onClearMarker,
 }: {
-  apartments: Apartment[]
   liveDeals: LiveRtmsDeal[]
   activeFilterCount: number
   userListings: UserListing[]
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
+  rtmsStatus: RtmsStatus
+  rtmsError: string
   onFilterClick: () => void
   selectedMarker: MapValueMarker | null
   onSelectMarker: (marker: MapValueMarker, options?: { scrollToDetail?: boolean }) => void
@@ -1898,10 +1912,7 @@ function ApartmentMap({
         ])
         if (disposed) return
 
-        const markers = [
-          ...listingMarkers,
-          ...(liveMarkers.length > 0 ? liveMarkers : apartmentMarkers(apartments)),
-        ]
+        const markers = [...listingMarkers, ...liveMarkers]
         if (markers.length === 0) {
           setMapReady(true)
           return
@@ -1966,7 +1977,7 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
+  }, [focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
 
   return (
     <section className="map-panel">
@@ -1980,7 +1991,9 @@ function ApartmentMap({
 
       <div className="map-canvas">
         <div ref={mapNode} className={mapReady ? 'kakao-map visible' : 'kakao-map'} />
-        {(!mapReady || mapError) && <FallbackMap apartments={apartments} onSelect={onSelectMarker} />}
+        {(!mapReady || mapError || (rtmsStatus !== 'loading' && liveDeals.length === 0 && userListings.length === 0)) && (
+          <MapDataStatus status={rtmsStatus} error={rtmsError} mapError={mapError} />
+        )}
         <div className="map-filter-overlay" aria-label="지도 거래 필터">
           <button className="active" type="button">실거래</button>
           <button type="button">매매</button>
@@ -2004,44 +2017,38 @@ function ApartmentMap({
   )
 }
 
-function FallbackMap({
-  apartments,
-  onSelect,
+function MapDataStatus({
+  status,
+  error,
+  mapError,
 }: {
-  apartments: Apartment[]
-  onSelect: (marker: MapValueMarker) => void
+  status: RtmsStatus
+  error: string
+  mapError: boolean
 }) {
-  const markers = apartmentMarkers(apartments)
-
   return (
-    <div className="fallback-map" aria-label="Kakao 지도 키 입력 전 가격 지도 미리보기">
+    <div className="map-data-status" aria-live="polite">
       <div className="map-river" />
       <div className="map-park park-a" />
       <div className="map-park park-b" />
       <div className="road road-main" />
       <div className="road road-cross" />
       <div className="road road-side" />
-      <span className="map-place place-a">반포</span>
-      <span className="map-place place-b">송파</span>
-      <span className="map-place place-c">판교</span>
-
-      {markers.map((marker, index) => (
-        <button
-          key={`${marker.id}-marker`}
-          className="map-value-marker sale"
-          style={{
-            left: `${apartments[index].markerPosition.x}%`,
-            top: `${apartments[index].markerPosition.y}%`,
-          }}
-          type="button"
-          onClick={() => onSelect(marker)}
-          aria-label={`${marker.aptName} 최근 거래 ${formatEok(marker.priceEok)}`}
-        >
-          <span className="marker-kind">매매</span>
-          <strong>{formatEok(marker.priceEok)}</strong>
-          <em>{marker.subLabel}</em>
-        </button>
-      ))}
+      <div className="map-data-message">
+        <Building2 size={22} />
+        <strong>
+          {mapError
+            ? 'Kakao 지도 연결 확인중'
+            : status === 'loading'
+              ? '서울·경기·인천 실거래 API 불러오는 중'
+              : '표시할 실제 실거래가 없습니다'}
+        </strong>
+        <p>
+          {status === 'error'
+            ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
+            : '국토교통부 RTMS 응답만 지도에 표시합니다. 샘플 단지는 섞지 않습니다.'}
+        </p>
+      </div>
     </div>
   )
 }
