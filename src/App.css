@@ -2496,6 +2496,95 @@ h1 {
   gap: 6px;
 }
 
+.apartment-suggest-field {
+  position: relative;
+  z-index: 6;
+}
+
+.apartment-suggest-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(12, 181, 155, 0.28);
+  border-radius: 16px;
+  padding: 0 12px;
+  background: #f9fcfb;
+  color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.apartment-suggest-input input {
+  border: 0;
+  border-radius: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+
+.listing-apartment-suggestions {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 6px;
+  max-height: 290px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid rgba(12, 181, 155, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 20px 45px rgba(10, 27, 35, 0.14);
+}
+
+.listing-apartment-suggestions button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 12px;
+  background: #f4fbf8;
+  color: var(--text-strong);
+  text-align: left;
+}
+
+.listing-apartment-suggestions button:active {
+  transform: scale(0.99);
+}
+
+.listing-apartment-suggestions strong {
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.listing-apartment-suggestions span,
+.listing-apartment-suggestions em {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.listing-apartment-suggestions em {
+  color: var(--accent);
+}
+
+.listing-address-preview {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border-radius: 14px;
+  padding: 9px 11px;
+  background: rgba(12, 181, 155, 0.09);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .listing-form-grid input,
 .listing-form-grid textarea {
   width: 100%;
@@ -2507,6 +2596,13 @@ h1 {
   font-weight: 850;
 }
 
+.listing-form-grid .apartment-suggest-input input {
+  border: 0;
+  padding-inline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .listing-form-grid textarea {
   resize: vertical;
   line-height: 1.45;
@@ -2516,6 +2612,10 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.listing-form-row.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .listing-form-row label {

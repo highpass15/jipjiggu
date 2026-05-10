@@ -109,6 +109,8 @@ type UserListing = {
   aptName: string
   address: string
   detailAddress: string
+  buildingDong: string
+  unitHo: string
   priceEok: number
   pyeong: number
   floor: number
@@ -122,6 +124,18 @@ type UserListing = {
   }>
   verificationStatus: 'owner-checking' | 'verified'
   createdAt: string
+}
+
+type ListingApartmentCandidate = {
+  id: string
+  name: string
+  address: string
+  region: string
+  pyeong?: number
+  latestPriceEok?: number
+  latestDealDate?: string
+  source: 'rtms' | 'curated'
+  searchText: string
 }
 
 type RtmsMeta = {
@@ -1089,6 +1103,49 @@ function App() {
     return [...apartmentSuggestions, ...liveDealSuggestions]
   }, [capitalLiveDeals, query])
 
+  const listingApartmentCandidates = useMemo<ListingApartmentCandidate[]>(() => {
+    const candidates = new Map<string, ListingApartmentCandidate>()
+    const latestDeals = [...capitalLiveDeals].sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
+
+    latestDeals.forEach((deal) => {
+      const key = normalizeSearchText(`${deal.aptName}-${deal.address}`)
+      if (candidates.has(key)) return
+
+      candidates.set(key, {
+        id: `rtms-${deal.aptSeq || deal.id}`,
+        name: deal.aptName,
+        address: deal.address,
+        region: `${deal.district} ${deal.legalDong}`.trim(),
+        pyeong: Math.round(deal.pyeong),
+        latestPriceEok: deal.priceEok,
+        latestDealDate: deal.dealDate,
+        source: 'rtms',
+        searchText: normalizeSearchText(`${deal.aptName} ${deal.address} ${deal.legalDong} ${deal.district}`),
+      })
+    })
+
+    apartments.forEach((apartment) => {
+      const key = normalizeSearchText(`${apartment.name}-${apartment.region}`)
+      if (candidates.has(key)) return
+
+      candidates.set(key, {
+        id: `curated-${apartment.name}`,
+        name: apartment.name,
+        address: apartment.region,
+        region: apartment.region,
+        pyeong: Number.parseInt(apartment.pyeong, 10),
+        latestPriceEok: apartment.priceEok,
+        latestDealDate: apartment.recentDeals[0]?.date,
+        source: 'curated',
+        searchText: normalizeSearchText(
+          `${apartment.name} ${apartment.region} ${apartment.station} ${apartmentSearchAliases[apartment.name] ?? ''}`,
+        ),
+      })
+    })
+
+    return Array.from(candidates.values()).slice(0, 600)
+  }, [capitalLiveDeals])
+
   const handleSearchChange = (value: string) => {
     setQuery(value)
     setFocusApartment(null)
@@ -1294,6 +1351,7 @@ function App() {
               salePrice={salePrice}
               setSalePrice={setSalePrice}
               brokerage={brokerage}
+              listingCandidates={listingApartmentCandidates}
               onCreateListing={handleListingCreate}
             />
           )}
@@ -2985,17 +3043,21 @@ function ListingView({
   salePrice,
   setSalePrice,
   brokerage,
+  listingCandidates,
   onCreateListing,
 }: {
   salePrice: number
   setSalePrice: (value: number) => void
   brokerage: { legalCapBothSides: number; jipjigguFee: number; savings: number }
+  listingCandidates: ListingApartmentCandidate[]
   onCreateListing: (listing: UserListing) => void
 }) {
   const [registrationOpen, setRegistrationOpen] = useState(false)
   const [aptName, setAptName] = useState('센트럴파크푸르지오써밋')
   const [address, setAddress] = useState('경기 과천시 부림동 96')
-  const [detailAddress, setDetailAddress] = useState('101동 1103호')
+  const [buildingDong, setBuildingDong] = useState('101')
+  const [unitHo, setUnitHo] = useState('1103')
+  const [aptSearchFocused, setAptSearchFocused] = useState(false)
   const [listingPriceEok, setListingPriceEok] = useState(salePrice)
   const [listingPyeong, setListingPyeong] = useState(24)
   const [listingFloor, setListingFloor] = useState(11)
@@ -3009,7 +3071,40 @@ function ListingView({
     { icon: ClipboardCheck, title: '진위 검증', detail: '실소유자 일치 여부와 허위매물 여부 확인' },
     { icon: Landmark, title: '계약서 작성', detail: '중개상한 20% 수수료로 공인중개사와 계약서 작성' },
   ]
-  const canSubmitListing = Boolean(aptName.trim() && address.trim() && detailAddress.trim() && listingPriceEok > 0)
+  const apartmentSuggestions = useMemo(() => {
+    const normalized = normalizeSearchText(aptName)
+    if (normalized.length < 2) return []
+
+    return listingCandidates
+      .filter(
+        (candidate) =>
+          candidate.searchText.includes(normalized) ||
+          fuzzyIncludes(candidate.searchText, normalized) ||
+          normalizeSearchText(candidate.name).includes(normalized),
+      )
+      .slice(0, 6)
+  }, [aptName, listingCandidates])
+  const normalizedBuildingDong = buildingDong.trim().replace(/동$/, '')
+  const normalizedUnitHo = unitHo.trim().replace(/호$/, '')
+  const detailAddress = `${normalizedBuildingDong}동 ${normalizedUnitHo}호`
+  const canSubmitListing = Boolean(
+    aptName.trim() &&
+      address.trim() &&
+      normalizedBuildingDong &&
+      normalizedUnitHo &&
+      listingPriceEok > 0,
+  )
+
+  const handleApartmentCandidateSelect = (candidate: ListingApartmentCandidate) => {
+    setAptName(candidate.name)
+    setAddress(candidate.address)
+    if (candidate.pyeong) setListingPyeong(candidate.pyeong)
+    if (candidate.latestPriceEok) {
+      setListingPriceEok(Number(candidate.latestPriceEok.toFixed(1)))
+      setSalePrice(Number(candidate.latestPriceEok.toFixed(1)))
+    }
+    setAptSearchFocused(false)
+  }
 
   const handlePhotoChange = async (files: FileList | null) => {
     if (!files) return
@@ -3042,6 +3137,8 @@ function ListingView({
       aptName: aptName.trim(),
       address: address.trim(),
       detailAddress: detailAddress.trim(),
+      buildingDong: normalizedBuildingDong,
+      unitHo: normalizedUnitHo,
       priceEok: listingPriceEok,
       pyeong: listingPyeong,
       floor: listingFloor,
@@ -3139,18 +3236,72 @@ function ListingView({
           </div>
 
           <div className="listing-form-grid">
-            <label>
+            <label className="apartment-suggest-field">
               <span>아파트명</span>
-              <input value={aptName} onChange={(event) => setAptName(event.target.value)} />
+              <div className="apartment-suggest-input">
+                <Search size={18} />
+                <input
+                  value={aptName}
+                  onChange={(event) => {
+                    setAptName(event.target.value)
+                    setAptSearchFocused(true)
+                  }}
+                  onFocus={() => setAptSearchFocused(true)}
+                  onBlur={() => window.setTimeout(() => setAptSearchFocused(false), 140)}
+                  placeholder="아파트명을 입력하세요"
+                />
+              </div>
+              {aptSearchFocused && apartmentSuggestions.length > 0 && (
+                <div className="listing-apartment-suggestions" role="listbox">
+                  {apartmentSuggestions.map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleApartmentCandidateSelect(candidate)}
+                    >
+                      <strong>{candidate.name}</strong>
+                      <span>{candidate.address}</span>
+                      <em>
+                        {candidate.latestPriceEok ? formatEok(candidate.latestPriceEok) : '주소 확인'}
+                        {candidate.pyeong ? ` · ${candidate.pyeong}평` : ''}
+                        {candidate.latestDealDate ? ` · ${formatShortDate(candidate.latestDealDate)}` : ''}
+                      </em>
+                    </button>
+                  ))}
+                </div>
+              )}
             </label>
             <label>
               <span>주소</span>
               <input value={address} onChange={(event) => setAddress(event.target.value)} />
             </label>
-            <label>
-              <span>동·호수</span>
-              <input value={detailAddress} onChange={(event) => setDetailAddress(event.target.value)} />
-            </label>
+            <div className="listing-address-preview">
+              <Building2 size={16} />
+              <span>{address || '아파트를 선택하면 주소가 자동으로 들어갑니다'}</span>
+            </div>
+            <div className="listing-form-row compact">
+              <label>
+                <span>동</span>
+                <input
+                  inputMode="numeric"
+                  value={buildingDong}
+                  onChange={(event) => setBuildingDong(event.target.value)}
+                  placeholder="101"
+                />
+                <em>동</em>
+              </label>
+              <label>
+                <span>호수</span>
+                <input
+                  inputMode="numeric"
+                  value={unitHo}
+                  onChange={(event) => setUnitHo(event.target.value)}
+                  placeholder="1103"
+                />
+                <em>호</em>
+              </label>
+            </div>
             <div className="listing-form-row">
               <label>
                 <span>희망가</span>
