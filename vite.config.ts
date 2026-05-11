@@ -470,6 +470,35 @@ const createDefaultCapitalQuery = (): RtmsQuery => ({
   limit: 50000,
 })
 
+const filterRtmsPayloadFromCapitalCache = (serializedPayload: string, query: RtmsQuery) => {
+  const payload = JSON.parse(serializedPayload) as {
+    meta: Record<string, unknown>
+    deals: Array<ReturnType<typeof normalizeRtmsItem>>
+  }
+  const group = targetGroups[query.scope] ?? targetGroups.capital
+  const districtCodes = new Set(group.districts.map((district) => district.code))
+  const deals = payload.deals
+    .filter((deal) => {
+      if (query.lawdCd) return deal.lawdCd === query.lawdCd
+      return districtCodes.has(deal.lawdCd)
+    })
+    .slice(0, query.limit)
+
+  return JSON.stringify({
+    meta: {
+      ...payload.meta,
+      lawdCd: query.lawdCd || '',
+      scope: query.scope,
+      district: query.lawdCd ? districtNameByLawdCd[query.lawdCd] || query.lawdCd : group.label,
+      returnedCount: deals.length,
+      filteredCount: deals.length,
+      directCount: deals.filter((deal) => deal.tradeType === 'direct').length,
+      cacheDerivedFrom: 'capital',
+    },
+    deals,
+  })
+}
+
 const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   const group = targetGroups[query.scope] ?? targetGroups.capital
   const resolvedDealYmd = query.dealYmd === 'auto' ? await findLatestAvailableDealYmd(getDefaultDealYmd(), serviceKey) : query.dealYmd
@@ -655,15 +684,24 @@ const rtmsProxyPlugin = (): Plugin => ({
 
         const defaultCapitalQuery = createDefaultCapitalQuery()
         const defaultCapitalCacheKey = rtmsCacheKey(defaultCapitalQuery)
-        const defaultCapitalPayload =
-          query.scope === 'capital' && !query.lawdCd
-            ? rtmsCache.get(defaultCapitalCacheKey) || (await readRtmsCacheFile(defaultCapitalCacheKey))
-            : ''
+        const defaultCapitalPayload = rtmsCache.get(defaultCapitalCacheKey) || (await readRtmsCacheFile(defaultCapitalCacheKey))
 
-        if (defaultCapitalPayload) {
+        if (defaultCapitalPayload && query.scope === 'capital' && !query.lawdCd) {
           rtmsCache.set(defaultCapitalCacheKey, defaultCapitalPayload)
           response.statusCode = 200
           response.end(defaultCapitalPayload)
+          return
+        }
+
+        if (
+          defaultCapitalPayload &&
+          query.dealYmd === 'auto' &&
+          query.monthsBack <= rtmsDefaultCapitalMonthsBack
+        ) {
+          const derivedPayload = filterRtmsPayloadFromCapitalCache(defaultCapitalPayload, query)
+          rtmsCache.set(cacheKey, derivedPayload)
+          response.statusCode = 200
+          response.end(derivedPayload)
           return
         }
 
