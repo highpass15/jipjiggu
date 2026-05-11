@@ -171,7 +171,7 @@ type RtmsResponse = {
   deals: LiveRtmsDeal[]
 }
 
-type RtmsStatus = 'loading' | 'ready' | 'error'
+type RtmsStatus = 'loading' | 'refreshing' | 'ready' | 'error'
 
 type BuildingLedger = {
   source: string
@@ -1612,7 +1612,7 @@ function PriceView({
         const rtmsPayload = payload as RtmsResponse
         setRtmsData(rtmsPayload)
         onLiveDealsChange(rtmsPayload.deals)
-        setRtmsStatus('ready')
+        setRtmsStatus(rtmsPayload.meta.resultCode === 'REFRESHING' ? 'refreshing' : 'ready')
       } catch (error) {
         if (controller.signal.aborted) return
         const message = error instanceof Error ? error.message : 'RTMS API 호출 실패'
@@ -2187,13 +2187,17 @@ function MapDataStatus({
             ? 'Kakao 지도 도메인 등록 필요'
             : status === 'loading'
               ? '서울·경기·인천 실거래 API 불러오는 중'
-              : '표시할 실제 실거래가 없습니다'}
+              : status === 'refreshing'
+                ? '서울·경기·인천 실거래 캐시 수집중'
+                : '표시할 실제 실거래가 없습니다'}
         </strong>
         <p>
           {mapError
             ? 'Kakao Developers의 JavaScript 키 Web 도메인에 https://jipjiggu.onrender.com 을 추가하면 지도가 표시됩니다.'
             : status === 'error'
             ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
+            : status === 'refreshing'
+              ? '매일 새벽 1시에 실제 RTMS 데이터를 캐시에 저장합니다. 오늘은 공공데이터 호출 한도 회복 후 자동 반영됩니다.'
             : '매일 새벽 1시에 서울·경기·인천 RTMS 캐시를 갱신합니다. 샘플 단지는 섞지 않습니다.'}
         </p>
       </div>
