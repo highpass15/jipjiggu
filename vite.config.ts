@@ -581,6 +581,53 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   }
 }
 
+type TelegramLead = {
+  type?: string
+  payload?: Record<string, unknown>
+}
+
+const readRequestBody = (request: NodeJS.ReadableStream) =>
+  new Promise<string>((resolve, reject) => {
+    let body = ''
+
+    request.on('data', (chunk) => {
+      body += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk)
+    })
+    request.on('end', () => resolve(body))
+    request.on('error', reject)
+  })
+
+const telegramLeadTitleByType: Record<string, string> = {
+  listing: '직거래 매물 등록',
+  appraisal: '상속증여 탁상감정 신청',
+  signup: '회원가입/알림 신청',
+  review: '리뷰 작성',
+}
+
+const stringifyLeadValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return ''
+  if (Array.isArray(value)) return value.map(stringifyLeadValue).filter(Boolean).join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+const formatTelegramLeadMessage = (lead: TelegramLead) => {
+  const type = lead.type || 'lead'
+  const title = telegramLeadTitleByType[type] ?? '새 문의'
+  const payload = lead.payload ?? {}
+  const createdAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+  const lines = [`[집직구] ${title}`, `접수시각: ${createdAt}`]
+
+  Object.entries(payload).forEach(([key, value]) => {
+    const text = stringifyLeadValue(value)
+    if (text) {
+      lines.push(`${key}: ${text}`)
+    }
+  })
+
+  return lines.join('\n').slice(0, 3900)
+}
+
 const rtmsProxyPlugin = (): Plugin => ({
   name: 'jipjiggu-rtms-proxy',
   configureServer(server) {
@@ -633,6 +680,60 @@ const rtmsProxyPlugin = (): Plugin => ({
     scheduleDailyRefresh()
     server.httpServer?.once('close', () => {
       if (dailyRefreshTimer) clearTimeout(dailyRefreshTimer)
+    })
+
+    server.middlewares.use('/api/telegram/notify', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+
+      if (request.method !== 'POST') {
+        response.statusCode = 405
+        response.end(JSON.stringify({ error: 'Method not allowed' }))
+        return
+      }
+
+      try {
+        const env = loadEnv('', process.cwd(), '')
+        const botToken = env.TELEGRAM_BOT_TOKEN
+        const chatId = env.TELEGRAM_CHAT_ID
+        const rawBody = await readRequestBody(request)
+        const lead = rawBody ? (JSON.parse(rawBody) as TelegramLead) : {}
+        const text = formatTelegramLeadMessage(lead)
+
+        if (!botToken || !chatId) {
+          response.statusCode = 200
+          response.end(
+            JSON.stringify({
+              ok: false,
+              configured: false,
+              message: 'TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 설정되지 않았습니다.',
+            }),
+          )
+          return
+        }
+
+        const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            disable_web_page_preview: true,
+          }),
+        })
+
+        if (!telegramResponse.ok) {
+          const telegramRaw = await telegramResponse.text()
+          response.statusCode = 502
+          response.end(JSON.stringify({ ok: false, error: telegramRaw || telegramResponse.statusText }))
+          return
+        }
+
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: true, configured: true }))
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
     })
 
     server.middlewares.use('/api/rtms/refresh', async (request, response) => {

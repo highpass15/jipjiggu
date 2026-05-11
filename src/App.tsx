@@ -135,6 +135,8 @@ type UserListing = {
   createdAt: string
 }
 
+type LeadPayload = Record<string, string | number | boolean | null | undefined>
+
 type ListingApartmentCandidate = {
   id: string
   name: string
@@ -283,6 +285,7 @@ type MapValueMarker = {
   dealDate?: string
   tradeTypeLabel?: string
   priceEok: number
+  dateLabel?: string
   subLabel: string
   lat: number
   lng: number
@@ -291,6 +294,7 @@ type MapValueMarker = {
   relatedDeals: LiveRtmsDeal[]
   nearbyDeals?: LiveRtmsDeal[]
   listing?: UserListing
+  apartment?: Apartment
 }
 
 declare global {
@@ -770,39 +774,24 @@ const getDefaultRtmsDealYmd = () => {
 }
 const getMapRtmsDealYmd = () => 'auto'
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
-const toDealYmd = (date: string) => date.slice(0, 7).replace('-', '')
-const oneMonthAverage = (apartment: Apartment) =>
-  apartment.recentDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / apartment.recentDeals.length
-
-const taxBrackets = [
-  { limit: 1, rate: 0.1, deduction: 0 },
-  { limit: 5, rate: 0.2, deduction: 0.1 },
-  { limit: 10, rate: 0.3, deduction: 0.6 },
-  { limit: 30, rate: 0.4, deduction: 1.6 },
-  { limit: Number.POSITIVE_INFINITY, rate: 0.5, deduction: 4.6 },
-]
-
-const giftDeductionByRelation = {
-  spouse: { label: '배우자', deductionEok: 6 },
-  ascendant: { label: '부모·조부모', deductionEok: 0.5 },
-  minorAscendant: { label: '미성년 자녀', deductionEok: 0.2 },
-  descendant: { label: '자녀·손자녀', deductionEok: 0.5 },
-  relative: { label: '기타 친족', deductionEok: 0.1 },
-  other: { label: '그 외', deductionEok: 0 },
+const formatMarkerMonth = (date?: string) => {
+  if (!date) return ''
+  const normalized = date.includes('-') ? date : `20${date.replaceAll('.', '-')}`
+  const [year, month] = normalized.split('-')
+  return year && month ? `${year.slice(2)}.${month.padStart(2, '0')}` : ''
 }
-
-type GiftRelation = keyof typeof giftDeductionByRelation
-
-const calculateProgressiveTax = (taxBaseEok: number) => {
-  const bracket = taxBrackets.find((item) => taxBaseEok <= item.limit) ?? taxBrackets[taxBrackets.length - 1]
-  const calculatedEok = Math.max(0, taxBaseEok * bracket.rate - bracket.deduction)
-
-  return {
-    taxEok: calculatedEok,
-    rateLabel: `${Math.round(bracket.rate * 100)}%`,
-    deductionEok: bracket.deduction,
+const sendTelegramLead = async (type: string, payload: LeadPayload) => {
+  try {
+    await fetch('/api/telegram/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, payload }),
+    })
+  } catch {
+    // 알림 실패가 사용자 접수 흐름을 막지 않도록 조용히 처리합니다.
   }
 }
+const toDealYmd = (date: string) => date.slice(0, 7).replace('-', '')
 
 const getMonthCountFrom2022 = (baseYmd: string) => {
   const year = Number(baseYmd.slice(0, 4))
@@ -1235,6 +1224,19 @@ function App() {
     setFocusLiveDeal(null)
     setMode('prices')
     setAppToast('매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.')
+    void sendTelegramLead('listing', {
+      아파트: listing.aptName,
+      주소: listing.address,
+      동호수: listing.detailAddress,
+      희망가: formatEok(listing.priceEok),
+      평형: `${listing.pyeong}평`,
+      층: `${listing.floor}층`,
+      소유자: listing.ownerName || '미입력',
+      연락처: listing.ownerPhone || '미입력',
+      사진수: `${listing.photos.length}장`,
+      설명: listing.memo || '미입력',
+      접수시각: new Date(listing.createdAt).toLocaleString('ko-KR'),
+    })
 
     window.setTimeout(() => {
       contentPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1699,6 +1701,7 @@ function PriceView({
       {view === 'map' ? (
         <ApartmentMap
           liveDeals={mapDeals}
+          apartments={apartments}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
           focusListing={focusListing}
@@ -1822,46 +1825,52 @@ function MapFilterSheet({
 }
 
 const apartmentMarkers = (apartments: Apartment[]): MapValueMarker[] =>
-  apartments.map((apartment) => ({
-    id: apartment.name,
-    label: '매매',
-    aptName: apartment.name,
-    address: apartment.region,
-    lawdCd: getLawdCdFromRegion(apartment.region),
-    dealDate: '2025-04-01',
-    tradeTypeLabel: '샘플 평균',
-    priceEok: oneMonthAverage(apartment),
-    subLabel: apartment.pyeong,
-    lat: apartment.lat,
-    lng: apartment.lng,
-    tone: 'sale',
-    relatedDeals: apartment.recentDeals.map((deal, index) => ({
-      id: `${apartment.name}-${deal.date}-${index}`,
-      aptSeq: apartment.name,
+  apartments.map((apartment) => {
+    const latestDeal = apartment.recentDeals[0]
+
+    return {
+      id: apartment.name,
+      label: '단지',
       aptName: apartment.name,
       address: apartment.region,
-      legalDong: apartment.region.split(' ').at(-1) ?? '',
-      jibun: '',
-      umdCd: '',
-      bonbun: '',
-      bubun: '',
-      landCd: '1',
       lawdCd: getLawdCdFromRegion(apartment.region),
-      district: apartment.region.split(' ').slice(0, 2).join(' '),
-      dealDate: `20${deal.date.replaceAll('.', '-')}`,
-      priceEok: deal.priceEok,
-      areaM2: 0,
-      pyeong: Number(apartment.pyeong.replace('평', '')),
-      floor: 0,
-      buildYear: apartment.approvalYear,
-      tradeType: 'brokered',
-      tradeTypeLabel: '샘플',
-      buyerType: '',
-      sellerType: '',
-      status: 'active',
-      registeredAt: '',
-    })),
-  }))
+      dealDate: latestDeal ? `20${latestDeal.date.replaceAll('.', '-')}` : undefined,
+      tradeTypeLabel: '기본 스펙',
+      priceEok: apartment.priceEok,
+      dateLabel: formatMarkerMonth(latestDeal?.date),
+      subLabel: apartment.pyeong,
+      lat: apartment.lat,
+      lng: apartment.lng,
+      tone: 'office' as const,
+      apartment,
+      relatedDeals: apartment.recentDeals.map((deal, index) => ({
+        id: `${apartment.name}-${deal.date}-${index}`,
+        aptSeq: apartment.name,
+        aptName: apartment.name,
+        address: apartment.region,
+        legalDong: apartment.region.split(' ').at(-1) ?? '',
+        jibun: '',
+        umdCd: '',
+        bonbun: '',
+        bubun: '',
+        landCd: '1',
+        lawdCd: getLawdCdFromRegion(apartment.region),
+        district: apartment.region.split(' ').slice(0, 2).join(' '),
+        dealDate: `20${deal.date.replaceAll('.', '-')}`,
+        priceEok: deal.priceEok,
+        areaM2: 0,
+        pyeong: Number(apartment.pyeong.replace('평', '')),
+        floor: 0,
+        buildYear: apartment.approvalYear,
+        tradeType: 'brokered',
+        tradeTypeLabel: '참고 거래',
+        buyerType: '',
+        sellerType: '',
+        status: 'active',
+        registeredAt: '',
+      })),
+    }
+  })
 
 const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) => {
   const button = document.createElement('button')
@@ -1877,10 +1886,14 @@ const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) 
   const price = document.createElement('strong')
   price.textContent = formatEok(marker.priceEok)
 
+  const date = document.createElement('small')
+  date.className = 'marker-date'
+  date.textContent = marker.dateLabel || formatMarkerMonth(marker.dealDate)
+
   const sub = document.createElement('em')
   sub.textContent = marker.subLabel
 
-  button.append(label, price, sub)
+  button.append(label, price, date, sub)
   return button
 }
 
@@ -1941,11 +1954,12 @@ const geocodeDealMarkers = async (
                 lawdCd: latestDeal.lawdCd,
                 aptSeq: latestDeal.aptSeq,
                 dealDate: latestDeal.dealDate,
-                tradeTypeLabel: `최근 거래 · ${history.length}건`,
-                priceEok: latestDeal.priceEok,
-                subLabel: `${latestDeal.pyeong}평`,
-                lat: Number(result[0].y),
-                lng: Number(result[0].x),
+        tradeTypeLabel: `최근 거래 · ${history.length}건`,
+        priceEok: latestDeal.priceEok,
+        dateLabel: formatMarkerMonth(latestDeal.dealDate),
+        subLabel: `${latestDeal.pyeong}평`,
+        lat: Number(result[0].y),
+        lng: Number(result[0].x),
                 tone: hasDirectDeal ? 'direct' : 'sale',
                 dealCount: history.length,
                 relatedDeals: history,
@@ -1994,11 +2008,12 @@ const geocodeListingMarkers = async (
               label: '매물',
               aptName: listing.aptName,
               address: listing.address,
-              tradeTypeLabel: formatListingStatus(listing.verificationStatus),
-              priceEok: listing.priceEok,
-              subLabel: `${listing.pyeong}평`,
-              lat: Number(result[0].y),
-              lng: Number(result[0].x),
+            tradeTypeLabel: formatListingStatus(listing.verificationStatus),
+            priceEok: listing.priceEok,
+            dateLabel: '매물',
+            subLabel: `${listing.pyeong}평`,
+            lat: Number(result[0].y),
+            lng: Number(result[0].x),
               tone: 'listing',
               relatedDeals: [],
               listing,
@@ -2013,6 +2028,7 @@ const geocodeListingMarkers = async (
 
 function ApartmentMap({
   liveDeals,
+  apartments,
   activeFilterCount,
   userListings,
   focusListing,
@@ -2025,6 +2041,7 @@ function ApartmentMap({
   onClearMarker,
 }: {
   liveDeals: LiveRtmsDeal[]
+  apartments: Apartment[]
   activeFilterCount: number
   userListings: UserListing[]
   focusListing: UserListing | null
@@ -2082,7 +2099,11 @@ function ApartmentMap({
         ])
         if (disposed) return
 
-        const markers = [...listingMarkers, ...liveMarkers]
+        const liveMarkerNames = new Set(liveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
+        const specMarkers = apartmentMarkers(apartments).filter(
+          (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)),
+        )
+        const markers = [...listingMarkers, ...liveMarkers, ...specMarkers]
         if (markers.length === 0) {
           setMapReady(true)
           return
@@ -2147,7 +2168,7 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
+  }, [apartments, focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
 
   return (
     <section className="map-panel">
@@ -2510,6 +2531,7 @@ function BuildingLedgerPanel({
 }) {
   const ledgerState = useBuildingLedger(marker, latestDeal)
   const ledger = ledgerState.payload?.ledger
+  const apartment = marker.apartment
   const householdFamilyValue = ledger
     ? [
         ledger.householdCount ? `${ledger.householdCount.toLocaleString('ko-KR')}세대` : '',
@@ -2517,14 +2539,26 @@ function BuildingLedgerPanel({
       ]
         .filter(Boolean)
         .join(' / ') || '확인중'
-    : '확인중'
+    : apartment
+      ? `${apartment.households.toLocaleString('ko-KR')}세대`
+      : '확인중'
   const metrics = [
     ['주용도', ledger?.mainUsage || '공동주택'],
-    ['승인일', ledger?.approvalDate || (latestDeal?.buildYear ? `${latestDeal.buildYear}` : '확인중')],
+    [
+      '승인일',
+      ledger?.approvalDate || (latestDeal?.buildYear ? `${latestDeal.buildYear}` : apartment ? `${apartment.approvalYear}` : '확인중'),
+    ],
     ['층수', ledger ? `${ledger.groundFloors || '-'}F / B${ledger.undergroundFloors || '-'}` : '확인중'],
     ['총 세대수/가구수', householdFamilyValue],
-    ['용적률', ledger?.floorAreaRatio ? `${ledger.floorAreaRatio}%` : '확인중'],
-    ['주차', ledger?.parkingCount ? `${ledger.parkingCount.toLocaleString('ko-KR')}대` : '확인중'],
+    ['용적률', ledger?.floorAreaRatio ? `${ledger.floorAreaRatio}%` : apartment ? `${apartment.floorAreaRatio}%` : '확인중'],
+    [
+      '주차',
+      ledger?.parkingCount
+        ? `${ledger.parkingCount.toLocaleString('ko-KR')}대`
+        : apartment
+          ? `${apartment.parkingSpaces.toLocaleString('ko-KR')}대`
+          : '확인중',
+    ],
   ]
 
   return (
@@ -2625,6 +2659,25 @@ function AiTrendAnalysisPanel({
 
 function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
   const reviews = buildReviewNotes(marker)
+  const [reviewer, setReviewer] = useState('')
+  const [rating, setRating] = useState(5)
+  const [reviewText, setReviewText] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const canSubmitReview = reviewText.trim().length >= 5
+
+  const handleSubmitReview = () => {
+    if (!canSubmitReview) return
+
+    void sendTelegramLead('review', {
+      아파트: marker.aptName,
+      주소: marker.address,
+      작성자: reviewer.trim() || '익명',
+      평점: rating.toFixed(1),
+      후기: reviewText.trim(),
+    })
+    setSubmitted(true)
+    setReviewText('')
+  }
 
   return (
     <section className="detail-section reviews-card" aria-label={`${marker.aptName} 리뷰 및 후기`}>
@@ -2650,6 +2703,41 @@ function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
           </article>
         ))}
       </div>
+
+      <div className="review-compose">
+        <div className="review-compose-row">
+          <label>
+            <span>이름</span>
+            <input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="익명 가능" />
+          </label>
+          <label>
+            <span>평점</span>
+            <select value={rating} onChange={(event) => setRating(Number(event.target.value))}>
+              {[5, 4.5, 4, 3.5, 3].map((score) => (
+                <option key={score} value={score}>
+                  {score.toFixed(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>리뷰 작성</span>
+          <textarea
+            value={reviewText}
+            onChange={(event) => {
+              setReviewText(event.target.value)
+              setSubmitted(false)
+            }}
+            rows={3}
+            placeholder="거주, 거래, 단지 분위기 등을 남겨주세요"
+          />
+        </label>
+        <button className="secondary-action" type="button" disabled={!canSubmitReview} onClick={handleSubmitReview}>
+          리뷰 보내기
+        </button>
+        {submitted && <p className="lead-success">리뷰가 접수되었습니다. 운영자가 확인 후 반영합니다.</p>}
+      </div>
     </section>
   )
 }
@@ -2657,6 +2745,7 @@ function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
 function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose: () => void }) {
   const { history, status } = useMarkerHistory(marker)
   const listing = marker.listing
+  const isSpecMarker = Boolean(marker.apartment) && marker.tradeTypeLabel === '기본 스펙'
   const chartSourceDeals = [...history]
     .filter((deal) => deal.dealDate >= '2022-01-01')
     .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
@@ -2727,7 +2816,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
     <section id="trade-detail-panel" className="trade-detail" aria-label={`${marker.aptName} 실거래 상세`}>
       <div className="trade-detail-head">
         <div>
-          <span>{listing ? '직거래 매물 상세' : status === 'loading' ? '과거 추이 불러오는 중' : '실거래 상세'}</span>
+          <span>{listing ? '직거래 매물 상세' : isSpecMarker ? '단지 기본 스펙' : status === 'loading' ? '과거 추이 불러오는 중' : '실거래 상세'}</span>
           <h3>{marker.aptName}</h3>
           <p>{listing ? `${marker.address} · ${listing.detailAddress}` : marker.address}</p>
         </div>
@@ -2738,7 +2827,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
 
       <div className="trade-summary-grid">
         <div>
-          <span>{listing ? '희망가' : '최근 거래'}</span>
+          <span>{listing ? '희망가' : isSpecMarker ? '최근 기준가' : '최근 거래'}</span>
           <strong>{formatEok(latestDeal?.priceEok ?? marker.priceEok)}</strong>
         </div>
         <div>
@@ -3539,6 +3628,63 @@ function ListingView({
   )
 }
 
+function MembershipSignupCard() {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [interest, setInterest] = useState('직거래 매물 알림')
+  const [submitted, setSubmitted] = useState(false)
+  const canSubmit = phone.trim().length >= 8
+
+  const handleSubmit = () => {
+    if (!canSubmit) return
+
+    void sendTelegramLead('signup', {
+      이름: name.trim() || '미입력',
+      연락처: phone.trim(),
+      관심서비스: interest,
+    })
+    setSubmitted(true)
+  }
+
+  return (
+    <section className="membership-card" aria-label="집직구 회원가입">
+      <div>
+        <span>멤버십</span>
+        <strong>직거래 매물 알림 받기</strong>
+        <p>원하는 매물과 검증 진행 알림을 받을 연락처를 남겨주세요.</p>
+      </div>
+      <label>
+        <span>이름</span>
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="선택" />
+      </label>
+      <label>
+        <span>연락처</span>
+        <input
+          value={phone}
+          onChange={(event) => {
+            setPhone(event.target.value)
+            setSubmitted(false)
+          }}
+          inputMode="tel"
+          placeholder="010-0000-0000"
+        />
+      </label>
+      <label>
+        <span>관심 내용</span>
+        <select value={interest} onChange={(event) => setInterest(event.target.value)}>
+          <option>직거래 매물 알림</option>
+          <option>내 집 추천 상담</option>
+          <option>매도인 검증 매물 등록</option>
+        </select>
+      </label>
+      <button className="secondary-action" type="button" disabled={!canSubmit} onClick={handleSubmit}>
+        회원가입 알림 보내기
+      </button>
+      {submitted && <p className="lead-success">접수되었습니다. 새 매물과 상담 가능 여부를 확인해드릴게요.</p>}
+    </section>
+  )
+}
+
 function DirectListingsView({
   userListings,
   liveDeals,
@@ -3580,6 +3726,8 @@ function DirectListingsView({
           <ChevronRight size={18} />
         </button>
       </section>
+
+      <MembershipSignupCard />
 
       <section className="listing-market-section" aria-label="등록된 직거래 매물">
         <div className="detail-section-head">
@@ -3651,167 +3799,144 @@ function DirectListingsView({
 }
 
 function InheritanceView() {
-  const [taxMode, setTaxMode] = useState<'gift' | 'inheritance'>('gift')
-  const [assetEok, setAssetEok] = useState(12)
-  const [appraisalEok, setAppraisalEok] = useState(11.4)
-  const [appraisalFeeManwon, setAppraisalFeeManwon] = useState(500)
-  const [relation, setRelation] = useState<GiftRelation>('descendant')
-  const [hasSpouse, setHasSpouse] = useState(true)
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [apartmentName, setApartmentName] = useState('반포자이')
+  const [dongHo, setDongHo] = useState('')
+  const [concern, setConcern] = useState('자녀 증여')
+  const [desiredAppraisalEok, setDesiredAppraisalEok] = useState('18.5')
+  const [inquiry, setInquiry] = useState('자녀 증여를 고민 중이고 세무상 인정 가능한 탁상 감정가 범위를 알고 싶습니다.')
+  const [submitted, setSubmitted] = useState(false)
+  const canSubmit = Boolean(
+    phone.trim() &&
+      apartmentName.trim() &&
+      dongHo.trim() &&
+      desiredAppraisalEok.trim() &&
+      inquiry.trim().length >= 5,
+  )
 
-  const giftDeduction = giftDeductionByRelation[relation].deductionEok
-  const inheritanceDeduction = 5 + (hasSpouse ? 5 : 0)
-  const deductionEok = taxMode === 'gift' ? giftDeduction : inheritanceDeduction
-  const taxBaseEok = Math.max(0, assetEok - deductionEok)
-  const result = calculateProgressiveTax(taxBaseEok)
-  const estimatedTax = result.taxEok
-  const appraisalFeeEok = appraisalFeeManwon / 10000
-  const appraisedTaxBaseEok = Math.max(0, appraisalEok - deductionEok - appraisalFeeEok)
-  const appraisedResult = calculateProgressiveTax(appraisedTaxBaseEok)
-  const appraisalSavingEok = estimatedTax - appraisedResult.taxEok
-  const appraisalDeltaEok = assetEok - appraisalEok
+  const handleSubmit = () => {
+    if (!canSubmit) return
+
+    void sendTelegramLead('appraisal', {
+      이름: name.trim() || '미입력',
+      연락처: phone.trim(),
+      아파트: apartmentName.trim(),
+      동명호수: dongHo.trim(),
+      문의유형: concern,
+      감정희망금액: `${desiredAppraisalEok.trim()}억원`,
+      문의사항: inquiry.trim(),
+    })
+    setSubmitted(true)
+  }
 
   return (
     <div className="view-stack">
       <div className="section-title">
         <div>
           <span>상속증여상담</span>
-          <h2>아파트 상증세 간편 계산</h2>
+          <h2>내 아파트 탁상 감정 무료 받아보기</h2>
         </div>
         <Calculator size={22} />
       </div>
 
-      <section className="tax-panel">
-        <div className="tax-mode" aria-label="세금 유형">
-          <button className={taxMode === 'gift' ? 'active' : ''} type="button" onClick={() => setTaxMode('gift')}>
-            증여
-          </button>
-          <button
-            className={taxMode === 'inheritance' ? 'active' : ''}
-            type="button"
-            onClick={() => setTaxMode('inheritance')}
-          >
-            상속
-          </button>
+      <section className="appraisal-hero">
+        <span>무료 탁상 검토</span>
+        <strong>동·호수와 희망 감정가를 남기면 협력 감정평가사에게 전달됩니다</strong>
+        <p>자녀 증여, 상속 대비, 감정가 범위 고민을 남겨주시면 접수 내용을 확인해 연락드릴게요.</p>
+      </section>
+
+      <section className="appraisal-form" aria-label="탁상 감정 신청">
+        <div className="listing-form-row compact">
+          <label>
+            <span>이름</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="선택" />
+          </label>
+          <label>
+            <span>연락처</span>
+            <input
+              value={phone}
+              onChange={(event) => {
+                setPhone(event.target.value)
+                setSubmitted(false)
+              }}
+              inputMode="tel"
+              placeholder="010-0000-0000"
+            />
+          </label>
         </div>
 
-        <label className="tax-number" htmlFor="asset-eok">
-          <span>{taxMode === 'gift' ? '증여재산가액' : '상속재산가액'}</span>
-          <div>
-            <input
-              id="asset-eok"
-              type="number"
-              min="1"
-              max="100"
-              step="0.5"
-              value={assetEok}
-              onChange={(event) => setAssetEok(Number(event.target.value))}
-            />
-            <em>억원</em>
-          </div>
+        <label>
+          <span>아파트명</span>
+          <input value={apartmentName} onChange={(event) => setApartmentName(event.target.value)} />
         </label>
 
-        {taxMode === 'gift' ? (
-          <label className="tax-select">
-            <span>수증자 관계</span>
-            <select value={relation} onChange={(event) => setRelation(event.target.value as GiftRelation)}>
-              {Object.entries(giftDeductionByRelation).map(([id, item]) => (
-                <option key={id} value={id}>
-                  {item.label} 공제 {formatEok(item.deductionEok)}
-                </option>
-              ))}
-            </select>
+        <div className="listing-form-row compact">
+          <label>
+            <span>동명호수</span>
+            <input
+              value={dongHo}
+              onChange={(event) => {
+                setDongHo(event.target.value)
+                setSubmitted(false)
+              }}
+              placeholder="101동 1203호"
+            />
           </label>
-        ) : (
-          <label className="tax-check">
-            <input type="checkbox" checked={hasSpouse} onChange={(event) => setHasSpouse(event.target.checked)} />
-            <span>배우자 상속공제 최소 5억원 반영</span>
+          <label>
+            <span>감정희망금액</span>
+            <input
+              value={desiredAppraisalEok}
+              onChange={(event) => {
+                setDesiredAppraisalEok(event.target.value)
+                setSubmitted(false)
+              }}
+              inputMode="decimal"
+              placeholder="18.5"
+            />
+            <em>억원</em>
           </label>
+        </div>
+
+        <label>
+          <span>문의 유형</span>
+          <select value={concern} onChange={(event) => setConcern(event.target.value)}>
+            <option>자녀 증여</option>
+            <option>상속 대비</option>
+            <option>공동명의·배우자 증여</option>
+            <option>감정가 범위 확인</option>
+          </select>
+        </label>
+
+        <label>
+          <span>문의사항</span>
+          <textarea
+            value={inquiry}
+            onChange={(event) => {
+              setInquiry(event.target.value)
+              setSubmitted(false)
+            }}
+            rows={4}
+            placeholder="자녀 증여로 인한 고민, 나왔으면 하는 감정가 등을 적어주세요"
+          />
+        </label>
+
+        <button className="primary-action" type="button" disabled={!canSubmit} onClick={handleSubmit}>
+          탁상 감정 요청하기
+          <ChevronRight size={18} />
+        </button>
+
+        {submitted && (
+          <div className="appraisal-success" role="status">
+            <BadgeCheck size={18} />
+            <span>접수되었습니다. 협력 감정평가사에게 전달하고 확인 후 연락드릴게요.</span>
+          </div>
         )}
-
-        <label className="tax-number compact" htmlFor="appraisal-eok">
-          <span>감정평가 예상가</span>
-          <div>
-            <input
-              id="appraisal-eok"
-              type="number"
-              min="1"
-              max="100"
-              step="0.1"
-              value={appraisalEok}
-              onChange={(event) => setAppraisalEok(Number(event.target.value))}
-            />
-            <em>억원</em>
-          </div>
-        </label>
-
-        <label className="tax-number compact" htmlFor="appraisal-fee">
-          <span>감정평가 수수료</span>
-          <div>
-            <input
-              id="appraisal-fee"
-              type="number"
-              min="0"
-              max="500"
-              step="50"
-              value={appraisalFeeManwon}
-              onChange={(event) => setAppraisalFeeManwon(Number(event.target.value))}
-            />
-            <em>만원</em>
-          </div>
-        </label>
       </section>
-
-      <section className="tax-result">
-        <span>{taxMode === 'gift' ? '예상 증여세액' : '예상 상속세액'}</span>
-        <strong>{estimatedTax <= 0 ? '0원' : formatEok(estimatedTax)}</strong>
-        <p>
-          과세표준 {formatEok(taxBaseEok)} · 세율 {result.rateLabel} · 누진공제{' '}
-          {result.deductionEok ? formatEok(result.deductionEok) : '없음'}
-        </p>
-      </section>
-
-      <section className="tax-appraisal-card">
-        <span>감정평가 시나리오</span>
-        <strong>
-          {appraisalDeltaEok > 0 ? formatEok(appraisalDeltaEok) : '0원'} 낮게 인정되면{' '}
-          {appraisalSavingEok > 0 ? formatEok(appraisalSavingEok) : '0원'} 절감 예상
-        </strong>
-        <p>
-          감정가 {formatEok(appraisalEok)}와 수수료 {formatManwon(appraisalFeeManwon)} 반영 기준입니다. 실제 인정 여부는
-          비교 매매사례, 평가기간, 감정기관, 관할 세무서 판단에 따라 달라집니다.
-        </p>
-      </section>
-
-      <div className="tax-breakdown">
-        <div>
-          <span>재산가액</span>
-          <strong>{formatEok(assetEok)}</strong>
-        </div>
-        <div>
-          <span>기본 공제</span>
-          <strong>{formatEok(deductionEok)}</strong>
-        </div>
-        <div>
-          <span>상담 필요</span>
-          <strong>{taxBaseEok > 10 ? '높음' : '보통'}</strong>
-        </div>
-        <div>
-          <span>감정가 과표</span>
-          <strong>{formatEok(appraisedTaxBaseEok)}</strong>
-        </div>
-        <div>
-          <span>감정가 세액</span>
-          <strong>{appraisedResult.taxEok <= 0 ? '0원' : formatEok(appraisedResult.taxEok)}</strong>
-        </div>
-        <div>
-          <span>절감 예상</span>
-          <strong>{appraisalSavingEok > 0 ? formatEok(appraisalSavingEok) : '0원'}</strong>
-        </div>
-      </div>
 
       <p className="fine-print">
-        국세청 상속·증여세 기본 세율과 대표 공제, 감정평가수수료 시나리오만 반영한 상담용 추정치입니다.
-        시가 인정, 동거주택, 채무, 과거 10년 증여, 세대생략 할증, 신고세액공제는 전문가 검토가 필요합니다.
+        탁상 검토는 상담용 사전 안내입니다. 실제 세무상 시가 인정, 감정평가 가능 범위, 신고 전략은 감정평가사와
+        세무 전문가 검토가 필요합니다.
       </p>
     </div>
   )
