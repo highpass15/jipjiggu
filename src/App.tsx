@@ -23,12 +23,13 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Store,
   TrendingUp,
   WalletCards,
 } from 'lucide-react'
 import './App.css'
 
-type Mode = 'prices' | 'ai' | 'listing' | 'inheritance'
+type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance'
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
@@ -595,6 +596,7 @@ const navItems: Array<{
   { id: 'prices', label: '실거래가', icon: BarChart3 },
   { id: 'ai', label: 'AI 집추천', icon: Sparkles },
   { id: 'listing', label: '직거래', icon: ShieldCheck },
+  { id: 'directListings', label: '직거래 매물보기', icon: Store },
   { id: 'inheritance', label: '상속증여', icon: Calculator },
 ]
 
@@ -1434,6 +1436,28 @@ function App() {
               brokerage={brokerage}
               listingCandidates={listingApartmentCandidates}
               onCreateListing={handleListingCreate}
+            />
+          )}
+
+          {mode === 'directListings' && (
+            <DirectListingsView
+              userListings={userListings}
+              liveDeals={capitalLiveDeals}
+              onRegister={() => setMode('listing')}
+              onOpenListing={(listing) => {
+                setFocusListing(listing)
+                setFocusApartment(null)
+                setFocusLiveDeal(null)
+                setMode('prices')
+                setAppToast(`${listing.aptName} 직거래 매물을 지도에서 열었습니다.`)
+              }}
+              onOpenDeal={(deal) => {
+                setFocusLiveDeal(deal)
+                setFocusApartment(null)
+                setFocusListing(null)
+                setMode('prices')
+                setAppToast(`${deal.aptName} 직거래 신고 사례를 열었습니다.`)
+              }}
             />
           )}
 
@@ -3515,9 +3539,122 @@ function ListingView({
   )
 }
 
+function DirectListingsView({
+  userListings,
+  liveDeals,
+  onRegister,
+  onOpenListing,
+  onOpenDeal,
+}: {
+  userListings: UserListing[]
+  liveDeals: LiveRtmsDeal[]
+  onRegister: () => void
+  onOpenListing: (listing: UserListing) => void
+  onOpenDeal: (deal: LiveRtmsDeal) => void
+}) {
+  const directDeals = useMemo(
+    () =>
+      liveDeals
+        .filter((deal) => deal.tradeType === 'direct' && deal.status === 'active')
+        .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
+        .slice(0, 6),
+    [liveDeals],
+  )
+
+  return (
+    <div className="view-stack">
+      <div className="section-title">
+        <div>
+          <span>직거래 매물보기</span>
+          <h2>확인중 매물과 직거래 신고 사례를 함께 봅니다</h2>
+        </div>
+        <Store size={22} />
+      </div>
+
+      <section className="listing-market-hero">
+        <span>집직구 안심 직거래</span>
+        <strong>매도인이 올리고, 중개사가 실소유자와 허위매물을 확인합니다</strong>
+        <p>등록 매물은 지도에 노란색 매물 박스로 표시되고, 확인 단계가 끝나면 공개 매물로 전환됩니다.</p>
+        <button className="primary-action" type="button" onClick={onRegister}>
+          매물 등록하기
+          <ChevronRight size={18} />
+        </button>
+      </section>
+
+      <section className="listing-market-section" aria-label="등록된 직거래 매물">
+        <div className="detail-section-head">
+          <span>
+            <ShieldCheck size={15} />
+            등록된 매물
+          </span>
+          <em>{userListings.length ? `${userListings.length}건` : '모집중'}</em>
+        </div>
+
+        {userListings.length > 0 ? (
+          <div className="listing-market-list">
+            {userListings.map((listing) => (
+              <button key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
+                <div>
+                  <strong>{listing.aptName}</strong>
+                  <span>
+                    {listing.address} · {listing.pyeong}평 · {listing.floor}층
+                  </span>
+                  <em>{formatListingStatus(listing.verificationStatus)}</em>
+                </div>
+                <b>{formatEok(listing.priceEok)}</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="listing-market-empty">
+            <strong>아직 공개된 직거래 매물이 없습니다</strong>
+            <span>첫 매물을 등록하면 실소유자 확인 후 지도에 노란 매물 박스로 노출됩니다.</span>
+          </div>
+        )}
+      </section>
+
+      <section className="listing-market-section" aria-label="최근 직거래 신고 사례">
+        <div className="detail-section-head">
+          <span>
+            <BarChart3 size={15} />
+            최근 직거래 신고 사례
+          </span>
+          <em>국토부 RTMS</em>
+        </div>
+
+        <div className="listing-market-list compact">
+          {directDeals.length > 0 ? (
+            directDeals.map((deal) => (
+              <button key={deal.id} type="button" onClick={() => onOpenDeal(deal)}>
+                <div>
+                  <strong>{deal.aptName}</strong>
+                  <span>
+                    {deal.address} · {deal.pyeong}평 · {formatShortDate(deal.dealDate)}
+                  </span>
+                  <em>
+                    {deal.buyerType} 매수 · {deal.sellerType} 매도
+                  </em>
+                </div>
+                <b>{formatEok(deal.priceEok)}</b>
+              </button>
+            ))
+          ) : (
+            <div className="listing-market-empty">
+              <strong>최근 직거래 신고 사례를 수집중입니다</strong>
+              <span>새벽 1시 RTMS 캐시 갱신 후 직거래 신고 건이 있으면 자동 표시됩니다.</span>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function InheritanceView() {
   const [taxMode, setTaxMode] = useState<'gift' | 'inheritance'>('gift')
   const [assetEok, setAssetEok] = useState(12)
+  const [appraisalEok, setAppraisalEok] = useState(11.4)
+  const [appraisalFeeManwon, setAppraisalFeeManwon] = useState(500)
   const [relation, setRelation] = useState<GiftRelation>('descendant')
   const [hasSpouse, setHasSpouse] = useState(true)
 
@@ -3527,6 +3664,11 @@ function InheritanceView() {
   const taxBaseEok = Math.max(0, assetEok - deductionEok)
   const result = calculateProgressiveTax(taxBaseEok)
   const estimatedTax = result.taxEok
+  const appraisalFeeEok = appraisalFeeManwon / 10000
+  const appraisedTaxBaseEok = Math.max(0, appraisalEok - deductionEok - appraisalFeeEok)
+  const appraisedResult = calculateProgressiveTax(appraisedTaxBaseEok)
+  const appraisalSavingEok = estimatedTax - appraisedResult.taxEok
+  const appraisalDeltaEok = assetEok - appraisalEok
 
   return (
     <div className="view-stack">
@@ -3585,14 +3727,58 @@ function InheritanceView() {
             <span>배우자 상속공제 최소 5억원 반영</span>
           </label>
         )}
+
+        <label className="tax-number compact" htmlFor="appraisal-eok">
+          <span>감정평가 예상가</span>
+          <div>
+            <input
+              id="appraisal-eok"
+              type="number"
+              min="1"
+              max="100"
+              step="0.1"
+              value={appraisalEok}
+              onChange={(event) => setAppraisalEok(Number(event.target.value))}
+            />
+            <em>억원</em>
+          </div>
+        </label>
+
+        <label className="tax-number compact" htmlFor="appraisal-fee">
+          <span>감정평가 수수료</span>
+          <div>
+            <input
+              id="appraisal-fee"
+              type="number"
+              min="0"
+              max="500"
+              step="50"
+              value={appraisalFeeManwon}
+              onChange={(event) => setAppraisalFeeManwon(Number(event.target.value))}
+            />
+            <em>만원</em>
+          </div>
+        </label>
       </section>
 
       <section className="tax-result">
-        <span>예상 산출세액</span>
+        <span>{taxMode === 'gift' ? '예상 증여세액' : '예상 상속세액'}</span>
         <strong>{estimatedTax <= 0 ? '0원' : formatEok(estimatedTax)}</strong>
         <p>
           과세표준 {formatEok(taxBaseEok)} · 세율 {result.rateLabel} · 누진공제{' '}
           {result.deductionEok ? formatEok(result.deductionEok) : '없음'}
+        </p>
+      </section>
+
+      <section className="tax-appraisal-card">
+        <span>감정평가 시나리오</span>
+        <strong>
+          {appraisalDeltaEok > 0 ? formatEok(appraisalDeltaEok) : '0원'} 낮게 인정되면{' '}
+          {appraisalSavingEok > 0 ? formatEok(appraisalSavingEok) : '0원'} 절감 예상
+        </strong>
+        <p>
+          감정가 {formatEok(appraisalEok)}와 수수료 {formatManwon(appraisalFeeManwon)} 반영 기준입니다. 실제 인정 여부는
+          비교 매매사례, 평가기간, 감정기관, 관할 세무서 판단에 따라 달라집니다.
         </p>
       </section>
 
@@ -3609,11 +3795,23 @@ function InheritanceView() {
           <span>상담 필요</span>
           <strong>{taxBaseEok > 10 ? '높음' : '보통'}</strong>
         </div>
+        <div>
+          <span>감정가 과표</span>
+          <strong>{formatEok(appraisedTaxBaseEok)}</strong>
+        </div>
+        <div>
+          <span>감정가 세액</span>
+          <strong>{appraisedResult.taxEok <= 0 ? '0원' : formatEok(appraisedResult.taxEok)}</strong>
+        </div>
+        <div>
+          <span>절감 예상</span>
+          <strong>{appraisalSavingEok > 0 ? formatEok(appraisalSavingEok) : '0원'}</strong>
+        </div>
       </div>
 
       <p className="fine-print">
-        국세청 상속·증여세 기본 세율과 대표 공제만 반영한 상담용 추정치입니다. 동거주택, 채무, 과거 10년 증여,
-        세대생략 할증, 신고세액공제는 전문가 검토가 필요합니다.
+        국세청 상속·증여세 기본 세율과 대표 공제, 감정평가수수료 시나리오만 반영한 상담용 추정치입니다.
+        시가 인정, 동거주택, 채무, 과거 10년 증여, 세대생략 할증, 신고세액공제는 전문가 검토가 필요합니다.
       </p>
     </div>
   )
