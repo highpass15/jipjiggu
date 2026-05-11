@@ -2486,11 +2486,19 @@ function BuildingLedgerPanel({
 }) {
   const ledgerState = useBuildingLedger(marker, latestDeal)
   const ledger = ledgerState.payload?.ledger
+  const householdFamilyValue = ledger
+    ? [
+        ledger.householdCount ? `${ledger.householdCount.toLocaleString('ko-KR')}세대` : '',
+        ledger.familyCount ? `${ledger.familyCount.toLocaleString('ko-KR')}가구` : '',
+      ]
+        .filter(Boolean)
+        .join(' / ') || '확인중'
+    : '확인중'
   const metrics = [
     ['주용도', ledger?.mainUsage || '공동주택'],
     ['승인일', ledger?.approvalDate || (latestDeal?.buildYear ? `${latestDeal.buildYear}` : '확인중')],
     ['층수', ledger ? `${ledger.groundFloors || '-'}F / B${ledger.undergroundFloors || '-'}` : '확인중'],
-    ['총면적', ledger?.totalAreaM2 ? `${Math.round(ledger.totalAreaM2).toLocaleString('ko-KR')}㎡` : '확인중'],
+    ['총 세대수/가구수', householdFamilyValue],
     ['용적률', ledger?.floorAreaRatio ? `${ledger.floorAreaRatio}%` : '확인중'],
     ['주차', ledger?.parkingCount ? `${ledger.parkingCount.toLocaleString('ko-KR')}대` : '확인중'],
   ]

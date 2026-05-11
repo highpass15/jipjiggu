@@ -272,8 +272,24 @@ const parseApiItems = <T extends Record<string, unknown>>(raw: string) => {
   }
 }
 
+const pickRepresentativeTitleItem = (titleItems: BuildingApiItem[]) =>
+  [...titleItems].sort((a, b) => {
+    const score = (item: BuildingApiItem) => {
+      const isMainBuilding = textValue(item.mainAtchGbCdNm).includes('주건축물') ? 10000 : 0
+      const isApartment = textValue(item.mainPurpsCdNm).includes('공동주택') ? 5000 : 0
+      const households = numberValue(item.hhldCnt) * 20
+      const floors = numberValue(item.grndFlrCnt) * 10
+      return isMainBuilding + isApartment + households + floors + numberValue(item.totArea)
+    }
+
+    return score(b) - score(a)
+  })[0]
+
+const sumField = (items: BuildingApiItem[], field: keyof BuildingApiItem) =>
+  items.reduce((total, item) => total + numberValue(item[field]), 0)
+
 const normalizeBuildingLedger = (
-  titleItem: BuildingApiItem | undefined,
+  titleItems: BuildingApiItem[],
   recapItem: BuildingApiItem | undefined,
   fallback: {
     aptName: string
@@ -281,9 +297,12 @@ const normalizeBuildingLedger = (
     buildYear: number
   },
 ) => {
-  const item = titleItem ?? recapItem ?? {}
+  const titleItem = pickRepresentativeTitleItem(titleItems)
+  const item = recapItem ?? titleItem ?? {}
+  const detailItem = titleItem ?? recapItem ?? {}
   const parking =
     numberValue(item.totPkngCnt) ||
+    sumField(titleItems, 'totPkngCnt') ||
     numberValue(item.indrMechUtcnt) +
       numberValue(item.indrAutoUtcnt) +
       numberValue(item.oudrMechUtcnt) +
@@ -300,16 +319,16 @@ const normalizeBuildingLedger = (
     registerType: textValue(item.regstrGbCdNm) || '집합',
     registerKind: textValue(item.regstrKindCdNm) || (recapItem ? '총괄표제부' : '표제부'),
     mainUsage: textValue(item.mainPurpsCdNm) || '공동주택',
-    structure: textValue(item.strctCdNm) || '확인중',
-    roof: textValue(item.roofCdNm) || '확인중',
-    householdCount: numberValue(item.hhldCnt) || numberValue(item.hoCnt),
-    familyCount: numberValue(item.fmlyCnt),
+    structure: textValue(detailItem.strctCdNm) || '확인중',
+    roof: textValue(detailItem.roofCdNm) || '확인중',
+    householdCount: numberValue(item.hhldCnt) || sumField(titleItems, 'hhldCnt'),
+    familyCount: numberValue(item.fmlyCnt) || sumField(titleItems, 'fmlyCnt'),
     parkingCount: parking,
     floorAreaRatio: numberValue(item.vlRat),
     buildingCoverageRatio: numberValue(item.bcRat),
     totalAreaM2: numberValue(item.totArea),
-    groundFloors: numberValue(item.grndFlrCnt),
-    undergroundFloors: numberValue(item.ugrndFlrCnt),
+    groundFloors: numberValue(detailItem.grndFlrCnt),
+    undergroundFloors: numberValue(detailItem.ugrndFlrCnt),
     approvalDate:
       useApprovalDate && useApprovalDate.length >= 8
         ? `${useApprovalDate.slice(0, 4)}-${useApprovalDate.slice(4, 6)}-${useApprovalDate.slice(6, 8)}`
@@ -766,8 +785,8 @@ const rtmsProxyPlugin = (): Plugin => ({
       const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
       const lawdCd = incomingUrl.searchParams.get('lawdCd') || ''
       const umdCd = incomingUrl.searchParams.get('umdCd') || ''
-      const bonbun = incomingUrl.searchParams.get('bonbun') || '0000'
-      const bubun = incomingUrl.searchParams.get('bubun') || '0000'
+      const bonbun = (incomingUrl.searchParams.get('bonbun') || '0000').padStart(4, '0')
+      const bubun = (incomingUrl.searchParams.get('bubun') || '0000').padStart(4, '0')
       const landCd = incomingUrl.searchParams.get('landCd') || '1'
       const aptName = incomingUrl.searchParams.get('aptName') || '선택 단지'
       const address = incomingUrl.searchParams.get('address') || ''
@@ -787,7 +806,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         platGbCd,
         bun: bonbun,
         ji: bubun,
-        numOfRows: '10',
+        numOfRows: '100',
         pageNo: '1',
         _type: 'json',
       }
@@ -814,7 +833,7 @@ const rtmsProxyPlugin = (): Plugin => ({
           fetchBuildingItems('getBrTitleInfo'),
           fetchBuildingItems('getBrRecapTitleInfo'),
         ])
-        const ledger = normalizeBuildingLedger(title.items[0], recap.items[0], { aptName, address, buildYear })
+        const ledger = normalizeBuildingLedger(title.items, recap.items[0], { aptName, address, buildYear })
 
         response.statusCode = 200
         response.end(
