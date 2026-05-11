@@ -174,6 +174,17 @@ type RtmsResponse = {
   deals: LiveRtmsDeal[]
 }
 
+type LatestApartmentDealResponse = {
+  meta: {
+    source: string
+    resultCode: string
+    resultMessage: string
+    searchedMonths: number
+    updatedAt: string
+  }
+  deal: LiveRtmsDeal | null
+}
+
 type RtmsStatus = 'loading' | 'refreshing' | 'ready' | 'error'
 
 type BuildingLedger = {
@@ -1555,6 +1566,7 @@ function PriceView({
     () => liveDeals.filter((deal) => passesMapFilters(deal, mapFilters)),
     [liveDeals, mapFilters],
   )
+  const latestApartmentDeals = useLatestApartmentDeals(apartments)
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
@@ -1569,7 +1581,15 @@ function PriceView({
       const detailNode = document.getElementById('trade-detail-panel')
 
       if (detailNode) {
-        detailNode.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        const scrollContainer = detailNode.closest('.content-panel')
+        if (scrollContainer instanceof HTMLElement) {
+          const containerRect = scrollContainer.getBoundingClientRect()
+          const detailRect = detailNode.getBoundingClientRect()
+          const targetTop = scrollContainer.scrollTop + detailRect.top - containerRect.top - 6
+          scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+        } else {
+          detailNode.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
         return
       }
 
@@ -1594,20 +1614,20 @@ function PriceView({
 
   const handleApartmentCardOpen = useCallback(
     (apartment: Apartment) => {
-      const [marker] = apartmentMarkers([apartment])
+      const [marker] = apartmentMarkers([apartment], latestApartmentDeals)
 
       if (!marker) return
 
       setView('map')
       handleMapMarkerSelect(marker)
     },
-    [handleMapMarkerSelect],
+    [handleMapMarkerSelect, latestApartmentDeals],
   )
 
   useEffect(() => {
     if (!focusApartment) return
 
-    const [marker] = apartmentMarkers([focusApartment])
+    const [marker] = apartmentMarkers([focusApartment], latestApartmentDeals)
     if (!marker) return
 
     const timerId = window.setTimeout(() => {
@@ -1616,7 +1636,7 @@ function PriceView({
     }, 0)
 
     return () => window.clearTimeout(timerId)
-  }, [focusApartment, handleMapMarkerSelect])
+  }, [focusApartment, handleMapMarkerSelect, latestApartmentDeals])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -1702,6 +1722,7 @@ function PriceView({
         <ApartmentMap
           liveDeals={mapDeals}
           apartments={apartments}
+          latestApartmentDeals={latestApartmentDeals}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
           focusListing={focusListing}
@@ -1824,51 +1845,58 @@ function MapFilterSheet({
   )
 }
 
-const apartmentMarkers = (apartments: Apartment[]): MapValueMarker[] =>
+const apartmentMarkers = (
+  apartments: Apartment[],
+  latestDealsByApartment: Record<string, LiveRtmsDeal> = {},
+): MapValueMarker[] =>
   apartments.map((apartment) => {
+    const officialDeal = latestDealsByApartment[apartment.name]
     const latestDeal = apartment.recentDeals[0]
+    const markerDealDate = officialDeal?.dealDate ?? (latestDeal ? `20${latestDeal.date.replaceAll('.', '-')}` : undefined)
+    const curatedDeals = apartment.recentDeals.map((deal, index) => ({
+      id: `${apartment.name}-${deal.date}-${index}`,
+      aptSeq: apartment.name,
+      aptName: apartment.name,
+      address: apartment.region,
+      legalDong: apartment.region.split(' ').at(-1) ?? '',
+      jibun: '',
+      umdCd: '',
+      bonbun: '',
+      bubun: '',
+      landCd: '1',
+      lawdCd: getLawdCdFromRegion(apartment.region),
+      district: apartment.region.split(' ').slice(0, 2).join(' '),
+      dealDate: `20${deal.date.replaceAll('.', '-')}`,
+      priceEok: deal.priceEok,
+      areaM2: 0,
+      pyeong: Number(apartment.pyeong.replace('평', '')),
+      floor: 0,
+      buildYear: apartment.approvalYear,
+      tradeType: 'brokered' as const,
+      tradeTypeLabel: '참고 거래',
+      buyerType: '',
+      sellerType: '',
+      status: 'active' as const,
+      registeredAt: '',
+    }))
 
     return {
       id: apartment.name,
-      label: '단지',
+      label: officialDeal ? '매매' : '단지',
       aptName: apartment.name,
       address: apartment.region,
-      lawdCd: getLawdCdFromRegion(apartment.region),
-      dealDate: latestDeal ? `20${latestDeal.date.replaceAll('.', '-')}` : undefined,
-      tradeTypeLabel: '기본 스펙',
-      priceEok: apartment.priceEok,
-      dateLabel: formatMarkerMonth(latestDeal?.date),
+      lawdCd: officialDeal?.lawdCd ?? getLawdCdFromRegion(apartment.region),
+      aptSeq: officialDeal?.aptSeq,
+      dealDate: markerDealDate,
+      tradeTypeLabel: officialDeal?.tradeTypeLabel ?? '기본 스펙',
+      priceEok: officialDeal?.priceEok ?? apartment.priceEok,
+      dateLabel: formatMarkerMonth(markerDealDate),
       subLabel: apartment.pyeong,
       lat: apartment.lat,
       lng: apartment.lng,
-      tone: 'office' as const,
+      tone: officialDeal ? (officialDeal.tradeType === 'direct' ? 'direct' : 'sale') : 'office',
       apartment,
-      relatedDeals: apartment.recentDeals.map((deal, index) => ({
-        id: `${apartment.name}-${deal.date}-${index}`,
-        aptSeq: apartment.name,
-        aptName: apartment.name,
-        address: apartment.region,
-        legalDong: apartment.region.split(' ').at(-1) ?? '',
-        jibun: '',
-        umdCd: '',
-        bonbun: '',
-        bubun: '',
-        landCd: '1',
-        lawdCd: getLawdCdFromRegion(apartment.region),
-        district: apartment.region.split(' ').slice(0, 2).join(' '),
-        dealDate: `20${deal.date.replaceAll('.', '-')}`,
-        priceEok: deal.priceEok,
-        areaM2: 0,
-        pyeong: Number(apartment.pyeong.replace('평', '')),
-        floor: 0,
-        buildYear: apartment.approvalYear,
-        tradeType: 'brokered',
-        tradeTypeLabel: '참고 거래',
-        buyerType: '',
-        sellerType: '',
-        status: 'active',
-        registeredAt: '',
-      })),
+      relatedDeals: dedupeDeals(officialDeal ? [officialDeal, ...curatedDeals] : curatedDeals),
     }
   })
 
@@ -2029,6 +2057,7 @@ const geocodeListingMarkers = async (
 function ApartmentMap({
   liveDeals,
   apartments,
+  latestApartmentDeals,
   activeFilterCount,
   userListings,
   focusListing,
@@ -2042,6 +2071,7 @@ function ApartmentMap({
 }: {
   liveDeals: LiveRtmsDeal[]
   apartments: Apartment[]
+  latestApartmentDeals: Record<string, LiveRtmsDeal>
   activeFilterCount: number
   userListings: UserListing[]
   focusListing: UserListing | null
@@ -2100,7 +2130,7 @@ function ApartmentMap({
         if (disposed) return
 
         const liveMarkerNames = new Set(liveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
-        const specMarkers = apartmentMarkers(apartments).filter(
+        const specMarkers = apartmentMarkers(apartments, latestApartmentDeals).filter(
           (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)),
         )
         const markers = [...listingMarkers, ...liveMarkers, ...specMarkers]
@@ -2147,7 +2177,7 @@ function ApartmentMap({
 
         const focusedMarker = focusedListingMarker ?? focusedLiveMarker
         if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
-          onSelectMarker(focusedMarker, { scrollToDetail: false })
+          onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing) })
         }
 
         const updateDensity = () => {
@@ -2168,7 +2198,7 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, focusListing, focusLiveDeal, kakaoKey, liveDeals, onSelectMarker, userListings])
+  }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, userListings])
 
   return (
     <section className="map-panel">
@@ -2248,6 +2278,59 @@ function MapDataStatus({
       </div>
     </div>
   )
+}
+
+function useLatestApartmentDeals(apartments: Apartment[]) {
+  const [latestDeals, setLatestDeals] = useState<Record<string, LiveRtmsDeal>>({})
+  const requestKey = useMemo(() => apartments.map((apartment) => apartment.name).join('|'), [apartments])
+
+  useEffect(() => {
+    if (apartments.length === 0) return
+
+    const controller = new AbortController()
+
+    const fetchLatestDeals = async () => {
+      const entries: Array<[string, LiveRtmsDeal]> = []
+
+      for (const apartment of apartments.slice(0, 24)) {
+        if (controller.signal.aborted) return
+
+        const lawdCd = getLawdCdFromRegion(apartment.region)
+        if (!lawdCd) continue
+
+        try {
+          const params = new URLSearchParams({
+            lawdCd,
+            aptName: apartment.name,
+            monthsBack: '84',
+          })
+          const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`, {
+            signal: controller.signal,
+          })
+          const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
+
+          if (payload?.deal) {
+            entries.push([apartment.name, payload.deal])
+          }
+        } catch {
+          if (controller.signal.aborted) return
+        }
+      }
+
+      if (!controller.signal.aborted && entries.length > 0) {
+        setLatestDeals((current) => ({
+          ...current,
+          ...Object.fromEntries(entries),
+        }))
+      }
+    }
+
+    void fetchLatestDeals()
+
+    return () => controller.abort()
+  }, [apartments, requestKey])
+
+  return latestDeals
 }
 
 function useMarkerHistory(marker: MapValueMarker) {

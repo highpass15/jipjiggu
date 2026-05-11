@@ -158,6 +158,11 @@ const asArray = <T>(value: T | T[] | undefined): T[] => {
   if (!value) return []
   return Array.isArray(value) ? value : [value]
 }
+const normalizeComparableName = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^가-힣a-z0-9]/g, '')
+    .trim()
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -581,6 +586,60 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   }
 }
 
+const findLatestApartmentDeal = async ({
+  lawdCd,
+  aptName,
+  aptSeq,
+  monthsBack,
+  serviceKey,
+}: {
+  lawdCd: string
+  aptName: string
+  aptSeq: string
+  monthsBack: number
+  serviceKey: string
+}) => {
+  const district = capitalAreaDistricts.find((item) => item.code === lawdCd)
+  if (!district || !aptName.trim()) return null
+
+  const resolvedDealYmd = await findLatestAvailableDealYmd(getDefaultDealYmd(), serviceKey)
+  const dealYmds = getRecentDealYmds(resolvedDealYmd, monthsBack)
+  const normalizedTargetName = normalizeComparableName(aptName)
+
+  for (const dealYmd of dealYmds) {
+    const result = await fetchDistrictTrades(district, serviceKey, dealYmd, '1000')
+    const matches = result.rawDeals
+      .filter((deal) => deal.status === 'active')
+      .filter((deal) => {
+        if (aptSeq && deal.aptSeq === aptSeq) return true
+
+        const dealName = normalizeComparableName(deal.aptName)
+        return (
+          dealName === normalizedTargetName ||
+          dealName.includes(normalizedTargetName) ||
+          normalizedTargetName.includes(dealName)
+        )
+      })
+      .sort((a, b) => b.dealDate.localeCompare(a.dealDate) || b.priceEok - a.priceEok)
+
+    if (matches[0]) {
+      return {
+        deal: matches[0],
+        searchedMonths: dealYmds.indexOf(dealYmd) + 1,
+        resolvedDealYmd,
+      }
+    }
+
+    await sleep(140)
+  }
+
+  return {
+    deal: null,
+    searchedMonths: dealYmds.length,
+    resolvedDealYmd,
+  }
+}
+
 type TelegramLead = {
   type?: string
   payload?: Record<string, unknown>
@@ -861,6 +920,69 @@ const rtmsProxyPlugin = (): Plugin => ({
 
         const payload = await buildRtmsPayload(query, serviceKey)
         const serializedPayload = JSON.stringify(payload)
+        rtmsCache.set(cacheKey, serializedPayload)
+        await writeRtmsCacheFile(cacheKey, serializedPayload)
+        response.statusCode = 200
+        response.end(serializedPayload)
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
+    })
+
+    server.middlewares.use('/api/rtms/latest-apartment-deal', async (request, response) => {
+      const env = loadEnv('', process.cwd(), '')
+      const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
+
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+
+      if (!serviceKey) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: 'MOLIT_APT_TRADE_SERVICE_KEY is missing' }))
+        return
+      }
+
+      const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+      const lawdCd = incomingUrl.searchParams.get('lawdCd') || ''
+      const aptName = incomingUrl.searchParams.get('aptName') || ''
+      const aptSeq = incomingUrl.searchParams.get('aptSeq') || ''
+      const monthsBack = Math.min(Math.max(Number(incomingUrl.searchParams.get('monthsBack')) || 84, 1), 120)
+
+      if (!lawdCd || !aptName.trim()) {
+        response.statusCode = 400
+        response.end(JSON.stringify({ error: 'lawdCd and aptName are required' }))
+        return
+      }
+
+      const cacheKey = ['latest-apartment', lawdCd, normalizeComparableName(aptName), aptSeq || 'name', monthsBack].join(':')
+
+      try {
+        const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
+        if (cachedPayload) {
+          rtmsCache.set(cacheKey, cachedPayload)
+          response.statusCode = 200
+          response.end(cachedPayload)
+          return
+        }
+
+        const result = await findLatestApartmentDeal({
+          lawdCd,
+          aptName,
+          aptSeq,
+          monthsBack,
+          serviceKey,
+        })
+        const serializedPayload = JSON.stringify({
+          meta: {
+            source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료',
+            resultCode: result ? '000' : 'EMPTY',
+            resultMessage: result?.deal ? 'OK' : '최근 거래 없음',
+            searchedMonths: result?.searchedMonths ?? 0,
+            updatedAt: new Date().toISOString(),
+          },
+          deal: result?.deal ?? null,
+        })
+
         rtmsCache.set(cacheKey, serializedPayload)
         await writeRtmsCacheFile(cacheKey, serializedPayload)
         response.statusCode = 200
