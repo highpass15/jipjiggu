@@ -163,6 +163,7 @@ const normalizeComparableName = (value: string) =>
     .toLowerCase()
     .replace(/[^가-힣a-z0-9]/g, '')
     .trim()
+const loadRuntimeEnv = () => ({ ...loadEnv('', process.cwd(), ''), ...process.env })
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -696,7 +697,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     let activeRefresh: Promise<void> | null = null
 
     const refreshRtmsCache = async (forceDefaultQuery = false) => {
-      const env = loadEnv('', process.cwd(), '')
+      const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
       if (!serviceKey) return
 
@@ -751,7 +752,7 @@ const rtmsProxyPlugin = (): Plugin => ({
       }
 
       try {
-        const env = loadEnv('', process.cwd(), '')
+        const env = loadRuntimeEnv()
         const botToken = env.TELEGRAM_BOT_TOKEN
         const chatId = env.TELEGRAM_CHAT_ID
         const rawBody = await readRequestBody(request)
@@ -829,7 +830,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     })
 
     server.middlewares.use('/api/rtms/apt-trades', async (request, response) => {
-      const env = loadEnv('', process.cwd(), '')
+      const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -931,7 +932,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     })
 
     server.middlewares.use('/api/rtms/latest-apartment-deal', async (request, response) => {
-      const env = loadEnv('', process.cwd(), '')
+      const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -994,7 +995,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     })
 
     server.middlewares.use('/api/building/ledger', async (request, response) => {
-      const env = loadEnv('', process.cwd(), '')
+      const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_BUILDING_LEDGER_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
