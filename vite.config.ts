@@ -156,6 +156,32 @@ const asArray = <T>(value: T | T[] | undefined): T[] => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const fetchTextWithRetry = async (url: string, attempts = 3) => {
+  let lastResponse: Response | null = null
+  let lastRaw = ''
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const apiResponse = await fetch(url)
+    const raw = await apiResponse.text()
+
+    lastResponse = apiResponse
+    lastRaw = raw
+
+    if (apiResponse.ok || ![429, 500, 502, 503, 504].includes(apiResponse.status)) {
+      return { apiResponse, raw }
+    }
+
+    if (attempt < attempts) {
+      await sleep(900 * attempt)
+    }
+  }
+
+  return {
+    apiResponse: lastResponse as Response,
+    raw: lastRaw,
+  }
+}
+
 const runInBatches = async <T, R>(
   items: T[],
   batchSize: number,
@@ -302,10 +328,9 @@ const fetchDistrictTrades = async (
       numOfRows,
       pageNo: String(pageNo),
     })
-    const apiResponse = await fetch(
+    const { apiResponse, raw } = await fetchTextWithRetry(
       `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?${params.toString()}`,
     )
-    const raw = await apiResponse.text()
 
     if (!apiResponse.ok) {
       throw new Error(raw || apiResponse.statusText)
@@ -435,9 +460,16 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
     })),
   )
   const districtResults = await runInBatches(fetchTargets, 1, ({ district, dealYmd }) =>
-    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), 320,
+    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), query.scope === 'capital' ? 850 : 420,
   )
   const rawDeals = districtResults.flatMap((result) => result.rawDeals)
+  const failedResults = districtResults.filter((result) => result.error)
+
+  if (rawDeals.length === 0 && failedResults.length === districtResults.length) {
+    const sampleError = failedResults[0]?.error || '공공데이터포털 호출 실패'
+    throw new Error(`RTMS 수집 실패: ${sampleError.slice(0, 180)}`)
+  }
+
   const activeDeals = rawDeals.filter((deal) => deal.status === 'active')
   const deals = activeDeals
     .sort((a, b) => b.dealDate.localeCompare(a.dealDate) || b.priceEok - a.priceEok)
@@ -463,7 +495,7 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       directCount: activeDeals.filter((deal) => deal.tradeType === 'direct').length,
       searchedDistricts: districts.length,
       searchedMonths: dealYmds.length,
-      failedDistricts: districtResults.filter((result) => result.error).length,
+      failedDistricts: failedResults.length,
       cachePolicy: 'daily-02:00',
       updatedAt: new Date().toISOString(),
     },

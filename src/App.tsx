@@ -2184,13 +2184,15 @@ function MapDataStatus({
         <Building2 size={22} />
         <strong>
           {mapError
-            ? 'Kakao 지도 연결 확인중'
+            ? 'Kakao 지도 도메인 등록 필요'
             : status === 'loading'
               ? '서울·경기·인천 실거래 API 불러오는 중'
               : '표시할 실제 실거래가 없습니다'}
         </strong>
         <p>
-          {status === 'error'
+          {mapError
+            ? 'Kakao Developers의 JavaScript 키 Web 도메인에 https://jipjiggu.onrender.com 을 추가하면 지도가 표시됩니다.'
+            : status === 'error'
             ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
             : '국토교통부 RTMS 응답만 지도에 표시합니다. 샘플 단지는 섞지 않습니다.'}
         </p>
