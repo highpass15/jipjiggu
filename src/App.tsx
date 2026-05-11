@@ -1600,7 +1600,7 @@ function PriceView({
       setRtmsError('')
       try {
         const response = await fetch(
-          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=1&numOfRows=1000&limit=50000`,
+          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
           { signal: controller.signal },
         )
         const payload = (await response.json()) as RtmsResponse | { error?: string }
@@ -1634,7 +1634,7 @@ function PriceView({
       timerId = window.setTimeout(() => {
         setSyncTick((tick) => tick + 1)
         scheduleDailySync()
-      }, getMsUntilNextDailySync(2))
+      }, getMsUntilNextDailySync(1))
     }
 
     scheduleDailySync()
@@ -2194,7 +2194,7 @@ function MapDataStatus({
             ? 'Kakao Developers의 JavaScript 키 Web 도메인에 https://jipjiggu.onrender.com 을 추가하면 지도가 표시됩니다.'
             : status === 'error'
             ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
-            : '국토교통부 RTMS 응답만 지도에 표시합니다. 샘플 단지는 섞지 않습니다.'}
+            : '매일 새벽 1시에 서울·경기·인천 RTMS 캐시를 갱신합니다. 샘플 단지는 섞지 않습니다.'}
         </p>
       </div>
     </div>

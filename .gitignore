@@ -13,6 +13,7 @@ dist-ssr
 *.local
 artifacts/
 qa-*.png
+.cache/
 
 # Editor directories and files
 .vscode/*

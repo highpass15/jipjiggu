@@ -1,6 +1,8 @@
 import { XMLParser } from 'fast-xml-parser'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
 type Metro = 'seoul' | 'gyeonggi' | 'incheon'
 type TargetDistrict = {
@@ -115,6 +117,9 @@ const gyeonggiDistricts: TargetDistrict[] = [
 ].map(([code, name]) => ({ code, name, metro: 'gyeonggi' }))
 
 const capitalAreaDistricts = [...seoulDistricts, ...gyeonggiDistricts, ...incheonDistricts]
+const rtmsDailyRefreshHour = 1
+const rtmsDefaultCapitalMonthsBack = 3
+const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
 )
@@ -440,6 +445,31 @@ const getMsUntilNextDailyRefresh = (hour: number) => {
 const rtmsCacheKey = (query: RtmsQuery) =>
   [query.lawdCd || 'all', query.scope, query.dealYmd, query.monthsBack, query.numOfRows, query.limit].join(':')
 
+const rtmsCacheFilePath = (cacheKey: string) =>
+  path.join(rtmsCacheDirectory, `${cacheKey.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`)
+
+const readRtmsCacheFile = async (cacheKey: string) => {
+  try {
+    return await fs.readFile(rtmsCacheFilePath(cacheKey), 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+const writeRtmsCacheFile = async (cacheKey: string, payload: string) => {
+  await fs.mkdir(rtmsCacheDirectory, { recursive: true })
+  await fs.writeFile(rtmsCacheFilePath(cacheKey), payload, 'utf8')
+}
+
+const createDefaultCapitalQuery = (): RtmsQuery => ({
+  lawdCd: '',
+  scope: 'capital',
+  dealYmd: 'auto',
+  monthsBack: rtmsDefaultCapitalMonthsBack,
+  numOfRows: '1000',
+  limit: 50000,
+})
+
 const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   const group = targetGroups[query.scope] ?? targetGroups.capital
   const resolvedDealYmd = query.dealYmd === 'auto' ? await findLatestAvailableDealYmd(getDefaultDealYmd(), serviceKey) : query.dealYmd
@@ -496,7 +526,7 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       searchedDistricts: districts.length,
       searchedMonths: dealYmds.length,
       failedDistricts: failedResults.length,
-      cachePolicy: 'daily-02:00',
+      cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
       updatedAt: new Date().toISOString(),
     },
     deals,
@@ -509,53 +539,85 @@ const rtmsProxyPlugin = (): Plugin => ({
     const rtmsCache = new Map<string, string>()
     const rtmsQueries = new Map<string, RtmsQuery>()
     let dailyRefreshTimer: NodeJS.Timeout | undefined
+    let activeRefresh: Promise<void> | null = null
 
-    const refreshRtmsCache = async () => {
+    const refreshRtmsCache = async (forceDefaultQuery = false) => {
       const env = loadEnv('', process.cwd(), '')
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
       if (!serviceKey) return
 
       const queries =
-        rtmsQueries.size > 0
+        !forceDefaultQuery && rtmsQueries.size > 0
           ? [...rtmsQueries.entries()]
-          : [
-              [
-                rtmsCacheKey({
-                  lawdCd: '',
-                  scope: 'capital',
-                  dealYmd: 'auto',
-                  monthsBack: 1,
-                  numOfRows: '1000',
-                  limit: 50000,
-                }),
-                {
-                  lawdCd: '',
-                  scope: 'capital',
-                  dealYmd: 'auto',
-                  monthsBack: 1,
-                  numOfRows: '1000',
-                  limit: 50000,
-                },
-              ] as const,
-            ]
+          : [[rtmsCacheKey(createDefaultCapitalQuery()), createDefaultCapitalQuery()] as const]
 
-      await Promise.all(
-        queries.map(async ([key, query]) => {
+      for (const [key, query] of queries) {
+        try {
           const payload = await buildRtmsPayload(query, serviceKey)
-          rtmsCache.set(key, JSON.stringify(payload))
-        }),
-      )
+          const serializedPayload = JSON.stringify(payload)
+          rtmsCache.set(key, serializedPayload)
+          await writeRtmsCacheFile(key, serializedPayload)
+        } catch (error) {
+          console.warn(
+            `[집직구 RTMS] ${key} refresh failed:`,
+            error instanceof Error ? error.message : error,
+          )
+        }
+      }
+    }
+
+    const startRtmsRefresh = (forceDefaultQuery = false) => {
+      if (activeRefresh) return activeRefresh
+
+      activeRefresh = refreshRtmsCache(forceDefaultQuery).finally(() => {
+        activeRefresh = null
+      })
+
+      return activeRefresh
     }
 
     const scheduleDailyRefresh = () => {
       dailyRefreshTimer = setTimeout(() => {
-        void refreshRtmsCache().finally(scheduleDailyRefresh)
-      }, getMsUntilNextDailyRefresh(2))
+        void startRtmsRefresh(true).finally(scheduleDailyRefresh)
+      }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
     }
 
     scheduleDailyRefresh()
     server.httpServer?.once('close', () => {
       if (dailyRefreshTimer) clearTimeout(dailyRefreshTimer)
+    })
+
+    server.middlewares.use('/api/rtms/refresh', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+
+      try {
+        const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+        const shouldWait = incomingUrl.searchParams.get('wait') === '1'
+        const refreshPromise = startRtmsRefresh(true)
+        if (shouldWait) {
+          await refreshPromise
+        }
+
+        const cacheKey = rtmsCacheKey(createDefaultCapitalQuery())
+        const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
+
+        response.statusCode = shouldWait && cachedPayload ? 200 : 202
+        response.end(
+          JSON.stringify({
+            ok: Boolean(cachedPayload),
+            cacheKey,
+            cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+            refreshing: Boolean(activeRefresh),
+            message: cachedPayload
+              ? '서울·경기·인천 RTMS 캐시 갱신 완료'
+              : '서울·경기·인천 RTMS 캐시 갱신을 백그라운드에서 시작했습니다',
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
     })
 
     server.middlewares.use('/api/rtms/apt-trades', async (request, response) => {
@@ -583,16 +645,66 @@ const rtmsProxyPlugin = (): Plugin => ({
       rtmsQueries.set(cacheKey, query)
 
       try {
-        const cachedPayload = rtmsCache.get(cacheKey)
+        const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
         if (cachedPayload) {
+          rtmsCache.set(cacheKey, cachedPayload)
           response.statusCode = 200
           response.end(cachedPayload)
+          return
+        }
+
+        const defaultCapitalQuery = createDefaultCapitalQuery()
+        const defaultCapitalCacheKey = rtmsCacheKey(defaultCapitalQuery)
+        const defaultCapitalPayload =
+          query.scope === 'capital' && !query.lawdCd
+            ? rtmsCache.get(defaultCapitalCacheKey) || (await readRtmsCacheFile(defaultCapitalCacheKey))
+            : ''
+
+        if (defaultCapitalPayload) {
+          rtmsCache.set(defaultCapitalCacheKey, defaultCapitalPayload)
+          response.statusCode = 200
+          response.end(defaultCapitalPayload)
+          return
+        }
+
+        if (!query.lawdCd && query.scope === 'capital') {
+          void startRtmsRefresh(true)
+          response.statusCode = 202
+          response.end(
+            JSON.stringify({
+              meta: {
+                source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료',
+                lawdCd: '',
+                scope: 'capital',
+                district: '서울·경기·인천',
+                dealYmd: query.dealYmd,
+                fromDealYmd: '',
+                toDealYmd: '',
+                monthsBack: query.monthsBack,
+                resultCode: 'REFRESHING',
+                resultMessage: `매일 새벽 ${rtmsDailyRefreshHour}시 기준 캐시를 갱신합니다. 현재 첫 수집을 진행 중입니다.`,
+                totalCount: 0,
+                rawCount: 0,
+                filteredCount: 0,
+                returnedCount: 0,
+                canceledCount: 0,
+                directCount: 0,
+                searchedDistricts: capitalAreaDistricts.length,
+                searchedMonths: query.monthsBack,
+                failedDistricts: 0,
+                cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+                updatedAt: new Date().toISOString(),
+              },
+              deals: [],
+            }),
+          )
           return
         }
 
         const payload = await buildRtmsPayload(query, serviceKey)
         const serializedPayload = JSON.stringify(payload)
         rtmsCache.set(cacheKey, serializedPayload)
+        await writeRtmsCacheFile(cacheKey, serializedPayload)
         response.statusCode = 200
         response.end(serializedPayload)
       } catch (error) {
