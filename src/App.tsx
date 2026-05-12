@@ -2417,7 +2417,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
   useEffect(() => {
     if (apartments.length === 0) return
 
-    const controller = new AbortController()
+    let disposed = false
 
     const fetchLatestDeals = async () => {
       const candidates = apartments.filter((apartment) => {
@@ -2426,7 +2426,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
       })
 
       for (let index = 0; index < candidates.length; index += 3) {
-        if (controller.signal.aborted) return
+        if (disposed) return
 
         const batch = candidates.slice(index, index + 3)
         const entries = await Promise.all(
@@ -2439,9 +2439,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
                 aptName: apartment.name,
                 monthsBack: '36',
               })
-              const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`, {
-                signal: controller.signal,
-              })
+              const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`)
               const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
               requestedNamesRef.current.add(apartment.name)
 
@@ -2452,7 +2450,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
           }),
         )
 
-        if (controller.signal.aborted) return
+        if (disposed) return
 
         const resolvedEntries = entries.filter((entry): entry is readonly [string, LiveRtmsDeal] => Boolean(entry))
         if (resolvedEntries.length > 0) {
@@ -2466,7 +2464,9 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
 
     void fetchLatestDeals()
 
-    return () => controller.abort()
+    return () => {
+      disposed = true
+    }
   }, [apartments, requestKey])
 
   return latestDeals
