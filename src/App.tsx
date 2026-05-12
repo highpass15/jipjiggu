@@ -1688,7 +1688,7 @@ function PriceView({
     () => liveDeals.filter((deal) => passesMapFilters(deal, mapFilters)),
     [liveDeals, mapFilters],
   )
-  const mapApartmentCandidates = useMemo(() => [...apartments, ...mapOnlyApartments], [apartments])
+  const mapApartmentCandidates = useMemo(() => [...mapOnlyApartments, ...apartments], [apartments])
   const latestApartmentDeals = useLatestApartmentDeals(mapApartmentCandidates)
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
@@ -2420,33 +2420,47 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
     const controller = new AbortController()
 
     const fetchLatestDeals = async () => {
-      for (const apartment of apartments) {
+      const candidates = apartments.filter((apartment) => {
+        if (requestedNamesRef.current.has(apartment.name)) return false
+        return Boolean(getLawdCdFromRegion(apartment.region))
+      })
+
+      candidates.forEach((apartment) => requestedNamesRef.current.add(apartment.name))
+
+      for (let index = 0; index < candidates.length; index += 3) {
         if (controller.signal.aborted) return
-        if (requestedNamesRef.current.has(apartment.name)) continue
 
-        const lawdCd = getLawdCdFromRegion(apartment.region)
-        if (!lawdCd) continue
-        requestedNamesRef.current.add(apartment.name)
+        const batch = candidates.slice(index, index + 3)
+        const entries = await Promise.all(
+          batch.map(async (apartment) => {
+            const lawdCd = getLawdCdFromRegion(apartment.region)
 
-        try {
-          const params = new URLSearchParams({
-            lawdCd,
-            aptName: apartment.name,
-            monthsBack: '36',
-          })
-          const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`, {
-            signal: controller.signal,
-          })
-          const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
+            try {
+              const params = new URLSearchParams({
+                lawdCd,
+                aptName: apartment.name,
+                monthsBack: '36',
+              })
+              const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`, {
+                signal: controller.signal,
+              })
+              const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
 
-          if (payload?.deal) {
-            setLatestDeals((current) => ({
-              ...current,
-              [apartment.name]: payload.deal as LiveRtmsDeal,
-            }))
-          }
-        } catch {
-          if (controller.signal.aborted) return
+              return payload?.deal ? ([apartment.name, payload.deal] as const) : null
+            } catch {
+              return null
+            }
+          }),
+        )
+
+        if (controller.signal.aborted) return
+
+        const resolvedEntries = entries.filter((entry): entry is readonly [string, LiveRtmsDeal] => Boolean(entry))
+        if (resolvedEntries.length > 0) {
+          setLatestDeals((current) => ({
+            ...current,
+            ...Object.fromEntries(resolvedEntries),
+          }))
         }
       }
     }
