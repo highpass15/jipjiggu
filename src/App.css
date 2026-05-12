@@ -1111,14 +1111,18 @@ h1 {
 }
 
 .map-value-marker .marker-date {
-  margin: 0 8px 3px;
-  padding: 3px 6px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #006f66;
+  width: max-content;
+  min-width: 46px;
+  margin: 1px auto 4px;
+  padding: 4px 7px 3px;
+  border: 1px solid rgba(12, 181, 155, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #007f72;
   font-size: 12px;
   font-weight: 950;
   text-align: center;
+  box-shadow: 0 2px 5px rgba(12, 181, 155, 0.14);
 }
 
 .map-value-marker em {
@@ -1168,13 +1172,15 @@ h1 {
 .map-value-marker.compact .marker-date {
   min-width: 0;
   margin: 0;
-  padding: 0 8px 6px;
+  padding: 1px 8px 6px;
   display: grid;
   place-items: center;
+  border: 0;
   border-radius: 0;
   background: var(--marker-color);
   color: #007f72;
   font-size: 11px;
+  box-shadow: none;
 }
 
 .map-value-marker.compact em {

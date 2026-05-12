@@ -3,6 +3,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 
 type Metro = 'seoul' | 'gyeonggi' | 'incheon'
 type TargetDistrict = {
@@ -470,8 +471,17 @@ const getMsUntilNextDailyRefresh = (hour: number) => {
 const rtmsCacheKey = (query: RtmsQuery) =>
   [query.lawdCd || 'all', query.scope, query.dealYmd, query.monthsBack, query.numOfRows, query.limit].join(':')
 
-const rtmsCacheFilePath = (cacheKey: string) =>
-  path.join(rtmsCacheDirectory, `${cacheKey.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`)
+const rtmsCacheFilePath = (cacheKey: string) => {
+  const readablePrefix = cacheKey
+    .split(':')
+    .slice(0, 3)
+    .join('_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 42)
+  const cacheHash = createHash('sha1').update(cacheKey).digest('hex')
+
+  return path.join(rtmsCacheDirectory, `${readablePrefix}_${cacheHash}.json`)
+}
 
 const readRtmsCacheFile = async (cacheKey: string) => {
   try {
@@ -606,6 +616,7 @@ const findLatestApartmentDeal = async ({
   const resolvedDealYmd = await findLatestAvailableDealYmd(getDefaultDealYmd(), serviceKey)
   const dealYmds = getRecentDealYmds(resolvedDealYmd, monthsBack)
   const normalizedTargetName = normalizeComparableName(aptName)
+  if (!normalizedTargetName) return null
 
   for (const dealYmd of dealYmds) {
     const result = await fetchDistrictTrades(district, serviceKey, dealYmd, '1000')

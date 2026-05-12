@@ -45,6 +45,7 @@ type MapFilterState = {
 type Apartment = {
   name: string
   region: string
+  mapOnly?: boolean
   station: string
   pyeong: string
   subwayMinutes: number
@@ -609,6 +610,119 @@ const apartments: Apartment[] = [
     approvalYear: 2010,
     tags: ['송도', '공원', '국제업무'],
   },
+]
+
+const createMapOnlyApartment = ({
+  name,
+  region,
+  lat,
+  lng,
+  pyeong = '34평',
+  approvalYear = 0,
+  households = 0,
+}: {
+  name: string
+  region: string
+  lat: number
+  lng: number
+  pyeong?: string
+  approvalYear?: number
+  households?: number
+}): Apartment => ({
+  name,
+  region,
+  mapOnly: true,
+  station: '실거래 조회중',
+  pyeong,
+  subwayMinutes: 0,
+  commuteMinutes: { 강남: 0, 여의도: 0, 광화문: 0, 판교: 0 },
+  lat,
+  lng,
+  markerPosition: { x: 50, y: 50 },
+  priceEok: 0,
+  previousEok: 0,
+  recentDeals: [],
+  volume: 0,
+  fit: 0,
+  verified: 'RTMS 최신 거래 조회',
+  households,
+  parkingSpaces: 0,
+  floorAreaRatio: 0,
+  approvalYear,
+  tags: ['실거래 조회'],
+})
+
+const mapOnlyApartments: Apartment[] = [
+  createMapOnlyApartment({
+    name: '반포르엘',
+    region: '서울 서초구 반포동',
+    lat: 37.5049,
+    lng: 127.0082,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '반포르엘2차',
+    region: '서울 서초구 반포동',
+    lat: 37.5089,
+    lng: 127.0069,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '신반포2차',
+    region: '서울 서초구 반포동',
+    lat: 37.5109,
+    lng: 127.0046,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '신반포4차',
+    region: '서울 서초구 반포동',
+    lat: 37.5087,
+    lng: 127.0157,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '반포센트럴자이',
+    region: '서울 서초구 잠원동',
+    lat: 37.5044,
+    lng: 127.0107,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '반포써밋',
+    region: '서울 서초구 반포동',
+    lat: 37.5021,
+    lng: 127.0124,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '래미안퍼스티지',
+    region: '서울 서초구 반포동',
+    lat: 37.5048,
+    lng: 126.9998,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '아크로리버파크',
+    region: '서울 서초구 반포동',
+    lat: 37.5107,
+    lng: 126.9984,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '반포미도',
+    region: '서울 서초구 반포동',
+    lat: 37.5028,
+    lng: 126.9939,
+    pyeong: '34평',
+  }),
+  createMapOnlyApartment({
+    name: '잠원한신',
+    region: '서울 서초구 잠원동',
+    lat: 37.5124,
+    lng: 127.0117,
+    pyeong: '34평',
+  }),
 ]
 
 const navItems: Array<{
@@ -1574,7 +1688,8 @@ function PriceView({
     () => liveDeals.filter((deal) => passesMapFilters(deal, mapFilters)),
     [liveDeals, mapFilters],
   )
-  const latestApartmentDeals = useLatestApartmentDeals(apartments)
+  const mapApartmentCandidates = useMemo(() => [...apartments, ...mapOnlyApartments], [apartments])
+  const latestApartmentDeals = useLatestApartmentDeals(mapApartmentCandidates)
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
@@ -1729,7 +1844,7 @@ function PriceView({
       {view === 'map' ? (
         <ApartmentMap
           liveDeals={mapDeals}
-          apartments={apartments}
+          apartments={mapApartmentCandidates}
           latestApartmentDeals={latestApartmentDeals}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
@@ -1857,10 +1972,16 @@ const apartmentMarkers = (
   apartments: Apartment[],
   latestDealsByApartment: Record<string, LiveRtmsDeal> = {},
 ): MapValueMarker[] =>
-  apartments.map((apartment) => {
+  apartments.flatMap((apartment) => {
     const officialDeal = latestDealsByApartment[apartment.name]
     const latestDeal = apartment.recentDeals[0]
+
+    if (apartment.mapOnly && !officialDeal && !latestDeal) {
+      return []
+    }
+
     const markerDealDate = officialDeal?.dealDate ?? (latestDeal ? `20${latestDeal.date.replaceAll('.', '-')}` : undefined)
+    const markerPyeong = officialDeal ? `${officialDeal.pyeong}평` : apartment.pyeong
     const curatedDeals = apartment.recentDeals.map((deal, index) => ({
       id: `${apartment.name}-${deal.date}-${index}`,
       aptSeq: apartment.name,
@@ -1899,7 +2020,7 @@ const apartmentMarkers = (
       tradeTypeLabel: officialDeal?.tradeTypeLabel ?? '기본 스펙',
       priceEok: officialDeal?.priceEok ?? apartment.priceEok,
       dateLabel: formatMarkerMonth(markerDealDate),
-      subLabel: apartment.pyeong,
+      subLabel: markerPyeong,
       lat: apartment.lat,
       lng: apartment.lng,
       tone: officialDeal ? (officialDeal.tradeType === 'direct' ? 'direct' : 'sale') : 'office',
@@ -2290,6 +2411,7 @@ function MapDataStatus({
 
 function useLatestApartmentDeals(apartments: Apartment[]) {
   const [latestDeals, setLatestDeals] = useState<Record<string, LiveRtmsDeal>>({})
+  const requestedNamesRef = useRef(new Set<string>())
   const requestKey = useMemo(() => apartments.map((apartment) => apartment.name).join('|'), [apartments])
 
   useEffect(() => {
@@ -2298,13 +2420,13 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
     const controller = new AbortController()
 
     const fetchLatestDeals = async () => {
-      const entries: Array<[string, LiveRtmsDeal]> = []
-
-      for (const apartment of apartments.slice(0, 24)) {
+      for (const apartment of apartments) {
         if (controller.signal.aborted) return
+        if (requestedNamesRef.current.has(apartment.name)) continue
 
         const lawdCd = getLawdCdFromRegion(apartment.region)
         if (!lawdCd) continue
+        requestedNamesRef.current.add(apartment.name)
 
         try {
           const params = new URLSearchParams({
@@ -2318,18 +2440,14 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
           const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
 
           if (payload?.deal) {
-            entries.push([apartment.name, payload.deal])
+            setLatestDeals((current) => ({
+              ...current,
+              [apartment.name]: payload.deal as LiveRtmsDeal,
+            }))
           }
         } catch {
           if (controller.signal.aborted) return
         }
-      }
-
-      if (!controller.signal.aborted && entries.length > 0) {
-        setLatestDeals((current) => ({
-          ...current,
-          ...Object.fromEntries(entries),
-        }))
       }
     }
 
