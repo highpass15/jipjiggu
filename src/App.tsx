@@ -2425,8 +2425,6 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
         return Boolean(getLawdCdFromRegion(apartment.region))
       })
 
-      candidates.forEach((apartment) => requestedNamesRef.current.add(apartment.name))
-
       for (let index = 0; index < candidates.length; index += 3) {
         if (controller.signal.aborted) return
 
@@ -2445,9 +2443,13 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
                 signal: controller.signal,
               })
               const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
+              requestedNamesRef.current.add(apartment.name)
 
               return payload?.deal ? ([apartment.name, payload.deal] as const) : null
             } catch {
+              if (!controller.signal.aborted) {
+                requestedNamesRef.current.add(apartment.name)
+              }
               return null
             }
           }),
