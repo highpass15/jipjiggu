@@ -1,66 +1,92 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="270" height="68" viewBox="0 0 270 68" role="img" aria-labelledby="title desc">
   <title id="title">집직구 로고</title>
-  <desc id="desc">진한 민트 컬러의 집직구 워드마크와 집 모양 심볼</desc>
+  <desc id="desc">진한 민트 컬러의 집직구 워드마크와 집 모양 검증 심볼</desc>
   <defs>
-    <linearGradient id="markFill" x1="8" x2="76" y1="4" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#20d9bd"/>
-      <stop offset="0.52" stop-color="#079f8b"/>
-      <stop offset="1" stop-color="#006f64"/>
+    <linearGradient id="frameFill" x1="13" x2="70" y1="8" y2="61" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4fffb"/>
+      <stop offset="1" stop-color="#d8fbf2"/>
+    </linearGradient>
+    <linearGradient id="mintStroke" x1="10" x2="73" y1="7" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25d6bd"/>
+      <stop offset="0.56" stop-color="#06977f"/>
+      <stop offset="1" stop-color="#005c52"/>
     </linearGradient>
     <linearGradient id="wordFill" x1="92" x2="262" y1="8" y2="55" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#11bca3"/>
+      <stop offset="0" stop-color="#14bfa7"/>
       <stop offset="0.52" stop-color="#008b78"/>
       <stop offset="1" stop-color="#006b60"/>
     </linearGradient>
-    <filter id="softLift" x="-8%" y="-16%" width="116%" height="132%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#052f2a" flood-opacity="0.18"/>
+    <filter id="markShadow" x="-18%" y="-22%" width="136%" height="144%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#062c27" flood-opacity="0.16"/>
+    </filter>
+    <filter id="wordShadow" x="-8%" y="-16%" width="116%" height="132%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.2" flood-color="#052f2a" flood-opacity="0.18"/>
     </filter>
   </defs>
 
-  <g filter="url(#softLift)">
+  <g filter="url(#markShadow)">
     <path
-      d="M35.5 5.2 66.6 20.8c3.1 1.6 5.1 4.8 5.1 8.3v16.2c0 3.5-2 6.7-5.1 8.3L35.5 69 4.4 53.6C1.3 52 0 48.8 0 45.3V29.1c0-3.5 1.3-6.7 4.4-8.3L35.5 5.2Z"
-      transform="translate(5 -3)"
+      d="M41 6.2c3.7 0 24.5 11.1 27.3 15.6 2 3.2 2 22.2 0 25.4C65.5 51.7 44.7 62.8 41 62.8S16.5 51.7 13.7 47.2c-2-3.2-2-22.2 0-25.4C16.5 17.3 37.3 6.2 41 6.2Z"
+      fill="url(#frameFill)"
+      stroke="#052f2a"
+      stroke-width="3.8"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M41 6.2c3.7 0 24.5 11.1 27.3 15.6 2 3.2 2 22.2 0 25.4C65.5 51.7 44.7 62.8 41 62.8S16.5 51.7 13.7 47.2c-2-3.2-2-22.2 0-25.4C16.5 17.3 37.3 6.2 41 6.2Z"
       fill="none"
-      stroke="#063a34"
-      stroke-width="7"
+      stroke="url(#mintStroke)"
+      stroke-width="2.4"
       stroke-linejoin="round"
     />
+
     <path
-      d="M35.5 5.2 66.6 20.8c3.1 1.6 5.1 4.8 5.1 8.3v16.2c0 3.5-2 6.7-5.1 8.3L35.5 69 4.4 53.6C1.3 52 0 48.8 0 45.3V29.1c0-3.5 1.3-6.7 4.4-8.3L35.5 5.2Z"
-      transform="translate(5 -3)"
+      d="M23.8 34.5 41 20.6l17.2 13.9"
       fill="none"
-      stroke="url(#markFill)"
-      stroke-width="5"
-      stroke-linejoin="round"
-    />
-    <path
-      d="M23.7 35.7 40.5 22.3l17 13.4v20H47V42.4H34.2v13.3H23.7V35.7Z"
-      fill="#eafff9"
-      stroke="#063a34"
-      stroke-width="5"
-      stroke-linejoin="round"
-    />
-    <path
-      d="M23.7 35.7 40.5 22.3l17 13.4v20H47V42.4H34.2v13.3H23.7V35.7Z"
-      fill="#eafff9"
-      stroke="url(#markFill)"
-      stroke-width="3"
-      stroke-linejoin="round"
-    />
-    <path
-      d="M7.2 49.8c7.6 9.5 20.7 14.5 33.4 12.6M67.6 25.8c-1.6 11-8.6 21-18.4 26.5"
-      fill="none"
-      stroke="#063a34"
-      stroke-width="7"
+      stroke="#052f2a"
+      stroke-width="7.2"
       stroke-linecap="round"
+      stroke-linejoin="round"
     />
     <path
-      d="M7.2 49.8c7.6 9.5 20.7 14.5 33.4 12.6M67.6 25.8c-1.6 11-8.6 21-18.4 26.5"
+      d="M29 32.6v19.2h24V32.6"
+      fill="#ecfff9"
+      stroke="#052f2a"
+      stroke-width="7.2"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M23.8 34.5 41 20.6l17.2 13.9"
       fill="none"
-      stroke="url(#markFill)"
-      stroke-width="4"
+      stroke="url(#mintStroke)"
+      stroke-width="4.2"
       stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M29 32.6v19.2h24V32.6"
+      fill="#ecfff9"
+      stroke="url(#mintStroke)"
+      stroke-width="4.2"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M36.7 51.8V40.7h8.6v11.1"
+      fill="none"
+      stroke="#007a6d"
+      stroke-width="3.4"
+      stroke-linejoin="round"
+    />
+
+    <circle cx="59.6" cy="49.6" r="10.2" fill="#052f2a"/>
+    <circle cx="59.6" cy="49.6" r="8.3" fill="#05a88f"/>
+    <path
+      d="m55.2 49.5 3 3.1 6.2-7"
+      fill="none"
+      stroke="#f2fffb"
+      stroke-width="2.7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
     />
   </g>
 
@@ -68,13 +94,13 @@
     x="88"
     y="49"
     fill="url(#wordFill)"
-    stroke="#062923"
-    stroke-width="1.2"
+    stroke="#052f2a"
+    stroke-width="1"
     paint-order="stroke fill"
     font-family="Arial Black, Malgun Gothic, Apple SD Gothic Neo, system-ui, sans-serif"
     font-size="43"
     font-weight="900"
     letter-spacing="-1"
-    filter="url(#softLift)"
+    filter="url(#wordShadow)"
   >집직구</text>
 </svg>

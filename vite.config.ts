@@ -124,6 +124,7 @@ const rtmsMapMarkerMonthsBack = 36
 const rtmsMapMarkerLimit = 120000
 const rtmsMapMarkerReturnLimit = 5000
 const rtmsMapMarkerDistrictLimit = 2200
+const rtmsMapMarkerBatchSize = 5
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -437,6 +438,11 @@ type RtmsQuery = {
   monthsBack: number
   numOfRows: string
   limit: number
+}
+
+type MapMarkerRefreshOptions = {
+  maxDistricts?: number
+  force?: boolean
 }
 
 const getDefaultDealYmd = () => {
@@ -1121,7 +1127,11 @@ const rtmsProxyPlugin = (): Plugin => ({
       return activeRefresh
     }
 
-    const refreshRtmsMapMarkerCache = async (scope = 'capital', lawdCd = '') => {
+    const refreshRtmsMapMarkerCache = async (
+      scope = 'capital',
+      lawdCd = '',
+      options: MapMarkerRefreshOptions = {},
+    ) => {
       const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
       const kakaoRestApiKey = readKakaoRestApiKey(env)
@@ -1131,8 +1141,21 @@ const rtmsProxyPlugin = (): Plugin => ({
       const districts = lawdCd
         ? capitalAreaDistricts.filter((district) => district.code === lawdCd)
         : group.districts
+      const orderedDistricts = orderMapRefreshDistricts(districts)
+      const refreshTargets: TargetDistrict[] = []
 
-      for (const district of orderMapRefreshDistricts(districts)) {
+      for (const district of orderedDistricts) {
+        if (!options.force && (await readMapMarkerDistrictCache(district.code))) {
+          continue
+        }
+
+        refreshTargets.push(district)
+        if (options.maxDistricts && refreshTargets.length >= options.maxDistricts) {
+          break
+        }
+      }
+
+      for (const district of refreshTargets) {
         try {
           const query = createDistrictMapQuery(district.code)
           const payload = await buildRtmsPayload(query, serviceKey)
@@ -1169,10 +1192,14 @@ const rtmsProxyPlugin = (): Plugin => ({
       }
     }
 
-    const startMapMarkerRefresh = (scope = 'capital', lawdCd = '') => {
+    const startMapMarkerRefresh = (
+      scope = 'capital',
+      lawdCd = '',
+      options: MapMarkerRefreshOptions = {},
+    ) => {
       if (activeMapMarkerRefresh) return activeMapMarkerRefresh
 
-      activeMapMarkerRefresh = refreshRtmsMapMarkerCache(scope, lawdCd).finally(() => {
+      activeMapMarkerRefresh = refreshRtmsMapMarkerCache(scope, lawdCd, options).finally(() => {
         activeMapMarkerRefresh = null
       })
 
@@ -1181,8 +1208,7 @@ const rtmsProxyPlugin = (): Plugin => ({
 
     const scheduleDailyRefresh = () => {
       dailyRefreshTimer = setTimeout(() => {
-        void startRtmsRefresh(true)
-          .then(() => startMapMarkerRefresh('capital', ''))
+        void startMapMarkerRefresh('capital', '', { maxDistricts: rtmsMapMarkerBatchSize })
           .finally(scheduleDailyRefresh)
       }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
     }
@@ -1282,9 +1308,15 @@ const rtmsProxyPlugin = (): Plugin => ({
         const scope = incomingUrl.searchParams.get('scope') || 'capital'
         const lawdCd = incomingUrl.searchParams.get('lawdCd') || ''
         const markersOnly = incomingUrl.searchParams.get('markers') === '1'
+        const rawBatch = incomingUrl.searchParams.get('batch')
+        const markerBatch =
+          rawBatch === 'all'
+            ? undefined
+            : Math.min(Math.max(Number(rawBatch) || rtmsMapMarkerBatchSize, 1), 20)
+        const forceMarkers = incomingUrl.searchParams.get('force') === '1'
         const refreshPromise = markersOnly
-          ? startMapMarkerRefresh(scope, lawdCd)
-          : startRtmsRefresh(true).then(() => startMapMarkerRefresh(scope, lawdCd))
+          ? startMapMarkerRefresh(scope, lawdCd, { maxDistricts: markerBatch, force: forceMarkers })
+          : startRtmsRefresh(true).then(() => startMapMarkerRefresh(scope, lawdCd, { maxDistricts: markerBatch }))
         if (shouldWait) {
           await refreshPromise
         }
@@ -1293,7 +1325,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
         const markerCache = await readAggregatedMapMarkerCache({ ...createDefaultMapQuery(), scope, lawdCd }, rtmsMapMarkerReturnLimit)
 
-        response.statusCode = shouldWait && (cachedPayload || markerCache.markers.length > 0) ? 200 : 202
+        response.statusCode = markerCache.markers.length > 0 || (shouldWait && cachedPayload) ? 200 : 202
         response.end(
           JSON.stringify({
             ok: Boolean(cachedPayload || markerCache.markers.length > 0),
@@ -1304,6 +1336,7 @@ const rtmsProxyPlugin = (): Plugin => ({
             markerCount: markerCache.markers.length,
             refreshedDistricts: markerCache.refreshedDistricts,
             searchedDistricts: markerCache.searchedDistricts,
+            batchSize: markerBatch ?? 'all',
             message: cachedPayload
               ? '서울·경기·인천 RTMS 캐시 갱신 완료'
               : markerCache.markers.length > 0
@@ -1451,7 +1484,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         const markerCache = await readAggregatedMapMarkerCache(query, markerLimit)
         if (markerCache.markers.length > 0) {
           if (kakaoRestApiKey && markerCache.refreshedDistricts < markerCache.searchedDistricts) {
-            void startMapMarkerRefresh(query.scope, query.lawdCd)
+            void startMapMarkerRefresh(query.scope, query.lawdCd, { maxDistricts: rtmsMapMarkerBatchSize })
           }
 
           response.statusCode = 200
@@ -1479,7 +1512,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         }
 
         if (kakaoRestApiKey) {
-          void startMapMarkerRefresh(query.scope, query.lawdCd)
+          void startMapMarkerRefresh(query.scope, query.lawdCd, { maxDistricts: rtmsMapMarkerBatchSize })
         }
 
         let cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
@@ -1500,12 +1533,10 @@ const rtmsProxyPlugin = (): Plugin => ({
 
           if (cachedPayload) {
             rtmsCache.set(defaultCapitalCacheKey, cachedPayload)
-            void startRtmsRefresh(true)
           }
         }
 
         if (!cachedPayload) {
-          void startRtmsRefresh(true)
           response.statusCode = 202
           response.end(
             JSON.stringify({
@@ -1515,11 +1546,14 @@ const rtmsProxyPlugin = (): Plugin => ({
                 scope: query.scope,
                 district: targetGroups[query.scope]?.label ?? '서울·경기·인천',
                 resultCode: 'REFRESHING',
-                resultMessage: '실거래 원본 캐시를 먼저 수집하고 있습니다.',
+                resultMessage: kakaoRestApiKey
+                  ? '구/시군구별 지도 마커 캐시를 순차 생성하고 있습니다.'
+                  : 'KAKAO_REST_API_KEY가 없어 신규 주소 좌표 변환을 할 수 없습니다.',
                 markerCount: 0,
                 candidateMarkerCount: 0,
                 missingCoordinateCount: 0,
                 needsKakaoRestApiKey: !kakaoRestApiKey,
+                markerRefreshing: Boolean(activeMapMarkerRefresh),
                 cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
                 updatedAt: new Date().toISOString(),
               },
