@@ -17,6 +17,7 @@ import {
   LineChart,
   LockKeyhole,
   MapPin,
+  MapPinned,
   MessageCircle,
   Search,
   ShieldCheck,
@@ -754,11 +755,11 @@ const navItems: Array<{
   label: string
   icon: typeof BarChart3
 }> = [
-  { id: 'prices', label: '실거래가', icon: BarChart3 },
-  { id: 'ai', label: 'AI 집추천', icon: Sparkles },
+  { id: 'prices', label: '지도', icon: MapPinned },
+  { id: 'ai', label: 'AI추천', icon: Sparkles },
   { id: 'listing', label: '직거래', icon: ShieldCheck },
-  { id: 'directListings', label: '직거래 매물보기', icon: Store },
-  { id: 'inheritance', label: '상속증여', icon: Calculator },
+  { id: 'directListings', label: '매물', icon: Store },
+  { id: 'inheritance', label: '증여', icon: Calculator },
 ]
 
 const regionOptions = [
@@ -1478,7 +1479,13 @@ function App() {
           </button>
           <div className="brand-lockup" aria-label="집직구">
             <div className="brand-logo">
-              <img src="/jipjiggu-logo-crisp.svg" alt="집직구" />
+              <span className="brand-emblem" aria-hidden="true">
+                <Home size={17} strokeWidth={2.7} />
+              </span>
+              <div className="brand-type">
+                <span>ZIP JIKGU</span>
+                <strong>집직구</strong>
+              </div>
             </div>
             <span className="brand-subtitle">전국민 안심 직거래</span>
           </div>
@@ -1915,8 +1922,8 @@ function PriceView({
     <div className="view-stack price-view">
       <div className="section-title">
         <div>
-          <span>실거래가</span>
-          <h2>서울·경기·인천 실제 API 지도</h2>
+          <span>지도</span>
+          <h2>서울·경기·인천 실거래 지도</h2>
         </div>
         <div className="view-switch" aria-label="보기 방식">
           <button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')} type="button">
