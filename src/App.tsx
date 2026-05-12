@@ -647,131 +647,6 @@ const apartments: Apartment[] = [
   },
 ]
 
-const createMapOnlyApartment = ({
-  name,
-  region,
-  lat,
-  lng,
-  pyeong = '34평',
-  approvalYear = 0,
-  households = 0,
-  recentDeal,
-}: {
-  name: string
-  region: string
-  lat: number
-  lng: number
-  pyeong?: string
-  approvalYear?: number
-  households?: number
-  recentDeal?: {
-    date: string
-    priceEok: number
-  }
-}): Apartment => ({
-  name,
-  region,
-  mapOnly: true,
-  station: '실거래 조회중',
-  pyeong,
-  subwayMinutes: 0,
-  commuteMinutes: { 강남: 0, 여의도: 0, 광화문: 0, 판교: 0 },
-  lat,
-  lng,
-  markerPosition: { x: 50, y: 50 },
-  priceEok: recentDeal?.priceEok ?? 0,
-  previousEok: recentDeal?.priceEok ?? 0,
-  recentDeals: recentDeal ? [recentDeal] : [],
-  volume: 0,
-  fit: 0,
-  verified: 'RTMS 최신 거래 조회',
-  households,
-  parkingSpaces: 0,
-  floorAreaRatio: 0,
-  approvalYear,
-  tags: ['실거래 조회'],
-})
-
-const mapOnlyApartments: Apartment[] = [
-  createMapOnlyApartment({
-    name: '반포르엘아파트',
-    region: '서울 서초구 반포동',
-    lat: 37.5049,
-    lng: 127.0082,
-    pyeong: '34평',
-    recentDeal: { date: '26.02.07', priceEok: 52.8 },
-  }),
-  createMapOnlyApartment({
-    name: '반포르엘2차',
-    region: '서울 서초구 반포동',
-    lat: 37.5089,
-    lng: 127.0069,
-    pyeong: '41평',
-    recentDeal: { date: '26.04.25', priceEok: 49 },
-  }),
-  createMapOnlyApartment({
-    name: '신반포2차',
-    region: '서울 서초구 반포동',
-    lat: 37.5109,
-    lng: 127.0046,
-    pyeong: '38평',
-    recentDeal: { date: '26.04.24', priceEok: 49.5 },
-  }),
-  createMapOnlyApartment({
-    name: '신반포4차',
-    region: '서울 서초구 반포동',
-    lat: 37.5087,
-    lng: 127.0157,
-    pyeong: '34평',
-    recentDeal: { date: '26.03.07', priceEok: 64.8 },
-  }),
-  createMapOnlyApartment({
-    name: '반포센트럴자이',
-    region: '서울 서초구 잠원동',
-    lat: 37.5044,
-    lng: 127.0107,
-    pyeong: '34평',
-    recentDeal: { date: '26.04.01', priceEok: 50 },
-  }),
-  createMapOnlyApartment({
-    name: '반포써밋',
-    region: '서울 서초구 반포동',
-    lat: 37.5021,
-    lng: 127.0124,
-    pyeong: '34평',
-    recentDeal: { date: '26.01.24', priceEok: 44.9 },
-  }),
-  createMapOnlyApartment({
-    name: '래미안퍼스티지',
-    region: '서울 서초구 반포동',
-    lat: 37.5048,
-    lng: 126.9998,
-    pyeong: '34평',
-    recentDeal: { date: '26.04.20', priceEok: 70 },
-  }),
-  createMapOnlyApartment({
-    name: '아크로리버파크',
-    region: '서울 서초구 반포동',
-    lat: 37.5107,
-    lng: 126.9984,
-    pyeong: '34평',
-  }),
-  createMapOnlyApartment({
-    name: '반포미도',
-    region: '서울 서초구 반포동',
-    lat: 37.5028,
-    lng: 126.9939,
-    pyeong: '34평',
-  }),
-  createMapOnlyApartment({
-    name: '잠원한신',
-    region: '서울 서초구 잠원동',
-    lat: 37.5124,
-    lng: 127.0117,
-    pyeong: '34평',
-  }),
-]
-
 const navItems: Array<{
   id: Mode
   label: string
@@ -1743,8 +1618,7 @@ function PriceView({
       }),
     [mapFilters, serverMapMarkers],
   )
-  const mapApartmentCandidates = useMemo(() => [...mapOnlyApartments, ...apartments], [apartments])
-  const latestApartmentDeals = useLatestApartmentDeals(mapApartmentCandidates)
+  const latestApartmentDeals = useLatestApartmentDeals(apartments)
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
@@ -1966,7 +1840,7 @@ function PriceView({
         <ApartmentMap
           liveDeals={mapDeals}
           serverMarkers={filteredServerMapMarkers}
-          apartments={mapApartmentCandidates}
+          apartments={apartments}
           latestApartmentDeals={latestApartmentDeals}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
@@ -2311,36 +2185,10 @@ const geocodeListingMarkers = async (
   return markers.filter((marker): marker is MapValueMarker => Boolean(marker))
 }
 
-const latestPlaceDealCache = new Map<string, Promise<LiveRtmsDeal | null>>()
-
 const normalizeMarkerAptName = (value: string) =>
   normalizeSearchText(value)
     .replace(/아파트$/g, '')
     .replace(/주공$/g, '')
-
-const fetchLatestDealForPlaceMarker = (lawdCd: string, aptName: string) => {
-  const cacheKey = `${lawdCd}:${normalizeMarkerAptName(aptName)}`
-  const cached = latestPlaceDealCache.get(cacheKey)
-  if (cached) return cached
-
-  const promise = (async () => {
-    try {
-      const params = new URLSearchParams({
-        lawdCd,
-        aptName,
-        monthsBack: '60',
-      })
-      const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`)
-      const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
-      return payload?.deal ?? null
-    } catch {
-      return null
-    }
-  })()
-
-  latestPlaceDealCache.set(cacheKey, promise)
-  return promise
-}
 
 const createEmptyPlaceMarker = (place: KakaoPlaceResult): MapValueMarker | null => {
   const lat = Number(place.y)
@@ -2368,12 +2216,31 @@ const createEmptyPlaceMarker = (place: KakaoPlaceResult): MapValueMarker | null 
   }
 }
 
-const searchApartmentPlaceMarkers = async (
+const placeMarkerSearchCache = new Map<string, Promise<MapValueMarker[]>>()
+
+const getKakaoLatLngNumber = (position: KakaoLatLng, method: 'getLat' | 'getLng') => {
+  const getter = (position as { [key in 'getLat' | 'getLng']?: () => number })[method]
+  const value = typeof getter === 'function' ? getter() : 0
+  return Number.isFinite(value) ? value : 0
+}
+
+const getPlaceSearchCacheKey = (map: KakaoMapInstance) => {
+  const center = map.getCenter()
+  const lat = getKakaoLatLngNumber(center, 'getLat')
+  const lng = getKakaoLatLngNumber(center, 'getLng')
+  return `${map.getLevel()}:${lat.toFixed(3)}:${lng.toFixed(3)}`
+}
+
+const searchApartmentPlaceMarkers = (
   kakao: KakaoNamespace,
   map: KakaoMapInstance,
   existingMarkers: MapValueMarker[],
-) =>
-  new Promise<MapValueMarker[]>((resolve) => {
+) => {
+  const cacheKey = getPlaceSearchCacheKey(map)
+  const cached = placeMarkerSearchCache.get(cacheKey)
+  if (cached) return cached
+
+  const promise = new Promise<MapValueMarker[]>((resolve) => {
     if (!kakao.maps.services?.Places) {
       resolve([])
       return
@@ -2391,49 +2258,20 @@ const searchApartmentPlaceMarkers = async (
           return
         }
 
-        void (async () => {
-          const baseMarkers = result
-            .map(createEmptyPlaceMarker)
-            .filter((marker): marker is MapValueMarker => Boolean(marker))
-            .filter((marker, index, list) => {
-              const normalizedName = normalizeMarkerAptName(marker.aptName)
-              return (
-                normalizedName.length > 0 &&
-                !existingNames.has(normalizedName) &&
-                index === list.findIndex((candidate) => normalizeMarkerAptName(candidate.aptName) === normalizedName)
-              )
-            })
-            .slice(0, 14)
+        const baseMarkers = result
+          .map(createEmptyPlaceMarker)
+          .filter((marker): marker is MapValueMarker => Boolean(marker))
+          .filter((marker, index, list) => {
+            const normalizedName = normalizeMarkerAptName(marker.aptName)
+            return (
+              normalizedName.length > 0 &&
+              !existingNames.has(normalizedName) &&
+              index === list.findIndex((candidate) => normalizeMarkerAptName(candidate.aptName) === normalizedName)
+            )
+          })
+          .slice(0, 14)
 
-          const enrichedMarkers = await Promise.all(
-            baseMarkers.map(async (marker) => {
-              if (!marker.lawdCd) return marker
-
-              const latestDeal = await fetchLatestDealForPlaceMarker(marker.lawdCd, marker.aptName)
-              if (!latestDeal) return marker
-
-              return {
-                ...marker,
-                id: `place-${latestDeal.aptSeq || marker.id}`,
-                label: latestDeal.tradeType === 'direct' ? '직거래' : '매매',
-                aptName: latestDeal.aptName,
-                address: latestDeal.address,
-                lawdCd: latestDeal.lawdCd,
-                aptSeq: latestDeal.aptSeq,
-                dealDate: latestDeal.dealDate,
-                tradeTypeLabel: '최근 5년 확인',
-                priceEok: latestDeal.priceEok,
-                hasPrice: true,
-                dateLabel: formatMarkerMonth(latestDeal.dealDate),
-                subLabel: `${latestDeal.pyeong}평`,
-                tone: latestDeal.tradeType === 'direct' ? ('direct' as const) : ('sale' as const),
-                relatedDeals: [latestDeal],
-              }
-            }),
-          )
-
-          resolve(enrichedMarkers)
-        })()
+        resolve(baseMarkers)
       },
       {
         location: map.getCenter(),
@@ -2442,6 +2280,9 @@ const searchApartmentPlaceMarkers = async (
       },
     )
   })
+  placeMarkerSearchCache.set(cacheKey, promise)
+  return promise
+}
 
 function ApartmentMap({
   liveDeals,
@@ -2551,6 +2392,7 @@ function ApartmentMap({
         let placeOverlays: KakaoOverlay[] = []
         let placeMarkerNodes: HTMLElement[] = []
         let placeRefreshTimer: number | null = null
+        let activePlaceSearchKey = ''
 
         const focusedListingMarker = focusListing
           ? listingMarkers.find((marker) => marker.listing?.id === focusListing.id)
@@ -2596,12 +2438,20 @@ function ApartmentMap({
             placeRefreshTimer = null
 
             if (disposed || map.getLevel() > 5) {
+              activePlaceSearchKey = ''
               clearPlaceOverlays()
               return
             }
 
+            const placeSearchKey = getPlaceSearchCacheKey(map)
+            if (placeSearchKey === activePlaceSearchKey && placeOverlays.length > 0) {
+              updateDensity()
+              return
+            }
+            activePlaceSearchKey = placeSearchKey
+
             void searchApartmentPlaceMarkers(kakao, map, markers).then((placeMarkers) => {
-              if (disposed) return
+              if (disposed || placeSearchKey !== activePlaceSearchKey) return
 
               clearPlaceOverlays()
               placeMarkerNodes = placeMarkers.map((marker) => {
@@ -2806,8 +2656,19 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
   return latestDeals
 }
 
+const markerHistoryCache = new Map<string, { deals: LiveRtmsDeal[]; status: 'ready' | 'fallback' }>()
+
+const getMarkerHistoryCacheKey = (marker: MapValueMarker) =>
+  [
+    marker.lawdCd || 'no-lawd',
+    marker.aptSeq || normalizeSearchText(marker.aptName),
+    marker.dealDate || marker.dateLabel || 'no-date',
+  ].join(':')
+
 function useMarkerHistory(marker: MapValueMarker) {
   const seedDeals = useMemo(() => dedupeDeals(marker.relatedDeals), [marker])
+  const historyCacheKey = useMemo(() => getMarkerHistoryCacheKey(marker), [marker])
+  const cachedHistory = markerHistoryCache.get(historyCacheKey) ?? null
   const [remoteHistory, setRemoteHistory] = useState<{
     markerId: string
     deals: LiveRtmsDeal[]
@@ -2816,6 +2677,10 @@ function useMarkerHistory(marker: MapValueMarker) {
 
   useEffect(() => {
     if (!marker.lawdCd || !marker.dealDate) {
+      return
+    }
+
+    if (cachedHistory) {
       return
     }
 
@@ -2859,10 +2724,14 @@ function useMarkerHistory(marker: MapValueMarker) {
         }
 
         if (!controller.signal.aborted) {
+          const nextHistory = {
+            deals: dedupeDeals([...remoteDeals, ...seedDeals]),
+            status: 'ready' as const,
+          }
+          markerHistoryCache.set(historyCacheKey, nextHistory)
           setRemoteHistory({
             markerId: marker.id,
-            deals: dedupeDeals([...remoteDeals, ...seedDeals]),
-            status: 'ready',
+            ...nextHistory,
           })
         }
       } catch {
@@ -2879,13 +2748,14 @@ function useMarkerHistory(marker: MapValueMarker) {
     fetchHistory()
 
     return () => controller.abort()
-  }, [marker, seedDeals])
+  }, [cachedHistory, historyCacheKey, marker, seedDeals])
 
   const isCurrent = remoteHistory?.markerId === marker.id
+  const resolvedHistory = cachedHistory ?? (isCurrent ? remoteHistory : null)
 
   return {
-    history: isCurrent ? remoteHistory.deals : seedDeals,
-    status: isCurrent ? remoteHistory.status : marker.lawdCd ? 'loading' : 'fallback',
+    history: resolvedHistory ? resolvedHistory.deals : seedDeals,
+    status: resolvedHistory ? resolvedHistory.status : marker.lawdCd ? 'loading' : 'fallback',
   }
 }
 
