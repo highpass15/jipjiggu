@@ -2447,9 +2447,6 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
 
               return payload?.deal ? ([apartment.name, payload.deal] as const) : null
             } catch {
-              if (!controller.signal.aborted) {
-                requestedNamesRef.current.add(apartment.name)
-              }
               return null
             }
           }),
