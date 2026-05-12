@@ -1478,7 +1478,7 @@ function App() {
           </button>
           <div className="brand-lockup" aria-label="집직구">
             <div className="brand-logo">
-              <img src="/jipjiggu-logo.png" alt="집직구" />
+              <img src="/jipjiggu-logo-crisp.svg" alt="집직구" />
             </div>
             <span className="brand-subtitle">전국민 안심 직거래</span>
           </div>
