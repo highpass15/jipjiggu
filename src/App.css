@@ -564,8 +564,8 @@ h1 {
 
 .map-canvas {
   position: relative;
-  height: min(68svh, 620px);
-  min-height: 540px;
+  height: min(76svh, 720px);
+  min-height: 620px;
   overflow: hidden;
   background: #eef6f4;
 }

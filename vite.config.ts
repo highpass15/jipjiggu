@@ -11,6 +11,11 @@ type TargetDistrict = {
   name: string
   metro: Metro
 }
+type TargetGroup = {
+  label: string
+  districts: TargetDistrict[]
+  legalDongsByLawdCd?: Record<string, string[]>
+}
 type RtmsApiItem = Record<string, string | number | undefined>
 type BuildingApiItem = Record<string, string | number | undefined>
 type RtmsParsedResponse = {
@@ -131,7 +136,17 @@ const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
 )
-const targetGroups: Record<string, { label: string; districts: TargetDistrict[] }> = {
+const pyeongchonCoreDongsByLawdCd: Record<string, string[]> = {
+  '41173': ['평촌동', '호계동', '범계동', '신촌동', '귀인동', '달안동', '부림동', '갈산동', '비산동', '관양동'],
+  '41430': ['내손동', '포일동'],
+}
+
+const targetGroups: Record<string, TargetGroup> = {
+  'pyeongchon-core': {
+    label: '평촌·과천·의왕',
+    districts: gyeonggiDistricts.filter((district) => ['41173', '41290', '41430'].includes(district.code)),
+    legalDongsByLawdCd: pyeongchonCoreDongsByLawdCd,
+  },
   capital: { label: '서울·경기·인천', districts: capitalAreaDistricts },
   seoul: { label: '서울 전체', districts: seoulDistricts },
   gyeonggi: { label: '경기 전체', districts: gyeonggiDistricts },
@@ -153,6 +168,16 @@ const targetGroups: Record<string, { label: string; districts: TargetDistrict[] 
     districts: gyeonggiDistricts.filter((district) => district.name.includes('수원시')),
   },
 }
+
+const getTargetLegalDongs = (group: TargetGroup, lawdCd: string) => group.legalDongsByLawdCd?.[lawdCd]
+
+const matchesTargetLegalDong = (group: TargetGroup, lawdCd: string, legalDong: string) => {
+  const targetDongs = getTargetLegalDongs(group, lawdCd)
+  return !targetDongs || targetDongs.some((dong) => legalDong.includes(dong) || dong.includes(legalDong))
+}
+
+const matchesTargetGroup = (group: TargetGroup, lawdCd: string, legalDong: string) =>
+  group.districts.some((district) => district.code === lawdCd) && matchesTargetLegalDong(group, lawdCd, legalDong)
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -571,6 +596,7 @@ type MapMarkerDistrictCachePayload = {
     id: string
     aptName: string
     address: string
+    lawdCd?: string
     dealDate?: string
     lat: number
     lng: number
@@ -736,14 +762,15 @@ const pickMapMarkerGroups = (groups: RtmsMapDealGroup[], limit: number, balanced
 }
 
 const mapRefreshPriorityLawdCds = [
+  '41173',
+  '41290',
+  '41430',
   '11680',
   '11650',
   '11710',
-  '41290',
   '41135',
   '11170',
   '11440',
-  '41173',
   '41465',
   '41390',
 ]
@@ -803,7 +830,9 @@ const buildRtmsMapMarkerPayload = async ({
     meta: Record<string, unknown>
     deals: NormalizedRtmsDeal[]
   }
-  const allGroupedDeals = groupRtmsDealsForMap(rtmsPayload.deals)
+  const group = targetGroups[query.scope] ?? targetGroups.capital
+  const scopedDeals = rtmsPayload.deals.filter((deal) => matchesTargetGroup(group, deal.lawdCd, deal.legalDong))
+  const allGroupedDeals = groupRtmsDealsForMap(scopedDeals)
   const groupedDeals = pickMapMarkerGroups(allGroupedDeals, limit, !query.lawdCd && query.scope === 'capital')
   const coordinateByGroupId = new Map<string, GeocodeCacheEntry>()
   const missingGroups: typeof groupedDeals = []
@@ -835,7 +864,7 @@ const buildRtmsMapMarkerPayload = async ({
     })
   }
 
-  const nearbyDealsByDong = rtmsPayload.deals.reduce((group, deal) => {
+  const nearbyDealsByDong = scopedDeals.reduce((group, deal) => {
     const key = `${deal.lawdCd}-${deal.legalDong}`
     group.set(key, [...(group.get(key) ?? []), deal])
     return group
@@ -880,6 +909,7 @@ const buildRtmsMapMarkerPayload = async ({
       source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료 + Kakao 주소 좌표 캐시',
       lawdCd: query.lawdCd || '',
       scope: query.scope,
+      district: query.lawdCd ? districtNameByLawdCd[query.lawdCd] || query.lawdCd : group.label,
       resultCode: markers.length ? (missingGroups.length ? 'PARTIAL' : '000') : 'REFRESHING',
       resultMessage: kakaoRestApiKey
         ? '좌표 캐시가 있는 단지를 지도 마커로 반환했습니다.'
@@ -989,6 +1019,12 @@ const readAggregatedMapMarkerCache = async (query: RtmsQuery, limit: number) => 
   const cacheFiles = await Promise.all(districts.map((district) => readMapMarkerDistrictCache(district.code)))
   const markers = cacheFiles
     .flatMap((payload) => payload?.markers ?? [])
+    .filter((marker) => {
+      const [latestDeal] = marker.relatedDeals ?? []
+      const lawdCd = latestDeal?.lawdCd || marker.lawdCd || ''
+      const legalDong = latestDeal?.legalDong || ''
+      return lawdCd ? matchesTargetGroup(group, lawdCd, legalDong) : true
+    })
     .filter((marker) => Number.isFinite(marker.lat) && Number.isFinite(marker.lng))
     .sort((a, b) => String(b.dealDate ?? '').localeCompare(String(a.dealDate ?? '')))
     .slice(0, limit)
@@ -1012,7 +1048,7 @@ const filterRtmsPayloadFromCapitalCache = (serializedPayload: string, query: Rtm
   const deals = payload.deals
     .filter((deal) => {
       if (query.lawdCd) return deal.lawdCd === query.lawdCd
-      return districtCodes.has(deal.lawdCd)
+      return districtCodes.has(deal.lawdCd) && matchesTargetGroup(group, deal.lawdCd, deal.legalDong)
     })
     .slice(0, query.limit)
 
@@ -1062,7 +1098,9 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
     throw new Error(`RTMS 수집 실패: ${sampleError.slice(0, 180)}`)
   }
 
-  const activeDeals = rawDeals.filter((deal) => deal.status === 'active')
+  const activeDeals = rawDeals.filter(
+    (deal) => deal.status === 'active' && matchesTargetGroup(group, deal.lawdCd, deal.legalDong),
+  )
   const deals = activeDeals
     .sort((a, b) => b.dealDate.localeCompare(a.dealDate) || b.priceEok - a.priceEok)
     .slice(0, query.limit)
@@ -1313,8 +1351,10 @@ const rtmsProxyPlugin = (): Plugin => ({
 
     const scheduleDailyRefresh = () => {
       dailyRefreshTimer = setTimeout(() => {
-        void startMapMarkerRefresh('capital', '', { maxDistricts: rtmsMapMarkerBatchSize })
-          .finally(scheduleDailyRefresh)
+        void (async () => {
+          await startMapMarkerRefresh('pyeongchon-core', '', { maxDistricts: 3 })
+          await startMapMarkerRefresh('capital', '', { maxDistricts: rtmsMapMarkerBatchSize })
+        })().finally(scheduleDailyRefresh)
       }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
     }
 
@@ -1589,7 +1629,9 @@ const rtmsProxyPlugin = (): Plugin => ({
         const markerCache = await readAggregatedMapMarkerCache(query, markerLimit)
         if (markerCache.markers.length > 0) {
           if (kakaoRestApiKey && markerCache.refreshedDistricts < markerCache.searchedDistricts) {
-            void startMapMarkerRefresh(query.scope, query.lawdCd, { maxDistricts: rtmsMapMarkerBatchSize })
+            void startMapMarkerRefresh(query.scope, query.lawdCd, {
+              maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 3 : rtmsMapMarkerBatchSize,
+            })
           }
 
           response.statusCode = 200
@@ -1617,7 +1659,9 @@ const rtmsProxyPlugin = (): Plugin => ({
         }
 
         if (kakaoRestApiKey) {
-          void startMapMarkerRefresh(query.scope, query.lawdCd, { maxDistricts: rtmsMapMarkerBatchSize })
+          void startMapMarkerRefresh(query.scope, query.lawdCd, {
+            maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 3 : rtmsMapMarkerBatchSize,
+          })
         }
 
         let cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
