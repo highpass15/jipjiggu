@@ -1703,6 +1703,7 @@ function PriceView({
   const [serverMapMarkers, setServerMapMarkers] = useState<MapValueMarker[]>([])
   const [rtmsStatus, setRtmsStatus] = useState<RtmsStatus>('loading')
   const [rtmsError, setRtmsError] = useState('')
+  const [mapMarkerNotice, setMapMarkerNotice] = useState('')
   const [syncTick, setSyncTick] = useState(0)
   const [filterOpen, setFilterOpen] = useState(false)
   const [mapFilters, setMapFilters] = useState<MapFilterState>(defaultMapFilters)
@@ -1849,6 +1850,13 @@ function PriceView({
       if (!('markers' in payload)) return
 
       setServerMapMarkers(payload.markers)
+      setMapMarkerNotice(
+        payload.markers.length > 0
+          ? ''
+          : payload.meta.needsKakaoRestApiKey
+            ? 'Render 환경변수 KAKAO_REST_API_KEY에 Kakao Developers의 REST API 키를 추가하면 서울·경기·인천 단지 좌표 캐시가 생성됩니다.'
+            : payload.meta.resultMessage || '',
+      )
 
       const markerDeals = dedupeDeals(payload.markers.flatMap((marker) => marker.relatedDeals ?? []))
       if (markerDeals.length > 0 && liveDeals.length === 0) {
@@ -1945,6 +1953,7 @@ function PriceView({
           focusLiveDeal={focusLiveDeal}
           rtmsStatus={rtmsStatus}
           rtmsError={rtmsError}
+          mapMarkerNotice={mapMarkerNotice}
           onFilterClick={() => setFilterOpen(true)}
           selectedMarker={selectedMapMarker}
           onSelectMarker={handleMapMarkerSelect}
@@ -2288,6 +2297,7 @@ function ApartmentMap({
   focusLiveDeal,
   rtmsStatus,
   rtmsError,
+  mapMarkerNotice,
   onFilterClick,
   selectedMarker,
   onSelectMarker,
@@ -2303,6 +2313,7 @@ function ApartmentMap({
   focusLiveDeal: LiveRtmsDeal | null
   rtmsStatus: RtmsStatus
   rtmsError: string
+  mapMarkerNotice: string
   onFilterClick: () => void
   selectedMarker: MapValueMarker | null
   onSelectMarker: (marker: MapValueMarker, options?: { scrollToDetail?: boolean }) => void
@@ -2445,7 +2456,7 @@ function ApartmentMap({
       <div className="map-canvas">
         <div ref={mapNode} className={mapReady ? 'kakao-map visible' : 'kakao-map'} />
         {shouldShowMapStatus && (
-          <MapDataStatus status={rtmsStatus} error={rtmsError} mapError={mapError} />
+          <MapDataStatus status={rtmsStatus} error={rtmsError} mapError={mapError} notice={mapMarkerNotice} />
         )}
         <div className="map-filter-overlay" aria-label="지도 거래 필터">
           <button className="active" type="button">실거래</button>
@@ -2474,10 +2485,12 @@ function MapDataStatus({
   status,
   error,
   mapError,
+  notice,
 }: {
   status: RtmsStatus
   error: string
   mapError: boolean
+  notice: string
 }) {
   return (
     <div className="map-data-status" aria-live="polite">
@@ -2492,6 +2505,8 @@ function MapDataStatus({
         <strong>
           {mapError
             ? 'Kakao 지도 도메인 등록 필요'
+            : notice
+              ? '지도 좌표 캐시 준비 필요'
             : status === 'loading'
               ? '서울·경기·인천 실거래 API 불러오는 중'
               : status === 'refreshing'
@@ -2501,6 +2516,8 @@ function MapDataStatus({
         <p>
           {mapError
             ? 'Kakao Developers의 JavaScript 키 Web 도메인에 https://jipjiggu.onrender.com 을 추가하면 지도가 표시됩니다.'
+            : notice
+              ? notice
             : status === 'error'
             ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
             : status === 'refreshing'
