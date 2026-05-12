@@ -8,6 +8,8 @@ services:
     envVars:
       - key: VITE_KAKAO_MAP_JS_KEY
         sync: false
+      - key: KAKAO_REST_API_KEY
+        sync: false
       - key: MOLIT_APT_TRADE_SERVICE_KEY
         sync: false
       - key: MOLIT_BUILDING_LEDGER_SERVICE_KEY

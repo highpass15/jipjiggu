@@ -175,6 +175,18 @@ type RtmsResponse = {
   deals: LiveRtmsDeal[]
 }
 
+type RtmsMapMarkerResponse = {
+  meta: RtmsMeta & {
+    resultCode: string
+    resultMessage: string
+    markerCount?: number
+    candidateMarkerCount?: number
+    missingCoordinateCount?: number
+    needsKakaoRestApiKey?: boolean
+  }
+  markers: MapValueMarker[]
+}
+
 type LatestApartmentDealResponse = {
   meta: {
     source: string
@@ -1688,6 +1700,7 @@ function PriceView({
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
+  const [serverMapMarkers, setServerMapMarkers] = useState<MapValueMarker[]>([])
   const [rtmsStatus, setRtmsStatus] = useState<RtmsStatus>('loading')
   const [rtmsError, setRtmsError] = useState('')
   const [syncTick, setSyncTick] = useState(0)
@@ -1700,12 +1713,21 @@ function PriceView({
     () => liveDeals.filter((deal) => passesMapFilters(deal, mapFilters)),
     [liveDeals, mapFilters],
   )
+  const filteredServerMapMarkers = useMemo(
+    () =>
+      serverMapMarkers.filter((marker) => {
+        const [latestDeal] = marker.relatedDeals ?? []
+        return latestDeal ? passesMapFilters(latestDeal, mapFilters) : true
+      }),
+    [mapFilters, serverMapMarkers],
+  )
   const mapApartmentCandidates = useMemo(() => [...mapOnlyApartments, ...apartments], [apartments])
   const latestApartmentDeals = useLatestApartmentDeals(mapApartmentCandidates)
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
   const retryTimerRef = useRef<number | null>(null)
+  const markerRetryTimerRef = useRef<number | null>(null)
   const latestAverage =
     apartments.reduce((sum, apartment) => sum + apartment.priceEok, 0) / Math.max(apartments.length, 1)
   const totalVolume = apartments.reduce((sum, apartment) => sum + apartment.volume, 0)
@@ -1810,10 +1832,46 @@ function PriceView({
     }
   }, [defaultDealYmd, onLiveDealsChange, rtmsScope])
 
+  const fetchServerMapMarkers = useCallback(async (signal?: AbortSignal) => {
+    if (signal?.aborted) return
+
+    try {
+      const response = await fetch(
+        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=36&limit=5000&geocodeLimit=500`,
+        signal ? { signal } : undefined,
+      )
+      const payload = (await response.json()) as RtmsMapMarkerResponse | { error?: string }
+
+      if (!response.ok && !('markers' in payload)) {
+        throw new Error('error' in payload ? payload.error : '지도 마커 캐시 호출 실패')
+      }
+
+      if (!('markers' in payload)) return
+
+      setServerMapMarkers(payload.markers)
+
+      const markerDeals = dedupeDeals(payload.markers.flatMap((marker) => marker.relatedDeals ?? []))
+      if (markerDeals.length > 0 && liveDeals.length === 0) {
+        onLiveDealsChange(markerDeals)
+      }
+
+      if (payload.meta.resultCode === 'REFRESHING' || payload.meta.resultCode === 'PARTIAL') {
+        if (markerRetryTimerRef.current) window.clearTimeout(markerRetryTimerRef.current)
+        markerRetryTimerRef.current = window.setTimeout(() => {
+          setSyncTick((tick) => tick + 1)
+        }, payload.markers.length > 0 ? 45000 : 12000)
+      }
+    } catch (error) {
+      if (signal?.aborted) return
+      console.warn(error instanceof Error ? error.message : '지도 마커 캐시 호출 실패')
+    }
+  }, [defaultDealYmd, liveDeals.length, onLiveDealsChange, rtmsScope])
+
   useEffect(() => {
     const controller = new AbortController()
     const initialTimer = window.setTimeout(() => {
       void fetchRtmsDeals(controller.signal)
+      void fetchServerMapMarkers(controller.signal)
     }, 0)
 
     return () => {
@@ -1823,8 +1881,12 @@ function PriceView({
         window.clearTimeout(retryTimerRef.current)
         retryTimerRef.current = null
       }
+      if (markerRetryTimerRef.current) {
+        window.clearTimeout(markerRetryTimerRef.current)
+        markerRetryTimerRef.current = null
+      }
     }
-  }, [fetchRtmsDeals, syncTick])
+  }, [fetchRtmsDeals, fetchServerMapMarkers, syncTick])
 
   useEffect(() => {
     let timerId: number
@@ -1874,6 +1936,7 @@ function PriceView({
       {view === 'map' ? (
         <ApartmentMap
           liveDeals={mapDeals}
+          serverMarkers={filteredServerMapMarkers}
           apartments={mapApartmentCandidates}
           latestApartmentDeals={latestApartmentDeals}
           activeFilterCount={activeFilterCount}
@@ -2216,6 +2279,7 @@ const geocodeListingMarkers = async (
 
 function ApartmentMap({
   liveDeals,
+  serverMarkers,
   apartments,
   latestApartmentDeals,
   activeFilterCount,
@@ -2230,6 +2294,7 @@ function ApartmentMap({
   onClearMarker,
 }: {
   liveDeals: LiveRtmsDeal[]
+  serverMarkers: MapValueMarker[]
   apartments: Apartment[]
   latestApartmentDeals: Record<string, LiveRtmsDeal>
   activeFilterCount: number
@@ -2284,7 +2349,7 @@ function ApartmentMap({
         kakaoMapRef.current = map
 
         const [liveMarkers, listingMarkers] = await Promise.all([
-          geocodeDealMarkers(kakao, liveDeals),
+          serverMarkers.length > 0 ? Promise.resolve(serverMarkers) : geocodeDealMarkers(kakao, liveDeals),
           geocodeListingMarkers(kakao, userListings),
         ])
         if (disposed) return
@@ -2358,9 +2423,10 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, userListings])
+  }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, serverMarkers, userListings])
 
   const hasDisplayableMarkers =
+    serverMarkers.length > 0 ||
     liveDeals.length > 0 ||
     userListings.length > 0 ||
     apartmentMarkers(apartments, latestApartmentDeals).length > 0

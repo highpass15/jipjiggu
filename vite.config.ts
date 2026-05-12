@@ -120,6 +120,9 @@ const gyeonggiDistricts: TargetDistrict[] = [
 const capitalAreaDistricts = [...seoulDistricts, ...gyeonggiDistricts, ...incheonDistricts]
 const rtmsDailyRefreshHour = 1
 const rtmsDefaultCapitalMonthsBack = 3
+const rtmsMapMarkerMonthsBack = 36
+const rtmsMapMarkerLimit = 120000
+const rtmsMapMarkerReturnLimit = 5000
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -168,12 +171,12 @@ const loadRuntimeEnv = () => ({ ...loadEnv('', process.cwd(), ''), ...process.en
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const fetchWithTimeout = async (url: string, timeoutMs = 9000) => {
+const fetchWithTimeout = async (url: string, timeoutMs = 9000, init: RequestInit = {}) => {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    return await fetch(url, { signal: controller.signal })
+    return await fetch(url, { ...init, signal: controller.signal })
   } finally {
     clearTimeout(timeoutId)
   }
@@ -265,6 +268,8 @@ const normalizeRtmsItem = (item: RtmsApiItem, district: TargetDistrict) => {
     metro: district.metro,
   }
 }
+
+type NormalizedRtmsDeal = ReturnType<typeof normalizeRtmsItem>
 
 const parseApiItems = <T extends Record<string, unknown>>(raw: string) => {
   if (!raw.trim()) {
@@ -482,6 +487,8 @@ const getMsUntilNextDailyRefresh = (hour: number) => {
 const rtmsCacheKey = (query: RtmsQuery) =>
   [query.lawdCd || 'all', query.scope, query.dealYmd, query.monthsBack, query.numOfRows, query.limit].join(':')
 
+const safeCacheFilename = (value: string) => createHash('sha1').update(value).digest('hex')
+
 const rtmsCacheFilePath = (cacheKey: string) => {
   const readablePrefix = cacheKey
     .split(':')
@@ -515,6 +522,272 @@ const createDefaultCapitalQuery = (): RtmsQuery => ({
   numOfRows: '1000',
   limit: 50000,
 })
+
+const createDefaultMapQuery = (): RtmsQuery => ({
+  lawdCd: '',
+  scope: 'capital',
+  dealYmd: 'auto',
+  monthsBack: rtmsMapMarkerMonthsBack,
+  numOfRows: '1000',
+  limit: rtmsMapMarkerLimit,
+})
+
+type GeocodeCacheEntry = {
+  provider: 'kakao'
+  address: string
+  lat: number
+  lng: number
+  updatedAt: string
+}
+
+const normalizeAddressKey = (address: string) => address.replace(/\s+/g, ' ').trim()
+const geocodeCacheFilePath = (address: string) =>
+  path.join(rtmsCacheDirectory, 'geocodes', `${safeCacheFilename(normalizeAddressKey(address))}.json`)
+
+const readGeocodeCache = async (address: string) => {
+  try {
+    const raw = await fs.readFile(geocodeCacheFilePath(address), 'utf8')
+    const payload = JSON.parse(raw) as GeocodeCacheEntry
+    return Number.isFinite(payload.lat) && Number.isFinite(payload.lng) ? payload : null
+  } catch {
+    return null
+  }
+}
+
+const writeGeocodeCache = async (address: string, payload: GeocodeCacheEntry) => {
+  await fs.mkdir(path.dirname(geocodeCacheFilePath(address)), { recursive: true })
+  await fs.writeFile(geocodeCacheFilePath(address), JSON.stringify(payload), 'utf8')
+}
+
+const geocodeAddressWithKakao = async (address: string, restApiKey: string) => {
+  const normalizedAddress = normalizeAddressKey(address)
+  const cached = await readGeocodeCache(normalizedAddress)
+  if (cached) return cached
+  if (!restApiKey || !normalizedAddress) return null
+
+  try {
+    const response = await fetchWithTimeout(
+      `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(normalizedAddress)}`,
+      7000,
+      {
+        headers: {
+          Authorization: `KakaoAK ${restApiKey}`,
+        },
+      },
+    )
+
+    if (!response.ok) return null
+
+    const payload = (await response.json()) as {
+      documents?: Array<{
+        x?: string
+        y?: string
+      }>
+    }
+    const [document] = payload.documents ?? []
+    const lng = Number(document?.x)
+    const lat = Number(document?.y)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+
+    const entry: GeocodeCacheEntry = {
+      provider: 'kakao',
+      address: normalizedAddress,
+      lat,
+      lng,
+      updatedAt: new Date().toISOString(),
+    }
+    await writeGeocodeCache(normalizedAddress, entry)
+    return entry
+  } catch {
+    return null
+  }
+}
+
+const formatMarkerDealMonth = (date?: string) => {
+  if (!date) return ''
+  const [year, month] = date.split('-')
+  return year && month ? `${year.slice(2)}.${month.padStart(2, '0')}` : ''
+}
+
+const groupRtmsDealsForMap = (deals: NormalizedRtmsDeal[]) =>
+  Array.from(
+    deals
+      .filter((deal) => deal.status === 'active' && deal.address && deal.aptName)
+      .reduce((group, deal) => {
+        const key = deal.aptSeq || `${deal.lawdCd}-${deal.legalDong}-${deal.aptName}-${deal.jibun}`
+        group.set(key, [...(group.get(key) ?? []), deal])
+        return group
+      }, new Map<string, NormalizedRtmsDeal[]>())
+      .entries(),
+  )
+    .map(([id, relatedDeals]) => {
+      const history = relatedDeals
+        .sort((a, b) => b.dealDate.localeCompare(a.dealDate) || b.priceEok - a.priceEok)
+        .filter(
+          (deal, index, list) =>
+            index ===
+            list.findIndex(
+              (candidate) =>
+                candidate.id === deal.id ||
+                `${candidate.dealDate}-${candidate.priceEok}-${candidate.areaM2}-${candidate.floor}` ===
+                  `${deal.dealDate}-${deal.priceEok}-${deal.areaM2}-${deal.floor}`,
+            ),
+        )
+      const latestDeal = history[0]
+
+      return {
+        id,
+        latestDeal,
+        history,
+        hasDirectDeal: history.some((deal) => deal.tradeType === 'direct'),
+      }
+    })
+    .filter((group) => Boolean(group.latestDeal))
+    .sort((a, b) => b.latestDeal.dealDate.localeCompare(a.latestDeal.dealDate) || b.latestDeal.priceEok - a.latestDeal.priceEok)
+
+type RtmsMapDealGroup = ReturnType<typeof groupRtmsDealsForMap>[number]
+
+const pickMapMarkerGroups = (groups: RtmsMapDealGroup[], limit: number, balancedByDistrict: boolean) => {
+  if (!balancedByDistrict) return groups.slice(0, limit)
+
+  const byDistrict = groups.reduce((bucket, group) => {
+    const districtKey = group.latestDeal.lawdCd
+    bucket.set(districtKey, [...(bucket.get(districtKey) ?? []), group])
+    return bucket
+  }, new Map<string, RtmsMapDealGroup[]>())
+  const districts = [...byDistrict.keys()].sort()
+  const selected: RtmsMapDealGroup[] = []
+
+  for (let index = 0; selected.length < limit; index += 1) {
+    let pickedInRound = false
+
+    for (const district of districts) {
+      const group = byDistrict.get(district)?.[index]
+      if (group) {
+        selected.push(group)
+        pickedInRound = true
+      }
+
+      if (selected.length >= limit) break
+    }
+
+    if (!pickedInRound) break
+  }
+
+  return selected.sort((a, b) => b.latestDeal.dealDate.localeCompare(a.latestDeal.dealDate) || b.latestDeal.priceEok - a.latestDeal.priceEok)
+}
+
+const buildRtmsMapMarkerPayload = async ({
+  serializedPayload,
+  query,
+  kakaoRestApiKey,
+  limit,
+  geocodeLimit,
+}: {
+  serializedPayload: string
+  query: RtmsQuery
+  kakaoRestApiKey: string
+  limit: number
+  geocodeLimit: number
+}) => {
+  const rtmsPayload = JSON.parse(serializedPayload) as {
+    meta: Record<string, unknown>
+    deals: NormalizedRtmsDeal[]
+  }
+  const allGroupedDeals = groupRtmsDealsForMap(rtmsPayload.deals)
+  const groupedDeals = pickMapMarkerGroups(allGroupedDeals, limit, !query.lawdCd && query.scope === 'capital')
+  const coordinateByGroupId = new Map<string, GeocodeCacheEntry>()
+  const missingGroups: typeof groupedDeals = []
+
+  await Promise.all(
+    groupedDeals.map(async (group) => {
+      const cached = await readGeocodeCache(group.latestDeal.address)
+      if (cached) {
+        coordinateByGroupId.set(group.id, cached)
+      } else {
+        missingGroups.push(group)
+      }
+    }),
+  )
+
+  if (kakaoRestApiKey && geocodeLimit > 0 && missingGroups.length > 0) {
+    const geocodedGroups = await runInBatches(
+      missingGroups.slice(0, geocodeLimit),
+      5,
+      async (group) => ({
+        id: group.id,
+        coordinate: await geocodeAddressWithKakao(group.latestDeal.address, kakaoRestApiKey),
+      }),
+      120,
+    )
+
+    geocodedGroups.forEach(({ id, coordinate }) => {
+      if (coordinate) coordinateByGroupId.set(id, coordinate)
+    })
+  }
+
+  const nearbyDealsByDong = rtmsPayload.deals.reduce((group, deal) => {
+    const key = `${deal.lawdCd}-${deal.legalDong}`
+    group.set(key, [...(group.get(key) ?? []), deal])
+    return group
+  }, new Map<string, NormalizedRtmsDeal[]>())
+
+  const markers = groupedDeals
+    .map((group) => {
+      const coordinate = coordinateByGroupId.get(group.id)
+      if (!coordinate) return null
+
+      const latestDeal = group.latestDeal
+      const nearbyKey = `${latestDeal.lawdCd}-${latestDeal.legalDong}`
+      const nearbyDeals = (nearbyDealsByDong.get(nearbyKey) ?? [])
+        .filter((deal) => deal.aptSeq !== latestDeal.aptSeq)
+        .slice(0, 24)
+
+      return {
+        id: group.id,
+        label: group.hasDirectDeal ? '직거래' : '매매',
+        aptName: latestDeal.aptName,
+        address: latestDeal.address,
+        lawdCd: latestDeal.lawdCd,
+        aptSeq: latestDeal.aptSeq,
+        dealDate: latestDeal.dealDate,
+        tradeTypeLabel: `최근 거래 · ${group.history.length}건`,
+        priceEok: latestDeal.priceEok,
+        dateLabel: formatMarkerDealMonth(latestDeal.dealDate),
+        subLabel: `${latestDeal.pyeong}평`,
+        lat: coordinate.lat,
+        lng: coordinate.lng,
+        tone: group.hasDirectDeal ? 'direct' : 'sale',
+        dealCount: group.history.length,
+        relatedDeals: group.history.slice(0, 36),
+        nearbyDeals,
+      }
+    })
+    .filter(Boolean)
+
+  return {
+    meta: {
+      ...rtmsPayload.meta,
+      source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료 + Kakao 주소 좌표 캐시',
+      lawdCd: query.lawdCd || '',
+      scope: query.scope,
+      resultCode: markers.length ? (missingGroups.length ? 'PARTIAL' : '000') : 'REFRESHING',
+      resultMessage: kakaoRestApiKey
+        ? '좌표 캐시가 있는 단지를 지도 마커로 반환했습니다.'
+        : 'KAKAO_REST_API_KEY가 없어 신규 주소 좌표 변환을 할 수 없습니다.',
+      markerCount: markers.length,
+      candidateMarkerCount: groupedDeals.length,
+      totalCandidateMarkerCount: allGroupedDeals.length,
+      missingCoordinateCount: groupedDeals.length - markers.length,
+      geocodedThisRequest: Math.max(0, coordinateByGroupId.size - (groupedDeals.length - missingGroups.length)),
+      needsKakaoRestApiKey: !kakaoRestApiKey,
+      mapMonthsBack: query.monthsBack,
+      cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+      updatedAt: new Date().toISOString(),
+    },
+    markers,
+  }
+}
 
 const filterRtmsPayloadFromCapitalCache = (serializedPayload: string, query: RtmsQuery) => {
   const payload = JSON.parse(serializedPayload) as {
@@ -733,7 +1006,10 @@ const rtmsProxyPlugin = (): Plugin => ({
       const queries =
         !forceDefaultQuery && rtmsQueries.size > 0
           ? [...rtmsQueries.entries()]
-          : [[rtmsCacheKey(createDefaultCapitalQuery()), createDefaultCapitalQuery()] as const]
+          : [
+              [rtmsCacheKey(createDefaultCapitalQuery()), createDefaultCapitalQuery()] as const,
+              [rtmsCacheKey(createDefaultMapQuery()), createDefaultMapQuery()] as const,
+            ]
 
       for (const [key, query] of queries) {
         try {
@@ -954,6 +1230,97 @@ const rtmsProxyPlugin = (): Plugin => ({
         await writeRtmsCacheFile(cacheKey, serializedPayload)
         response.statusCode = 200
         response.end(serializedPayload)
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
+    })
+
+    server.middlewares.use('/api/rtms/map-markers', async (request, response) => {
+      const env = loadRuntimeEnv()
+      const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
+      const kakaoRestApiKey = env.KAKAO_REST_API_KEY || env.VITE_KAKAO_REST_API_KEY || ''
+
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+
+      if (!serviceKey) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: 'MOLIT_APT_TRADE_SERVICE_KEY is missing' }))
+        return
+      }
+
+      const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+      const query: RtmsQuery = {
+        lawdCd: incomingUrl.searchParams.get('lawdCd') || '',
+        scope: incomingUrl.searchParams.get('scope') || 'capital',
+        dealYmd: incomingUrl.searchParams.get('dealYmd') || 'auto',
+        monthsBack: Math.min(Math.max(Number(incomingUrl.searchParams.get('monthsBack')) || rtmsMapMarkerMonthsBack, 1), 84),
+        numOfRows: String(Math.min(Number(incomingUrl.searchParams.get('numOfRows')) || 1000, 1000)),
+        limit: Math.min(Number(incomingUrl.searchParams.get('sourceLimit')) || rtmsMapMarkerLimit, rtmsMapMarkerLimit),
+      }
+      const markerLimit = Math.min(Number(incomingUrl.searchParams.get('limit')) || rtmsMapMarkerReturnLimit, 12000)
+      const geocodeLimit = Math.min(Number(incomingUrl.searchParams.get('geocodeLimit')) || 400, 1200)
+      const cacheKey = rtmsCacheKey(query)
+      rtmsQueries.set(cacheKey, query)
+
+      try {
+        let cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
+
+        if (!cachedPayload && query.scope === 'capital' && !query.lawdCd) {
+          const defaultMapQuery = createDefaultMapQuery()
+          const defaultMapCacheKey = rtmsCacheKey(defaultMapQuery)
+          cachedPayload = rtmsCache.get(defaultMapCacheKey) || (await readRtmsCacheFile(defaultMapCacheKey))
+          if (cachedPayload) {
+            rtmsCache.set(defaultMapCacheKey, cachedPayload)
+          }
+        }
+
+        if (!cachedPayload) {
+          const defaultCapitalQuery = createDefaultCapitalQuery()
+          const defaultCapitalCacheKey = rtmsCacheKey(defaultCapitalQuery)
+          cachedPayload = rtmsCache.get(defaultCapitalCacheKey) || (await readRtmsCacheFile(defaultCapitalCacheKey))
+
+          if (cachedPayload) {
+            rtmsCache.set(defaultCapitalCacheKey, cachedPayload)
+            void startRtmsRefresh(true)
+          }
+        }
+
+        if (!cachedPayload) {
+          void startRtmsRefresh(true)
+          response.statusCode = 202
+          response.end(
+            JSON.stringify({
+              meta: {
+                source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료 + Kakao 주소 좌표 캐시',
+                lawdCd: query.lawdCd || '',
+                scope: query.scope,
+                district: targetGroups[query.scope]?.label ?? '서울·경기·인천',
+                resultCode: 'REFRESHING',
+                resultMessage: '실거래 원본 캐시를 먼저 수집하고 있습니다.',
+                markerCount: 0,
+                candidateMarkerCount: 0,
+                missingCoordinateCount: 0,
+                needsKakaoRestApiKey: !kakaoRestApiKey,
+                cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+                updatedAt: new Date().toISOString(),
+              },
+              markers: [],
+            }),
+          )
+          return
+        }
+
+        const payload = await buildRtmsMapMarkerPayload({
+          serializedPayload: cachedPayload,
+          query,
+          kakaoRestApiKey,
+          limit: markerLimit,
+          geocodeLimit,
+        })
+
+        response.statusCode = payload.markers.length ? 200 : 202
+        response.end(JSON.stringify(payload))
       } catch (error) {
         response.statusCode = 500
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
