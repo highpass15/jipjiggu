@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
-import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin, type PreviewServer, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -1242,9 +1242,11 @@ const formatTelegramLeadMessage = (lead: TelegramLead) => {
   return lines.join('\n').slice(0, 3900)
 }
 
-const rtmsProxyPlugin = (): Plugin => ({
-  name: 'jipjiggu-rtms-proxy',
-  configureServer(server) {
+type RtmsMiddlewareServer =
+  | Pick<ViteDevServer, 'middlewares' | 'httpServer'>
+  | Pick<PreviewServer, 'middlewares' | 'httpServer'>
+
+const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
     const rtmsCache = new Map<string, string>()
     const rtmsQueries = new Map<string, RtmsQuery>()
     let dailyRefreshTimer: NodeJS.Timeout | undefined
@@ -1903,6 +1905,15 @@ const rtmsProxyPlugin = (): Plugin => ({
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
       }
     })
+}
+
+const rtmsProxyPlugin = (): Plugin => ({
+  name: 'jipjiggu-rtms-proxy',
+  configureServer(server) {
+    configureRtmsProxyServer(server)
+  },
+  configurePreviewServer(server) {
+    configureRtmsProxyServer(server)
   },
 })
 
