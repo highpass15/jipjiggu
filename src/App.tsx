@@ -2432,7 +2432,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
           const params = new URLSearchParams({
             lawdCd,
             aptName: apartment.name,
-            monthsBack: '84',
+            monthsBack: '36',
           })
           const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`, {
             signal: controller.signal,
