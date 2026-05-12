@@ -1192,6 +1192,33 @@ const rtmsProxyPlugin = (): Plugin => ({
       if (dailyRefreshTimer) clearTimeout(dailyRefreshTimer)
     })
 
+    server.middlewares.use('/api/runtime/config-check', async (_request, response) => {
+      const env = loadRuntimeEnv()
+      const kakaoRestKeyNames = [
+        'KAKAO_REST_API_KEY',
+        'KAKAO_REST_KEY',
+        'KAKAO_MAP_REST_API_KEY',
+        'KAKAO_LOCAL_REST_API_KEY',
+        'VITE_KAKAO_REST_API_KEY',
+      ]
+
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.statusCode = 200
+      response.end(
+        JSON.stringify({
+          ok: true,
+          kakaoRestApiKeyPresent: Boolean(readKakaoRestApiKey(env)),
+          kakaoRestKeyNames: kakaoRestKeyNames.map((key) => ({
+            key,
+            present: Boolean(env[key]),
+          })),
+          rtmsServiceKeyPresent: Boolean(env.MOLIT_APT_TRADE_SERVICE_KEY),
+          buildingLedgerServiceKeyPresent: Boolean(env.MOLIT_BUILDING_LEDGER_SERVICE_KEY),
+          updatedAt: new Date().toISOString(),
+        }),
+      )
+    })
+
     server.middlewares.use('/api/telegram/notify', async (request, response) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
 

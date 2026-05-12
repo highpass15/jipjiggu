@@ -1854,7 +1854,7 @@ function PriceView({
         payload.markers.length > 0
           ? ''
           : payload.meta.needsKakaoRestApiKey
-            ? 'Render 환경변수 KAKAO_REST_API_KEY에 Kakao Developers의 REST API 키를 추가하면 서울·경기·인천 단지 좌표 캐시가 생성됩니다.'
+            ? 'Render의 jipjiggu 서비스 환경변수에 KAKAO_REST_API_KEY가 연결되면 서울·경기·인천 단지 좌표 캐시가 생성됩니다. 환경변수 그룹만 만들었다면 서비스에 연결해 주세요.'
             : payload.meta.resultMessage || '',
       )
 
