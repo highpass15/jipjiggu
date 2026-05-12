@@ -123,6 +123,7 @@ const rtmsDefaultCapitalMonthsBack = 3
 const rtmsMapMarkerMonthsBack = 36
 const rtmsMapMarkerLimit = 120000
 const rtmsMapMarkerReturnLimit = 5000
+const rtmsMapMarkerDistrictLimit = 2200
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -168,6 +169,13 @@ const normalizeComparableName = (value: string) =>
     .replace(/[^가-힣a-z0-9]/g, '')
     .trim()
 const loadRuntimeEnv = () => ({ ...loadEnv('', process.cwd(), ''), ...process.env })
+const readKakaoRestApiKey = (env: Record<string, string | undefined>) =>
+  env.KAKAO_REST_API_KEY ||
+  env.KAKAO_REST_KEY ||
+  env.KAKAO_MAP_REST_API_KEY ||
+  env.KAKAO_LOCAL_REST_API_KEY ||
+  env.VITE_KAKAO_REST_API_KEY ||
+  ''
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -532,6 +540,15 @@ const createDefaultMapQuery = (): RtmsQuery => ({
   limit: rtmsMapMarkerLimit,
 })
 
+const createDistrictMapQuery = (lawdCd: string): RtmsQuery => ({
+  lawdCd,
+  scope: 'capital',
+  dealYmd: 'auto',
+  monthsBack: rtmsMapMarkerMonthsBack,
+  numOfRows: '1000',
+  limit: rtmsMapMarkerDistrictLimit,
+})
+
 type GeocodeCacheEntry = {
   provider: 'kakao'
   address: string
@@ -543,6 +560,8 @@ type GeocodeCacheEntry = {
 const normalizeAddressKey = (address: string) => address.replace(/\s+/g, ' ').trim()
 const geocodeCacheFilePath = (address: string) =>
   path.join(rtmsCacheDirectory, 'geocodes', `${safeCacheFilename(normalizeAddressKey(address))}.json`)
+const mapMarkerDistrictCacheFilePath = (lawdCd: string) =>
+  path.join(rtmsCacheDirectory, 'map-markers', `${lawdCd}.json`)
 
 const readGeocodeCache = async (address: string) => {
   try {
@@ -557,6 +576,31 @@ const readGeocodeCache = async (address: string) => {
 const writeGeocodeCache = async (address: string, payload: GeocodeCacheEntry) => {
   await fs.mkdir(path.dirname(geocodeCacheFilePath(address)), { recursive: true })
   await fs.writeFile(geocodeCacheFilePath(address), JSON.stringify(payload), 'utf8')
+}
+
+const readMapMarkerDistrictCache = async (lawdCd: string) => {
+  try {
+    const raw = await fs.readFile(mapMarkerDistrictCacheFilePath(lawdCd), 'utf8')
+    return JSON.parse(raw) as {
+      meta: Record<string, unknown>
+      markers: Array<{
+        id: string
+        aptName: string
+        address: string
+        dealDate?: string
+        lat: number
+        lng: number
+        relatedDeals?: NormalizedRtmsDeal[]
+      }>
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeMapMarkerDistrictCache = async (lawdCd: string, payload: unknown) => {
+  await fs.mkdir(path.dirname(mapMarkerDistrictCacheFilePath(lawdCd)), { recursive: true })
+  await fs.writeFile(mapMarkerDistrictCacheFilePath(lawdCd), JSON.stringify(payload), 'utf8')
 }
 
 const geocodeAddressWithKakao = async (address: string, restApiKey: string) => {
@@ -677,6 +721,29 @@ const pickMapMarkerGroups = (groups: RtmsMapDealGroup[], limit: number, balanced
   return selected.sort((a, b) => b.latestDeal.dealDate.localeCompare(a.latestDeal.dealDate) || b.latestDeal.priceEok - a.latestDeal.priceEok)
 }
 
+const mapRefreshPriorityLawdCds = [
+  '11680',
+  '11650',
+  '11710',
+  '41290',
+  '41135',
+  '11170',
+  '11440',
+  '41173',
+  '41465',
+  '41390',
+]
+
+const orderMapRefreshDistricts = (districts: TargetDistrict[]) =>
+  [...districts].sort((a, b) => {
+    const priorityA = mapRefreshPriorityLawdCds.indexOf(a.code)
+    const priorityB = mapRefreshPriorityLawdCds.indexOf(b.code)
+    const normalizedA = priorityA === -1 ? 999 : priorityA
+    const normalizedB = priorityB === -1 ? 999 : priorityB
+
+    return normalizedA - normalizedB || a.code.localeCompare(b.code)
+  })
+
 const buildRtmsMapMarkerPayload = async ({
   serializedPayload,
   query,
@@ -789,6 +856,26 @@ const buildRtmsMapMarkerPayload = async ({
   }
 }
 
+const readAggregatedMapMarkerCache = async (query: RtmsQuery, limit: number) => {
+  const group = targetGroups[query.scope] ?? targetGroups.capital
+  const districts = query.lawdCd
+    ? capitalAreaDistricts.filter((district) => district.code === query.lawdCd)
+    : group.districts
+  const cacheFiles = await Promise.all(districts.map((district) => readMapMarkerDistrictCache(district.code)))
+  const markers = cacheFiles
+    .flatMap((payload) => payload?.markers ?? [])
+    .filter((marker) => Number.isFinite(marker.lat) && Number.isFinite(marker.lng))
+    .sort((a, b) => String(b.dealDate ?? '').localeCompare(String(a.dealDate ?? '')))
+    .slice(0, limit)
+  const refreshedDistricts = cacheFiles.filter(Boolean).length
+
+  return {
+    refreshedDistricts,
+    searchedDistricts: districts.length,
+    markers,
+  }
+}
+
 const filterRtmsPayloadFromCapitalCache = (serializedPayload: string, query: RtmsQuery) => {
   const payload = JSON.parse(serializedPayload) as {
     meta: Record<string, unknown>
@@ -824,7 +911,7 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
   const dealYmds = getRecentDealYmds(resolvedDealYmd, query.monthsBack)
   const districts = query.lawdCd
     ? [
-        {
+        capitalAreaDistricts.find((district) => district.code === query.lawdCd) ?? {
           code: query.lawdCd,
           name: districtNameByLawdCd[query.lawdCd] || query.lawdCd,
           metro: 'seoul' as Metro,
@@ -997,6 +1084,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     const rtmsQueries = new Map<string, RtmsQuery>()
     let dailyRefreshTimer: NodeJS.Timeout | undefined
     let activeRefresh: Promise<void> | null = null
+    let activeMapMarkerRefresh: Promise<void> | null = null
 
     const refreshRtmsCache = async (forceDefaultQuery = false) => {
       const env = loadRuntimeEnv()
@@ -1006,10 +1094,7 @@ const rtmsProxyPlugin = (): Plugin => ({
       const queries =
         !forceDefaultQuery && rtmsQueries.size > 0
           ? [...rtmsQueries.entries()]
-          : [
-              [rtmsCacheKey(createDefaultCapitalQuery()), createDefaultCapitalQuery()] as const,
-              [rtmsCacheKey(createDefaultMapQuery()), createDefaultMapQuery()] as const,
-            ]
+          : [[rtmsCacheKey(createDefaultCapitalQuery()), createDefaultCapitalQuery()] as const]
 
       for (const [key, query] of queries) {
         try {
@@ -1036,9 +1121,69 @@ const rtmsProxyPlugin = (): Plugin => ({
       return activeRefresh
     }
 
+    const refreshRtmsMapMarkerCache = async (scope = 'capital', lawdCd = '') => {
+      const env = loadRuntimeEnv()
+      const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
+      const kakaoRestApiKey = readKakaoRestApiKey(env)
+      if (!serviceKey || !kakaoRestApiKey) return
+
+      const group = targetGroups[scope] ?? targetGroups.capital
+      const districts = lawdCd
+        ? capitalAreaDistricts.filter((district) => district.code === lawdCd)
+        : group.districts
+
+      for (const district of orderMapRefreshDistricts(districts)) {
+        try {
+          const query = createDistrictMapQuery(district.code)
+          const payload = await buildRtmsPayload(query, serviceKey)
+          const serializedPayload = JSON.stringify(payload)
+          rtmsCache.set(rtmsCacheKey(query), serializedPayload)
+          await writeRtmsCacheFile(rtmsCacheKey(query), serializedPayload)
+
+          const markerPayload = await buildRtmsMapMarkerPayload({
+            serializedPayload,
+            query,
+            kakaoRestApiKey,
+            limit: rtmsMapMarkerDistrictLimit,
+            geocodeLimit: rtmsMapMarkerDistrictLimit,
+          })
+
+          await writeMapMarkerDistrictCache(district.code, {
+            ...markerPayload,
+            meta: {
+              ...markerPayload.meta,
+              districtCode: district.code,
+              districtName: district.name,
+              cacheKind: 'district-map-markers',
+              refreshedAt: new Date().toISOString(),
+            },
+          })
+        } catch (error) {
+          console.warn(
+            `[집직구 RTMS 지도] ${district.name} marker refresh failed:`,
+            error instanceof Error ? error.message : error,
+          )
+        }
+
+        await sleep(250)
+      }
+    }
+
+    const startMapMarkerRefresh = (scope = 'capital', lawdCd = '') => {
+      if (activeMapMarkerRefresh) return activeMapMarkerRefresh
+
+      activeMapMarkerRefresh = refreshRtmsMapMarkerCache(scope, lawdCd).finally(() => {
+        activeMapMarkerRefresh = null
+      })
+
+      return activeMapMarkerRefresh
+    }
+
     const scheduleDailyRefresh = () => {
       dailyRefreshTimer = setTimeout(() => {
-        void startRtmsRefresh(true).finally(scheduleDailyRefresh)
+        void startRtmsRefresh(true)
+          .then(() => startMapMarkerRefresh('capital', ''))
+          .finally(scheduleDailyRefresh)
       }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
     }
 
@@ -1107,24 +1252,36 @@ const rtmsProxyPlugin = (): Plugin => ({
       try {
         const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
         const shouldWait = incomingUrl.searchParams.get('wait') === '1'
-        const refreshPromise = startRtmsRefresh(true)
+        const scope = incomingUrl.searchParams.get('scope') || 'capital'
+        const lawdCd = incomingUrl.searchParams.get('lawdCd') || ''
+        const markersOnly = incomingUrl.searchParams.get('markers') === '1'
+        const refreshPromise = markersOnly
+          ? startMapMarkerRefresh(scope, lawdCd)
+          : startRtmsRefresh(true).then(() => startMapMarkerRefresh(scope, lawdCd))
         if (shouldWait) {
           await refreshPromise
         }
 
         const cacheKey = rtmsCacheKey(createDefaultCapitalQuery())
         const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
+        const markerCache = await readAggregatedMapMarkerCache({ ...createDefaultMapQuery(), scope, lawdCd }, rtmsMapMarkerReturnLimit)
 
-        response.statusCode = shouldWait && cachedPayload ? 200 : 202
+        response.statusCode = shouldWait && (cachedPayload || markerCache.markers.length > 0) ? 200 : 202
         response.end(
           JSON.stringify({
-            ok: Boolean(cachedPayload),
+            ok: Boolean(cachedPayload || markerCache.markers.length > 0),
             cacheKey,
             cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
             refreshing: Boolean(activeRefresh),
+            markerRefreshing: Boolean(activeMapMarkerRefresh),
+            markerCount: markerCache.markers.length,
+            refreshedDistricts: markerCache.refreshedDistricts,
+            searchedDistricts: markerCache.searchedDistricts,
             message: cachedPayload
               ? '서울·경기·인천 RTMS 캐시 갱신 완료'
-              : '서울·경기·인천 RTMS 캐시 갱신을 백그라운드에서 시작했습니다',
+              : markerCache.markers.length > 0
+                ? '서울·경기·인천 지도 마커 캐시 갱신중'
+                : '서울·경기·인천 RTMS 캐시 갱신을 백그라운드에서 시작했습니다',
             updatedAt: new Date().toISOString(),
           }),
         )
@@ -1239,7 +1396,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     server.middlewares.use('/api/rtms/map-markers', async (request, response) => {
       const env = loadRuntimeEnv()
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
-      const kakaoRestApiKey = env.KAKAO_REST_API_KEY || env.VITE_KAKAO_REST_API_KEY || ''
+      const kakaoRestApiKey = readKakaoRestApiKey(env)
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
 
@@ -1264,6 +1421,40 @@ const rtmsProxyPlugin = (): Plugin => ({
       rtmsQueries.set(cacheKey, query)
 
       try {
+        const markerCache = await readAggregatedMapMarkerCache(query, markerLimit)
+        if (markerCache.markers.length > 0) {
+          if (kakaoRestApiKey && markerCache.refreshedDistricts < markerCache.searchedDistricts) {
+            void startMapMarkerRefresh(query.scope, query.lawdCd)
+          }
+
+          response.statusCode = 200
+          response.end(
+            JSON.stringify({
+              meta: {
+                source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료 + Kakao 주소 좌표 캐시',
+                lawdCd: query.lawdCd || '',
+                scope: query.scope,
+                district: query.lawdCd ? districtNameByLawdCd[query.lawdCd] || query.lawdCd : targetGroups[query.scope]?.label ?? '서울·경기·인천',
+                resultCode: markerCache.refreshedDistricts < markerCache.searchedDistricts ? 'PARTIAL' : '000',
+                resultMessage: '구/시군구별 좌표 캐시가 있는 단지부터 지도 마커로 반환했습니다.',
+                markerCount: markerCache.markers.length,
+                refreshedDistricts: markerCache.refreshedDistricts,
+                searchedDistricts: markerCache.searchedDistricts,
+                needsKakaoRestApiKey: !kakaoRestApiKey,
+                markerRefreshing: Boolean(activeMapMarkerRefresh),
+                cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+                updatedAt: new Date().toISOString(),
+              },
+              markers: markerCache.markers,
+            }),
+          )
+          return
+        }
+
+        if (kakaoRestApiKey) {
+          void startMapMarkerRefresh(query.scope, query.lawdCd)
+        }
+
         let cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
 
         if (!cachedPayload && query.scope === 'capital' && !query.lawdCd) {

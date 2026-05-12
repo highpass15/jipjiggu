@@ -2611,22 +2611,38 @@ function useMarkerHistory(marker: MapValueMarker) {
     const monthsBack = Math.min(getMonthCountFrom2022(historyEndYmd), 84)
     const officialAptSeq = marker.aptSeq && /^\d{5}-/.test(marker.aptSeq) ? marker.aptSeq : ''
     const normalizedMarkerName = normalizeApartmentName(marker.aptName)
+    const compactMarkerName = normalizeSearchText(marker.aptName)
 
     const fetchHistory = async () => {
       try {
-        const response = await fetch(
-          `/api/rtms/apt-trades?lawdCd=${marker.lawdCd}&dealYmd=${historyEndYmd}&monthsBack=${monthsBack}&numOfRows=100&limit=2000`,
-          { signal: controller.signal },
+        const requestMonths = Array.from(
+          new Set([monthsBack, Math.min(84, Math.max(monthsBack, 60)), 120].filter((month) => month <= 120)),
         )
+        let remoteDeals: LiveRtmsDeal[] = []
 
-        const payload = response.ok ? ((await response.json()) as RtmsResponse) : null
-        const remoteDeals =
-          payload?.deals.filter((deal) =>
-            officialAptSeq
-              ? deal.aptSeq === officialAptSeq
-              : normalizeApartmentName(deal.aptName).includes(normalizedMarkerName) ||
-                normalizedMarkerName.includes(normalizeApartmentName(deal.aptName)),
-          ) ?? []
+        for (const requestMonth of requestMonths) {
+          const response = await fetch(
+            `/api/rtms/apt-trades?lawdCd=${marker.lawdCd}&dealYmd=${historyEndYmd}&monthsBack=${requestMonth}&numOfRows=1000&limit=8000`,
+            { signal: controller.signal },
+          )
+
+          const payload = response.ok ? ((await response.json()) as RtmsResponse) : null
+          remoteDeals =
+            payload?.deals.filter((deal) => {
+              if (officialAptSeq && deal.aptSeq === officialAptSeq) return true
+
+              const dealName = normalizeApartmentName(deal.aptName)
+              const compactDealName = normalizeSearchText(deal.aptName)
+              return (
+                dealName.includes(normalizedMarkerName) ||
+                normalizedMarkerName.includes(dealName) ||
+                compactDealName.includes(compactMarkerName) ||
+                compactMarkerName.includes(compactDealName)
+              )
+            }) ?? []
+
+          if (remoteDeals.length > seedDeals.length || remoteDeals.length >= 3) break
+        }
 
         if (!controller.signal.aborted) {
           setRemoteHistory({
