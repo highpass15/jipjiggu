@@ -124,7 +124,8 @@ const rtmsMapMarkerMonthsBack = 36
 const rtmsMapMarkerLimit = 120000
 const rtmsMapMarkerReturnLimit = 5000
 const rtmsMapMarkerDistrictLimit = 2200
-const rtmsMapMarkerBatchSize = 5
+const rtmsMapMarkerBatchSize = 2
+const rtmsMapMarkerGeocodeBatchLimit = 180
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -603,6 +604,9 @@ const readMapMarkerDistrictCache = async (lawdCd: string) => {
     return null
   }
 }
+
+const isMapMarkerDistrictCacheComplete = (payload: Awaited<ReturnType<typeof readMapMarkerDistrictCache>>) =>
+  textValue(payload?.meta?.resultCode as string | number | undefined) === '000'
 
 const writeMapMarkerDistrictCache = async (lawdCd: string, payload: unknown) => {
   await fs.mkdir(path.dirname(mapMarkerDistrictCacheFilePath(lawdCd)), { recursive: true })
@@ -1145,7 +1149,8 @@ const rtmsProxyPlugin = (): Plugin => ({
       const refreshTargets: TargetDistrict[] = []
 
       for (const district of orderedDistricts) {
-        if (!options.force && (await readMapMarkerDistrictCache(district.code))) {
+        const cachedDistrictPayload = await readMapMarkerDistrictCache(district.code)
+        if (!options.force && isMapMarkerDistrictCacheComplete(cachedDistrictPayload)) {
           continue
         }
 
@@ -1168,7 +1173,7 @@ const rtmsProxyPlugin = (): Plugin => ({
             query,
             kakaoRestApiKey,
             limit: rtmsMapMarkerDistrictLimit,
-            geocodeLimit: rtmsMapMarkerDistrictLimit,
+            geocodeLimit: rtmsMapMarkerGeocodeBatchLimit,
           })
 
           await writeMapMarkerDistrictCache(district.code, {
