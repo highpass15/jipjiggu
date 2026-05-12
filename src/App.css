@@ -1027,6 +1027,21 @@ h1 {
   color: #b77900;
 }
 
+.map-value-marker.no-price {
+  --marker-color: rgba(217, 246, 239, 0.78);
+  --marker-border: #7fd9cc;
+}
+
+.map-value-marker.no-price strong,
+.map-value-marker.no-price .marker-date {
+  color: transparent;
+  text-shadow: none;
+}
+
+.map-value-marker.no-price em {
+  color: #6b7c79;
+}
+
 .map-value-marker::after {
   content: '';
   position: absolute;
@@ -1326,6 +1341,30 @@ h1 {
   stroke: #fbfefd;
   stroke-linejoin: round;
   stroke-width: 5px;
+}
+
+.trend-empty {
+  min-height: 170px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(12, 181, 155, 0.28);
+  border-radius: 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.trend-empty strong {
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.trend-empty p {
+  max-width: 300px;
+  margin: 0 auto;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .history-list {

@@ -242,6 +242,7 @@ type KakaoMapInstance = {
   setCenter: (position: KakaoLatLng) => void
   setLevel: (level: number) => void
   getLevel: () => number
+  getCenter: () => KakaoLatLng
 }
 type KakaoOverlay = {
   setMap: (map: KakaoMapInstance | null) => void
@@ -267,6 +268,25 @@ type KakaoGeocoder = {
     callback: (result: KakaoGeocoderResult[], status: string) => void,
   ) => void
 }
+type KakaoPlaceResult = {
+  id?: string
+  place_name: string
+  address_name: string
+  road_address_name?: string
+  x: string
+  y: string
+}
+type KakaoPlaces = {
+  keywordSearch: (
+    keyword: string,
+    callback: (result: KakaoPlaceResult[], status: string) => void,
+    options?: {
+      location?: KakaoLatLng
+      radius?: number
+      size?: number
+    },
+  ) => void
+}
 type KakaoMapsApi = {
   load: (callback: () => void) => void
   LatLng: new (lat: number, lng: number) => KakaoLatLng
@@ -288,6 +308,7 @@ type KakaoMapsApi = {
   }) => KakaoOverlay
   services?: {
     Geocoder: new () => KakaoGeocoder
+    Places: new () => KakaoPlaces
     Status: {
       OK: string
     }
@@ -310,6 +331,7 @@ type MapValueMarker = {
   dealDate?: string
   tradeTypeLabel?: string
   priceEok: number
+  hasPrice?: boolean
   dateLabel?: string
   subLabel: string
   lat: number
@@ -924,6 +946,8 @@ const matchesApartmentQuery = (apartment: Apartment, query: string) => {
 }
 
 const formatEok = (amount: number) => `${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(1)}억`
+const formatMarkerPrice = (marker: MapValueMarker) =>
+  marker.hasPrice === false || marker.priceEok <= 0 ? '' : formatEok(marker.priceEok)
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
 const formatListingStatus = (status: UserListing['verificationStatus']) =>
   status === 'verified' ? '실소유자 확인 완료' : '실소유자 확인중'
@@ -970,6 +994,9 @@ const lawdCdByRegionKeyword: Array<[string, string]> = [
   ['분당구', '41135'],
   ['수원시 영통구', '41117'],
   ['광명시', '41210'],
+  ['안양시 동안구', '41173'],
+  ['과천시', '41290'],
+  ['의왕시', '41430'],
   ['연수구', '28185'],
 ]
 
@@ -1832,7 +1859,7 @@ function PriceView({
 
     try {
       const response = await fetch(
-        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=36&limit=5000&geocodeLimit=500`,
+        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=60&limit=5000&geocodeLimit=500`,
         signal ? { signal } : undefined,
       )
       const payload = (await response.json()) as RtmsMapMarkerResponse | { error?: string }
@@ -2116,6 +2143,7 @@ const apartmentMarkers = (
       dealDate: markerDealDate,
       tradeTypeLabel: officialDeal?.tradeTypeLabel ?? (latestDeal ? '최근 거래' : '기본 스펙'),
       priceEok: officialDeal?.priceEok ?? apartment.priceEok,
+      hasPrice: Boolean(officialDeal || latestDeal || apartment.priceEok > 0),
       dateLabel: formatMarkerMonth(markerDealDate),
       subLabel: markerPyeong,
       lat: apartment.lat,
@@ -2129,8 +2157,9 @@ const apartmentMarkers = (
 const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) => {
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = `map-value-marker ${marker.tone}`
-  button.setAttribute('aria-label', `${marker.label} ${formatEok(marker.priceEok)} ${marker.subLabel}`)
+  const markerPrice = formatMarkerPrice(marker)
+  button.className = `map-value-marker ${marker.tone}${markerPrice ? '' : ' no-price'}`
+  button.setAttribute('aria-label', `${marker.label} ${markerPrice || '거래 없음'} ${marker.subLabel}`)
   button.addEventListener('click', onSelect)
 
   const label = document.createElement('span')
@@ -2138,11 +2167,11 @@ const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) 
   label.textContent = marker.label
 
   const price = document.createElement('strong')
-  price.textContent = formatEok(marker.priceEok)
+  price.textContent = markerPrice || ' '
 
   const date = document.createElement('small')
   date.className = 'marker-date'
-  date.textContent = marker.dateLabel || formatMarkerMonth(marker.dealDate)
+  date.textContent = markerPrice ? marker.dateLabel || formatMarkerMonth(marker.dealDate) : ' '
 
   const sub = document.createElement('em')
   sub.textContent = marker.subLabel
@@ -2210,6 +2239,7 @@ const geocodeDealMarkers = async (
                 dealDate: latestDeal.dealDate,
         tradeTypeLabel: `최근 거래 · ${history.length}건`,
         priceEok: latestDeal.priceEok,
+        hasPrice: true,
         dateLabel: formatMarkerMonth(latestDeal.dealDate),
         subLabel: `${latestDeal.pyeong}평`,
         lat: Number(result[0].y),
@@ -2264,6 +2294,7 @@ const geocodeListingMarkers = async (
               address: listing.address,
             tradeTypeLabel: formatListingStatus(listing.verificationStatus),
             priceEok: listing.priceEok,
+            hasPrice: true,
             dateLabel: '매물',
             subLabel: `${listing.pyeong}평`,
             lat: Number(result[0].y),
@@ -2279,6 +2310,138 @@ const geocodeListingMarkers = async (
 
   return markers.filter((marker): marker is MapValueMarker => Boolean(marker))
 }
+
+const latestPlaceDealCache = new Map<string, Promise<LiveRtmsDeal | null>>()
+
+const normalizeMarkerAptName = (value: string) =>
+  normalizeSearchText(value)
+    .replace(/아파트$/g, '')
+    .replace(/주공$/g, '')
+
+const fetchLatestDealForPlaceMarker = (lawdCd: string, aptName: string) => {
+  const cacheKey = `${lawdCd}:${normalizeMarkerAptName(aptName)}`
+  const cached = latestPlaceDealCache.get(cacheKey)
+  if (cached) return cached
+
+  const promise = (async () => {
+    try {
+      const params = new URLSearchParams({
+        lawdCd,
+        aptName,
+        monthsBack: '60',
+      })
+      const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`)
+      const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
+      return payload?.deal ?? null
+    } catch {
+      return null
+    }
+  })()
+
+  latestPlaceDealCache.set(cacheKey, promise)
+  return promise
+}
+
+const createEmptyPlaceMarker = (place: KakaoPlaceResult): MapValueMarker | null => {
+  const lat = Number(place.y)
+  const lng = Number(place.x)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+
+  const address = place.road_address_name || place.address_name
+  const lawdCd = getLawdCdFromRegion(address)
+
+  return {
+    id: `place-${place.id || normalizeSearchText(`${place.place_name}-${address}`)}`,
+    label: '단지',
+    aptName: place.place_name,
+    address,
+    lawdCd,
+    tradeTypeLabel: '최근 5년 거래 없음',
+    priceEok: 0,
+    hasPrice: false,
+    dateLabel: '',
+    subLabel: '거래 없음',
+    lat,
+    lng,
+    tone: 'office',
+    relatedDeals: [],
+  }
+}
+
+const searchApartmentPlaceMarkers = async (
+  kakao: KakaoNamespace,
+  map: KakaoMapInstance,
+  existingMarkers: MapValueMarker[],
+) =>
+  new Promise<MapValueMarker[]>((resolve) => {
+    if (!kakao.maps.services?.Places) {
+      resolve([])
+      return
+    }
+
+    const places = new kakao.maps.services.Places()
+    const statusOk = kakao.maps.services.Status.OK
+    const existingNames = new Set(existingMarkers.map((marker) => normalizeMarkerAptName(marker.aptName)))
+
+    places.keywordSearch(
+      '아파트',
+      (result, status) => {
+        if (status !== statusOk || result.length === 0) {
+          resolve([])
+          return
+        }
+
+        void (async () => {
+          const baseMarkers = result
+            .map(createEmptyPlaceMarker)
+            .filter((marker): marker is MapValueMarker => Boolean(marker))
+            .filter((marker, index, list) => {
+              const normalizedName = normalizeMarkerAptName(marker.aptName)
+              return (
+                normalizedName.length > 0 &&
+                !existingNames.has(normalizedName) &&
+                index === list.findIndex((candidate) => normalizeMarkerAptName(candidate.aptName) === normalizedName)
+              )
+            })
+            .slice(0, 14)
+
+          const enrichedMarkers = await Promise.all(
+            baseMarkers.map(async (marker) => {
+              if (!marker.lawdCd) return marker
+
+              const latestDeal = await fetchLatestDealForPlaceMarker(marker.lawdCd, marker.aptName)
+              if (!latestDeal) return marker
+
+              return {
+                ...marker,
+                id: `place-${latestDeal.aptSeq || marker.id}`,
+                label: latestDeal.tradeType === 'direct' ? '직거래' : '매매',
+                aptName: latestDeal.aptName,
+                address: latestDeal.address,
+                lawdCd: latestDeal.lawdCd,
+                aptSeq: latestDeal.aptSeq,
+                dealDate: latestDeal.dealDate,
+                tradeTypeLabel: '최근 5년 확인',
+                priceEok: latestDeal.priceEok,
+                hasPrice: true,
+                dateLabel: formatMarkerMonth(latestDeal.dealDate),
+                subLabel: `${latestDeal.pyeong}평`,
+                tone: latestDeal.tradeType === 'direct' ? ('direct' as const) : ('sale' as const),
+                relatedDeals: [latestDeal],
+              }
+            }),
+          )
+
+          resolve(enrichedMarkers)
+        })()
+      },
+      {
+        location: map.getCenter(),
+        radius: 1800,
+        size: 15,
+      },
+    )
+  })
 
 function ApartmentMap({
   liveDeals,
@@ -2318,6 +2481,7 @@ function ApartmentMap({
   const selectedMarkerRef = useRef<MapValueMarker | null>(selectedMarker)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState(false)
+  const [placeFallbackCount, setPlaceFallbackCount] = useState(0)
   const kakaoKey = getKakaoMapKey()
 
   useEffect(() => {
@@ -2364,10 +2528,6 @@ function ApartmentMap({
           (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)),
         )
         const markers = [...listingMarkers, ...liveMarkers, ...specMarkers]
-        if (markers.length === 0) {
-          setMapReady(true)
-          return
-        }
 
         const markerNodes: HTMLElement[] = []
         const overlays = markers.map((marker) => {
@@ -2388,6 +2548,9 @@ function ApartmentMap({
           overlay.setMap(map)
           return overlay
         })
+        let placeOverlays: KakaoOverlay[] = []
+        let placeMarkerNodes: HTMLElement[] = []
+        let placeRefreshTimer: number | null = null
 
         const focusedListingMarker = focusListing
           ? listingMarkers.find((marker) => marker.listing?.id === focusListing.id)
@@ -2402,8 +2565,10 @@ function ApartmentMap({
             )
           : null
         const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? markers[0]
-        map.setCenter(new kakao.maps.LatLng(primaryMarker.lat, primaryMarker.lng))
-        map.setLevel(4)
+        if (primaryMarker) {
+          map.setCenter(new kakao.maps.LatLng(primaryMarker.lat, primaryMarker.lng))
+          map.setLevel(4)
+        }
 
         const focusedMarker = focusedListingMarker ?? focusedLiveMarker
         if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
@@ -2411,15 +2576,69 @@ function ApartmentMap({
         }
 
         const updateDensity = () => {
-          const compact = map.getLevel() >= 6 || (markers.length > 45 && map.getLevel() >= 4)
+          const visibleNodeCount = markerNodes.length + placeMarkerNodes.length
+          const compact = map.getLevel() >= 6 || (visibleNodeCount > 45 && map.getLevel() >= 4)
           markerNodes.forEach((node) => node.classList.toggle('compact', compact))
+          placeMarkerNodes.forEach((node) => node.classList.toggle('compact', compact))
+        }
+
+        const clearPlaceOverlays = () => {
+          placeOverlays.forEach((overlay) => overlay.setMap(null))
+          placeOverlays = []
+          placeMarkerNodes = []
+          if (!disposed) setPlaceFallbackCount(0)
+        }
+
+        const refreshPlaceFallbackMarkers = () => {
+          if (placeRefreshTimer) window.clearTimeout(placeRefreshTimer)
+
+          placeRefreshTimer = window.setTimeout(() => {
+            placeRefreshTimer = null
+
+            if (disposed || map.getLevel() > 5) {
+              clearPlaceOverlays()
+              return
+            }
+
+            void searchApartmentPlaceMarkers(kakao, map, markers).then((placeMarkers) => {
+              if (disposed) return
+
+              clearPlaceOverlays()
+              placeMarkerNodes = placeMarkers.map((marker) => {
+                const position = new kakao.maps.LatLng(marker.lat, marker.lng)
+                const content = createValueMarkerElement(marker, () => {
+                  onSelectMarker(marker)
+                  map.setCenter(position)
+                  map.setLevel(4)
+                })
+                const overlay = new kakao.maps.CustomOverlay({
+                  position,
+                  content,
+                  xAnchor: 0.5,
+                  yAnchor: 1,
+                })
+                overlay.setMap(map)
+                placeOverlays.push(overlay)
+                return content
+              })
+              setPlaceFallbackCount(placeMarkers.length)
+
+              updateDensity()
+            })
+          }, 350)
         }
 
         updateDensity()
         kakao.maps.event?.addListener(map, 'zoom_changed', updateDensity)
+        kakao.maps.event?.addListener(map, 'idle', refreshPlaceFallbackMarkers)
+        refreshPlaceFallbackMarkers()
 
         setMapReady(true)
-        cleanup = () => overlays.forEach((overlay) => overlay.setMap(null))
+        cleanup = () => {
+          if (placeRefreshTimer) window.clearTimeout(placeRefreshTimer)
+          overlays.forEach((overlay) => overlay.setMap(null))
+          clearPlaceOverlays()
+        }
       })
       .catch(() => setMapError(true))
 
@@ -2434,7 +2653,8 @@ function ApartmentMap({
     serverMarkers.length > 0 ||
     liveDeals.length > 0 ||
     userListings.length > 0 ||
-    apartmentMarkers(apartments, latestApartmentDeals).length > 0
+    apartmentMarkers(apartments, latestApartmentDeals).length > 0 ||
+    placeFallbackCount > 0
   const shouldShowMapStatus = !mapReady || mapError || (!hasDisplayableMarkers && rtmsStatus !== 'loading')
 
   return (
@@ -2551,7 +2771,7 @@ function useLatestApartmentDeals(apartments: Apartment[]) {
               const params = new URLSearchParams({
                 lawdCd,
                 aptName: apartment.name,
-                monthsBack: '36',
+                monthsBack: '60',
               })
               const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`)
               const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
@@ -3103,9 +3323,10 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
     .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
   const latestDeal = history[0]
   const chartDeals = chartSourceDeals.length ? chartSourceDeals : latestDeal ? [latestDeal] : []
+  const hasTradePrice = Boolean(latestDeal) || (marker.hasPrice !== false && marker.priceEok > 0)
   const prices = chartDeals.map((deal) => deal.priceEok)
-  const minPrice = Math.min(...prices, marker.priceEok)
-  const maxPrice = Math.max(...prices, marker.priceEok)
+  const minPrice = prices.length ? Math.min(...prices) : 0
+  const maxPrice = prices.length ? Math.max(...prices) : 0
   const range = Math.max(maxPrice - minPrice, 0.1)
   const width = 320
   const height = 210
@@ -3162,7 +3383,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
   const latestChartDeal = chartDeals.at(-1)
   const trendSummary = latestChartDeal
     ? `${formatShortDate(latestChartDeal.dealDate)} · ${formatEok(latestChartDeal.priceEok)}`
-    : `${formatShortDate(marker.dealDate ?? '')} · ${formatEok(marker.priceEok)}`
+    : '최근 5년 거래 없음'
 
   return (
     <section id="trade-detail-panel" className="trade-detail" aria-label={`${marker.aptName} 실거래 상세`}>
@@ -3180,7 +3401,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
       <div className="trade-summary-grid">
         <div>
           <span>{listing ? '희망가' : isSpecMarker ? '최근 기준가' : '최근 거래'}</span>
-          <strong>{formatEok(latestDeal?.priceEok ?? marker.priceEok)}</strong>
+          <strong>{hasTradePrice ? formatEok(latestDeal?.priceEok ?? marker.priceEok) : '최근 5년 거래 없음'}</strong>
         </div>
         <div>
           <span>평형</span>
@@ -3203,33 +3424,40 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
               <em>{trendSummary}</em>
             </div>
 
-            <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
-              <line x1={chartLeft} y1={chartTop} x2={chartLeft} y2={chartBottom} />
-              <line x1={chartLeft} y1={chartBottom} x2={chartRight} y2={chartBottom} />
-              {timeTicks.map((date) => {
-                const x = chartLeft + ((date.getTime() - startTime) / timeRange) * (chartRight - chartLeft)
-                return (
-                  <g key={`${date.getFullYear()}-${date.getMonth()}`} className="trend-year">
-                    <line x1={x} y1={chartTop} x2={x} y2={chartBottom} />
-                    <text x={x} y={dateLabelY}>
-                      {formatTickLabel(date)}
-                    </text>
-                  </g>
-                )
-              })}
-              {points && <polyline points={points} />}
-              {chartDeals.map((deal, index) => {
-                const point = points.split(' ')[index]
-                const [cx, cy] = point.split(',').map(Number)
-                return <circle key={deal.id} cx={cx} cy={cy} r={index === chartDeals.length - 1 ? 5 : 3.5} />
-              })}
-              <text className="trend-value-label" x={chartLeft} y={maxLabelY}>
-                {formatEok(maxPrice)}
-              </text>
-              <text className="trend-value-label" x={chartLeft} y={minLabelY}>
-                {formatEok(minPrice)}
-              </text>
-            </svg>
+            {chartDeals.length > 0 ? (
+              <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
+                <line x1={chartLeft} y1={chartTop} x2={chartLeft} y2={chartBottom} />
+                <line x1={chartLeft} y1={chartBottom} x2={chartRight} y2={chartBottom} />
+                {timeTicks.map((date) => {
+                  const x = chartLeft + ((date.getTime() - startTime) / timeRange) * (chartRight - chartLeft)
+                  return (
+                    <g key={`${date.getFullYear()}-${date.getMonth()}`} className="trend-year">
+                      <line x1={x} y1={chartTop} x2={x} y2={chartBottom} />
+                      <text x={x} y={dateLabelY}>
+                        {formatTickLabel(date)}
+                      </text>
+                    </g>
+                  )
+                })}
+                {points && <polyline points={points} />}
+                {chartDeals.map((deal, index) => {
+                  const point = points.split(' ')[index]
+                  const [cx, cy] = point.split(',').map(Number)
+                  return <circle key={deal.id} cx={cx} cy={cy} r={index === chartDeals.length - 1 ? 5 : 3.5} />
+                })}
+                <text className="trend-value-label" x={chartLeft} y={maxLabelY}>
+                  {formatEok(maxPrice)}
+                </text>
+                <text className="trend-value-label" x={chartLeft} y={minLabelY}>
+                  {formatEok(minPrice)}
+                </text>
+              </svg>
+            ) : (
+              <div className="trend-empty">
+                <strong>최근 5년 실거래 없음</strong>
+                <p>단지 위치와 대장 정보는 그대로 확인할 수 있고, 거래가 신고되면 자동으로 가격 마커가 채워집니다.</p>
+              </div>
+            )}
           </div>
 
           {history.length > 0 && (

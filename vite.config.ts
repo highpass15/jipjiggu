@@ -125,13 +125,13 @@ const gyeonggiDistricts: TargetDistrict[] = [
 const capitalAreaDistricts = [...seoulDistricts, ...gyeonggiDistricts, ...incheonDistricts]
 const rtmsDailyRefreshHour = 1
 const rtmsDefaultCapitalMonthsBack = 3
-const rtmsMapMarkerMonthsBack = 36
+const rtmsMapMarkerMonthsBack = 60
 const rtmsMapMarkerLimit = 120000
 const rtmsMapMarkerReturnLimit = 1200
 const rtmsMapMarkerDistrictLimit = 2200
 const rtmsMapMarkerBatchSize = 2
 const rtmsMapMarkerGeocodeBatchLimit = 180
-const rtmsMapMarkerMonthBatchSize = 2
+const rtmsMapMarkerMonthBatchSize = 60
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -891,6 +891,7 @@ const buildRtmsMapMarkerPayload = async ({
         dealDate: latestDeal.dealDate,
         tradeTypeLabel: `최근 거래 · ${group.history.length}건`,
         priceEok: latestDeal.priceEok,
+        hasPrice: true,
         dateLabel: formatMarkerDealMonth(latestDeal.dealDate),
         subLabel: `${latestDeal.pyeong}평`,
         lat: coordinate.lat,
