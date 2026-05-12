@@ -620,6 +620,7 @@ const createMapOnlyApartment = ({
   pyeong = '34평',
   approvalYear = 0,
   households = 0,
+  recentDeal,
 }: {
   name: string
   region: string
@@ -628,6 +629,10 @@ const createMapOnlyApartment = ({
   pyeong?: string
   approvalYear?: number
   households?: number
+  recentDeal?: {
+    date: string
+    priceEok: number
+  }
 }): Apartment => ({
   name,
   region,
@@ -639,9 +644,9 @@ const createMapOnlyApartment = ({
   lat,
   lng,
   markerPosition: { x: 50, y: 50 },
-  priceEok: 0,
-  previousEok: 0,
-  recentDeals: [],
+  priceEok: recentDeal?.priceEok ?? 0,
+  previousEok: recentDeal?.priceEok ?? 0,
+  recentDeals: recentDeal ? [recentDeal] : [],
   volume: 0,
   fit: 0,
   verified: 'RTMS 최신 거래 조회',
@@ -654,25 +659,28 @@ const createMapOnlyApartment = ({
 
 const mapOnlyApartments: Apartment[] = [
   createMapOnlyApartment({
-    name: '반포르엘',
+    name: '반포르엘아파트',
     region: '서울 서초구 반포동',
     lat: 37.5049,
     lng: 127.0082,
     pyeong: '34평',
+    recentDeal: { date: '26.02.07', priceEok: 52.8 },
   }),
   createMapOnlyApartment({
     name: '반포르엘2차',
     region: '서울 서초구 반포동',
     lat: 37.5089,
     lng: 127.0069,
-    pyeong: '34평',
+    pyeong: '41평',
+    recentDeal: { date: '26.04.25', priceEok: 49 },
   }),
   createMapOnlyApartment({
     name: '신반포2차',
     region: '서울 서초구 반포동',
     lat: 37.5109,
     lng: 127.0046,
-    pyeong: '34평',
+    pyeong: '38평',
+    recentDeal: { date: '26.04.24', priceEok: 49.5 },
   }),
   createMapOnlyApartment({
     name: '신반포4차',
@@ -680,6 +688,7 @@ const mapOnlyApartments: Apartment[] = [
     lat: 37.5087,
     lng: 127.0157,
     pyeong: '34평',
+    recentDeal: { date: '26.03.07', priceEok: 64.8 },
   }),
   createMapOnlyApartment({
     name: '반포센트럴자이',
@@ -687,6 +696,7 @@ const mapOnlyApartments: Apartment[] = [
     lat: 37.5044,
     lng: 127.0107,
     pyeong: '34평',
+    recentDeal: { date: '26.04.01', priceEok: 50 },
   }),
   createMapOnlyApartment({
     name: '반포써밋',
@@ -694,6 +704,7 @@ const mapOnlyApartments: Apartment[] = [
     lat: 37.5021,
     lng: 127.0124,
     pyeong: '34평',
+    recentDeal: { date: '26.01.24', priceEok: 44.9 },
   }),
   createMapOnlyApartment({
     name: '래미안퍼스티지',
@@ -701,6 +712,7 @@ const mapOnlyApartments: Apartment[] = [
     lat: 37.5048,
     lng: 126.9998,
     pyeong: '34평',
+    recentDeal: { date: '26.04.20', priceEok: 70 },
   }),
   createMapOnlyApartment({
     name: '아크로리버파크',
@@ -1982,6 +1994,7 @@ const apartmentMarkers = (
 
     const markerDealDate = officialDeal?.dealDate ?? (latestDeal ? `20${latestDeal.date.replaceAll('.', '-')}` : undefined)
     const markerPyeong = officialDeal ? `${officialDeal.pyeong}평` : apartment.pyeong
+    const hasTradeSnapshot = Boolean(officialDeal || latestDeal)
     const curatedDeals = apartment.recentDeals.map((deal, index) => ({
       id: `${apartment.name}-${deal.date}-${index}`,
       aptSeq: apartment.name,
@@ -2011,19 +2024,19 @@ const apartmentMarkers = (
 
     return {
       id: apartment.name,
-      label: officialDeal ? '매매' : '단지',
+      label: hasTradeSnapshot ? '매매' : '단지',
       aptName: apartment.name,
       address: apartment.region,
       lawdCd: officialDeal?.lawdCd ?? getLawdCdFromRegion(apartment.region),
       aptSeq: officialDeal?.aptSeq,
       dealDate: markerDealDate,
-      tradeTypeLabel: officialDeal?.tradeTypeLabel ?? '기본 스펙',
+      tradeTypeLabel: officialDeal?.tradeTypeLabel ?? (latestDeal ? '최근 거래' : '기본 스펙'),
       priceEok: officialDeal?.priceEok ?? apartment.priceEok,
       dateLabel: formatMarkerMonth(markerDealDate),
       subLabel: markerPyeong,
       lat: apartment.lat,
       lng: apartment.lng,
-      tone: officialDeal ? (officialDeal.tradeType === 'direct' ? 'direct' : 'sale') : 'office',
+      tone: officialDeal ? (officialDeal.tradeType === 'direct' ? 'direct' : 'sale') : latestDeal ? 'sale' : 'office',
       apartment,
       relatedDeals: dedupeDeals(officialDeal ? [officialDeal, ...curatedDeals] : curatedDeals),
     }
