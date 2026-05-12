@@ -1659,6 +1659,15 @@ function PriceView({
     (marker: MapValueMarker, options: { scrollToDetail?: boolean } = {}) => {
       setSelectedMapMarker(marker)
 
+      if (!marker.hasPrice && marker.lawdCd) {
+        void fetchLatestDealForPlaceMarker(marker.lawdCd, marker.aptName).then((latestDeal) => {
+          if (!latestDeal) return
+
+          const enrichedMarker = markerFromLatestDeal(marker, latestDeal)
+          setSelectedMapMarker((current) => (current?.id === marker.id ? enrichedMarker : current))
+        })
+      }
+
       if (options.scrollToDetail !== false) {
         scrollTradeDetailIntoView()
       }
@@ -2189,6 +2198,50 @@ const normalizeMarkerAptName = (value: string) =>
   normalizeSearchText(value)
     .replace(/아파트$/g, '')
     .replace(/주공$/g, '')
+
+const latestPlaceDealCache = new Map<string, Promise<LiveRtmsDeal | null>>()
+
+const fetchLatestDealForPlaceMarker = (lawdCd: string, aptName: string) => {
+  const cacheKey = `${lawdCd}:${normalizeMarkerAptName(aptName)}`
+  const cached = latestPlaceDealCache.get(cacheKey)
+  if (cached) return cached
+
+  const promise = (async () => {
+    try {
+      const params = new URLSearchParams({
+        lawdCd,
+        aptName,
+        monthsBack: '60',
+      })
+      const response = await fetch(`/api/rtms/latest-apartment-deal?${params.toString()}`)
+      const payload = response.ok ? ((await response.json()) as LatestApartmentDealResponse) : null
+      return payload?.deal ?? null
+    } catch {
+      return null
+    }
+  })()
+
+  latestPlaceDealCache.set(cacheKey, promise)
+  return promise
+}
+
+const markerFromLatestDeal = (marker: MapValueMarker, latestDeal: LiveRtmsDeal): MapValueMarker => ({
+  ...marker,
+  id: `place-${latestDeal.aptSeq || latestDeal.id}`,
+  label: latestDeal.tradeType === 'direct' ? '직거래' : '매매',
+  aptName: latestDeal.aptName,
+  address: latestDeal.address,
+  lawdCd: latestDeal.lawdCd,
+  aptSeq: latestDeal.aptSeq,
+  dealDate: latestDeal.dealDate,
+  tradeTypeLabel: '최근 5년 확인',
+  priceEok: latestDeal.priceEok,
+  hasPrice: true,
+  dateLabel: formatMarkerMonth(latestDeal.dealDate),
+  subLabel: `${latestDeal.pyeong}평`,
+  tone: latestDeal.tradeType === 'direct' ? 'direct' : 'sale',
+  relatedDeals: [latestDeal],
+})
 
 const createEmptyPlaceMarker = (place: KakaoPlaceResult): MapValueMarker | null => {
   const lat = Number(place.y)
