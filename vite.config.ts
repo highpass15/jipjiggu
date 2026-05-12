@@ -1248,6 +1248,7 @@ const rtmsProxyPlugin = (): Plugin => ({
     const rtmsCache = new Map<string, string>()
     const rtmsQueries = new Map<string, RtmsQuery>()
     let dailyRefreshTimer: NodeJS.Timeout | undefined
+    let keepAliveTimer: NodeJS.Timeout | undefined
     let activeRefresh: Promise<void> | null = null
     let activeMapMarkerRefresh: Promise<void> | null = null
 
@@ -1359,9 +1360,35 @@ const rtmsProxyPlugin = (): Plugin => ({
       }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
     }
 
+    const startKeepAlive = () => {
+      const env = loadRuntimeEnv()
+      const publicBaseUrl = env.JIPJIGGU_KEEP_ALIVE_URL || env.RENDER_EXTERNAL_URL
+      if (!publicBaseUrl) return
+
+      const healthUrl = new URL('/api/health', publicBaseUrl).toString()
+      keepAliveTimer = setInterval(() => {
+        fetch(healthUrl, { cache: 'no-store' }).catch(() => undefined)
+      }, 10 * 60 * 1000)
+    }
+
     scheduleDailyRefresh()
+    startKeepAlive()
     server.httpServer?.once('close', () => {
       if (dailyRefreshTimer) clearTimeout(dailyRefreshTimer)
+      if (keepAliveTimer) clearInterval(keepAliveTimer)
+    })
+
+    server.middlewares.use('/api/health', async (_request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'no-store')
+      response.statusCode = 200
+      response.end(
+        JSON.stringify({
+          ok: true,
+          service: 'jipjiggu',
+          updatedAt: new Date().toISOString(),
+        }),
+      )
     })
 
     server.middlewares.use('/api/runtime/config-check', async (_request, response) => {

@@ -1742,7 +1742,7 @@ function PriceView({
 
     try {
       const response = await fetch(
-        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=60&limit=5000&geocodeLimit=500`,
+        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=60&limit=1200&geocodeLimit=180`,
         signal ? { signal } : undefined,
       )
       const payload = (await response.json()) as RtmsMapMarkerResponse | { error?: string }
@@ -1781,13 +1781,16 @@ function PriceView({
 
   useEffect(() => {
     const controller = new AbortController()
-    const initialTimer = window.setTimeout(() => {
-      void fetchRtmsDeals(controller.signal)
+    const mapTimer = window.setTimeout(() => {
       void fetchServerMapMarkers(controller.signal)
     }, 0)
+    const dealsTimer = window.setTimeout(() => {
+      void fetchRtmsDeals(controller.signal)
+    }, 1800)
 
     return () => {
-      window.clearTimeout(initialTimer)
+      window.clearTimeout(mapTimer)
+      window.clearTimeout(dealsTimer)
       controller.abort()
       if (retryTimerRef.current) {
         window.clearTimeout(retryTimerRef.current)
