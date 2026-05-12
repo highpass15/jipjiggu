@@ -126,6 +126,7 @@ const rtmsMapMarkerReturnLimit = 5000
 const rtmsMapMarkerDistrictLimit = 2200
 const rtmsMapMarkerBatchSize = 2
 const rtmsMapMarkerGeocodeBatchLimit = 180
+const rtmsMapMarkerMonthBatchSize = 2
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
@@ -564,6 +565,20 @@ type GeocodeCacheEntry = {
   updatedAt: string
 }
 
+type MapMarkerDistrictCachePayload = {
+  meta: Record<string, unknown>
+  markers: Array<{
+    id: string
+    aptName: string
+    address: string
+    dealDate?: string
+    lat: number
+    lng: number
+    relatedDeals?: NormalizedRtmsDeal[]
+  }>
+  rawDeals?: NormalizedRtmsDeal[]
+}
+
 const normalizeAddressKey = (address: string) => address.replace(/\s+/g, ' ').trim()
 const geocodeCacheFilePath = (address: string) =>
   path.join(rtmsCacheDirectory, 'geocodes', `${safeCacheFilename(normalizeAddressKey(address))}.json`)
@@ -588,18 +603,7 @@ const writeGeocodeCache = async (address: string, payload: GeocodeCacheEntry) =>
 const readMapMarkerDistrictCache = async (lawdCd: string) => {
   try {
     const raw = await fs.readFile(mapMarkerDistrictCacheFilePath(lawdCd), 'utf8')
-    return JSON.parse(raw) as {
-      meta: Record<string, unknown>
-      markers: Array<{
-        id: string
-        aptName: string
-        address: string
-        dealDate?: string
-        lat: number
-        lng: number
-        relatedDeals?: NormalizedRtmsDeal[]
-      }>
-    }
+    return JSON.parse(raw) as MapMarkerDistrictCachePayload
   } catch {
     return null
   }
@@ -754,6 +758,26 @@ const orderMapRefreshDistricts = (districts: TargetDistrict[]) =>
     return normalizedA - normalizedB || a.code.localeCompare(b.code)
   })
 
+const dedupeNormalizedDeals = (deals: NormalizedRtmsDeal[]) =>
+  deals
+    .filter((deal) => deal.status === 'active')
+    .sort((a, b) => b.dealDate.localeCompare(a.dealDate) || b.priceEok - a.priceEok)
+    .filter(
+      (deal, index, list) =>
+        index ===
+        list.findIndex(
+          (candidate) =>
+            candidate.id === deal.id ||
+            `${candidate.lawdCd}-${candidate.aptSeq}-${candidate.dealDate}-${candidate.priceEok}-${candidate.areaM2}-${candidate.floor}` ===
+              `${deal.lawdCd}-${deal.aptSeq}-${deal.dealDate}-${deal.priceEok}-${deal.areaM2}-${deal.floor}`,
+        ),
+    )
+
+const readSearchedDealYmds = (payload: MapMarkerDistrictCachePayload | null) =>
+  Array.isArray(payload?.meta?.searchedDealYmds)
+    ? (payload.meta.searchedDealYmds as unknown[]).map(String).filter(Boolean)
+    : []
+
 const buildRtmsMapMarkerPayload = async ({
   serializedPayload,
   query,
@@ -863,6 +887,89 @@ const buildRtmsMapMarkerPayload = async ({
       updatedAt: new Date().toISOString(),
     },
     markers,
+  }
+}
+
+const buildIncrementalDistrictMapMarkerPayload = async ({
+  district,
+  serviceKey,
+  kakaoRestApiKey,
+  force,
+}: {
+  district: TargetDistrict
+  serviceKey: string
+  kakaoRestApiKey: string
+  force?: boolean
+}) => {
+  const query = createDistrictMapQuery(district.code)
+  const existingPayload = force ? null : await readMapMarkerDistrictCache(district.code)
+  const baseDealYmd = query.dealYmd === 'auto' ? getDefaultDealYmd() : query.dealYmd
+  const dealYmds = getRecentDealYmds(baseDealYmd, query.monthsBack)
+  const searchedDealYmds = new Set(force ? [] : readSearchedDealYmds(existingPayload))
+  const nextDealYmds = dealYmds
+    .filter((dealYmd) => !searchedDealYmds.has(dealYmd))
+    .slice(0, rtmsMapMarkerMonthBatchSize)
+  const monthResults = await runInBatches(
+    nextDealYmds,
+    1,
+    (dealYmd) => fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows),
+    120,
+  )
+  const mergedDeals = dedupeNormalizedDeals([
+    ...((force ? [] : existingPayload?.rawDeals) ?? []),
+    ...monthResults.flatMap((result) => result.rawDeals),
+  ]).slice(0, query.limit)
+  const searchedAfter = new Set([...searchedDealYmds, ...nextDealYmds])
+  const serializedPayload = JSON.stringify({
+    meta: {
+      source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료',
+      lawdCd: query.lawdCd,
+      scope: query.scope,
+      district: district.name,
+      dealYmd: baseDealYmd,
+      fromDealYmd: dealYmds[dealYmds.length - 1],
+      toDealYmd: dealYmds[0],
+      monthsBack: query.monthsBack,
+      rawCount: mergedDeals.length,
+      returnedCount: mergedDeals.length,
+      cachePolicy: `daily-${String(rtmsDailyRefreshHour).padStart(2, '0')}:00`,
+      updatedAt: new Date().toISOString(),
+    },
+    deals: mergedDeals,
+  })
+  const markerPayload = await buildRtmsMapMarkerPayload({
+    serializedPayload,
+    query,
+    kakaoRestApiKey,
+    limit: rtmsMapMarkerDistrictLimit,
+    geocodeLimit: rtmsMapMarkerGeocodeBatchLimit,
+  })
+  const allMonthsScanned = searchedAfter.size >= dealYmds.length
+  const resultCode =
+    allMonthsScanned && markerPayload.meta.missingCoordinateCount === 0 ? '000' : 'PARTIAL'
+
+  return {
+    ...markerPayload,
+    meta: {
+      ...markerPayload.meta,
+      resultCode,
+      resultMessage:
+        resultCode === '000'
+          ? '구/시군구별 지도 마커 캐시 생성 완료'
+          : '구/시군구별 지도 마커 캐시를 월 단위로 누적 생성중입니다.',
+      districtCode: district.code,
+      districtName: district.name,
+      cacheKind: 'district-map-markers',
+      searchedDealYmds: [...searchedAfter],
+      monthProgress: {
+        searched: searchedAfter.size,
+        total: dealYmds.length,
+        lastBatch: nextDealYmds,
+      },
+      rawDealCount: mergedDeals.length,
+      refreshedAt: new Date().toISOString(),
+    },
+    rawDeals: mergedDeals,
   }
 }
 
@@ -1162,30 +1269,14 @@ const rtmsProxyPlugin = (): Plugin => ({
 
       for (const district of refreshTargets) {
         try {
-          const query = createDistrictMapQuery(district.code)
-          const payload = await buildRtmsPayload(query, serviceKey)
-          const serializedPayload = JSON.stringify(payload)
-          rtmsCache.set(rtmsCacheKey(query), serializedPayload)
-          await writeRtmsCacheFile(rtmsCacheKey(query), serializedPayload)
-
-          const markerPayload = await buildRtmsMapMarkerPayload({
-            serializedPayload,
-            query,
+          const markerPayload = await buildIncrementalDistrictMapMarkerPayload({
+            district,
+            serviceKey,
             kakaoRestApiKey,
-            limit: rtmsMapMarkerDistrictLimit,
-            geocodeLimit: rtmsMapMarkerGeocodeBatchLimit,
+            force: options.force,
           })
 
-          await writeMapMarkerDistrictCache(district.code, {
-            ...markerPayload,
-            meta: {
-              ...markerPayload.meta,
-              districtCode: district.code,
-              districtName: district.name,
-              cacheKind: 'district-map-markers',
-              refreshedAt: new Date().toISOString(),
-            },
-          })
+          await writeMapMarkerDistrictCache(district.code, markerPayload)
         } catch (error) {
           console.warn(
             `[집직구 RTMS 지도] ${district.name} marker refresh failed:`,
