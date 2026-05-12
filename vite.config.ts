@@ -122,7 +122,7 @@ const rtmsDailyRefreshHour = 1
 const rtmsDefaultCapitalMonthsBack = 3
 const rtmsMapMarkerMonthsBack = 36
 const rtmsMapMarkerLimit = 120000
-const rtmsMapMarkerReturnLimit = 5000
+const rtmsMapMarkerReturnLimit = 1200
 const rtmsMapMarkerDistrictLimit = 2200
 const rtmsMapMarkerBatchSize = 2
 const rtmsMapMarkerGeocodeBatchLimit = 180
@@ -778,6 +778,14 @@ const readSearchedDealYmds = (payload: MapMarkerDistrictCachePayload | null) =>
     ? (payload.meta.searchedDealYmds as unknown[]).map(String).filter(Boolean)
     : []
 
+const trimMapMarkerForList = <T extends { relatedDeals?: NormalizedRtmsDeal[]; nearbyDeals?: NormalizedRtmsDeal[] }>(
+  marker: T,
+) => ({
+  ...marker,
+  relatedDeals: marker.relatedDeals?.slice(0, 12) ?? [],
+  nearbyDeals: marker.nearbyDeals?.slice(0, 12) ?? [],
+})
+
 const buildRtmsMapMarkerPayload = async ({
   serializedPayload,
   query,
@@ -984,6 +992,7 @@ const readAggregatedMapMarkerCache = async (query: RtmsQuery, limit: number) => 
     .filter((marker) => Number.isFinite(marker.lat) && Number.isFinite(marker.lng))
     .sort((a, b) => String(b.dealDate ?? '').localeCompare(String(a.dealDate ?? '')))
     .slice(0, limit)
+    .map(trimMapMarkerForList)
   const refreshedDistricts = cacheFiles.filter(Boolean).length
 
   return {
@@ -1571,7 +1580,7 @@ const rtmsProxyPlugin = (): Plugin => ({
         numOfRows: String(Math.min(Number(incomingUrl.searchParams.get('numOfRows')) || 1000, 1000)),
         limit: Math.min(Number(incomingUrl.searchParams.get('sourceLimit')) || rtmsMapMarkerLimit, rtmsMapMarkerLimit),
       }
-      const markerLimit = Math.min(Number(incomingUrl.searchParams.get('limit')) || rtmsMapMarkerReturnLimit, 12000)
+      const markerLimit = Math.min(Number(incomingUrl.searchParams.get('limit')) || rtmsMapMarkerReturnLimit, rtmsMapMarkerReturnLimit)
       const geocodeLimit = Math.min(Number(incomingUrl.searchParams.get('geocodeLimit')) || 400, 1200)
       const cacheKey = rtmsCacheKey(query)
       rtmsQueries.set(cacheKey, query)
