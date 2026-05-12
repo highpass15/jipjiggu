@@ -564,8 +564,9 @@ const buildRtmsPayload = async (query: RtmsQuery, serviceKey: string) => {
       dealYmd,
     })),
   )
-  const districtResults = await runInBatches(fetchTargets, 1, ({ district, dealYmd }) =>
-    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), query.scope === 'capital' ? 850 : 420,
+  const isWideCapitalQuery = !query.lawdCd && query.scope === 'capital'
+  const districtResults = await runInBatches(fetchTargets, isWideCapitalQuery ? 6 : 3, ({ district, dealYmd }) =>
+    fetchDistrictTrades(district, serviceKey, dealYmd, query.numOfRows), isWideCapitalQuery ? 80 : 120,
   )
   const rawDeals = districtResults.flatMap((result) => result.rawDeals)
   const failedResults = districtResults.filter((result) => result.error)

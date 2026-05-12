@@ -1705,6 +1705,7 @@ function PriceView({
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
+  const retryTimerRef = useRef<number | null>(null)
   const latestAverage =
     apartments.reduce((sum, apartment) => sum + apartment.priceEok, 0) / Math.max(apartments.length, 1)
   const totalVolume = apartments.reduce((sum, apartment) => sum + apartment.volume, 0)
@@ -1773,40 +1774,57 @@ function PriceView({
     return () => window.clearTimeout(timerId)
   }, [focusApartment, handleMapMarkerSelect, latestApartmentDeals])
 
+  const fetchRtmsDeals = useCallback(async (signal?: AbortSignal) => {
+    if (signal?.aborted) return
+
+    setRtmsStatus((current) => (current === 'refreshing' ? 'refreshing' : 'loading'))
+    setRtmsError('')
+    try {
+      const response = await fetch(
+        `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
+        signal ? { signal } : undefined,
+      )
+      const payload = (await response.json()) as RtmsResponse | { error?: string }
+
+      if (!response.ok || 'error' in payload) {
+        throw new Error('error' in payload ? payload.error : 'RTMS API 호출 실패')
+      }
+
+      const rtmsPayload = payload as RtmsResponse
+      setRtmsData(rtmsPayload)
+      onLiveDealsChange(rtmsPayload.deals)
+      setRtmsStatus(rtmsPayload.meta.resultCode === 'REFRESHING' ? 'refreshing' : 'ready')
+
+      if (rtmsPayload.meta.resultCode === 'REFRESHING') {
+        if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = window.setTimeout(() => {
+          setSyncTick((tick) => tick + 1)
+        }, 12000)
+      }
+    } catch (error) {
+      if (signal?.aborted) return
+      const message = error instanceof Error ? error.message : 'RTMS API 호출 실패'
+      console.warn(message)
+      setRtmsStatus('error')
+      setRtmsError(message)
+    }
+  }, [defaultDealYmd, onLiveDealsChange, rtmsScope])
+
   useEffect(() => {
     const controller = new AbortController()
+    const initialTimer = window.setTimeout(() => {
+      void fetchRtmsDeals(controller.signal)
+    }, 0)
 
-    const fetchRtmsDeals = async () => {
-      setRtmsStatus('loading')
-      setRtmsError('')
-      try {
-        const response = await fetch(
-          `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
-          { signal: controller.signal },
-        )
-        const payload = (await response.json()) as RtmsResponse | { error?: string }
-
-        if (!response.ok || 'error' in payload) {
-          throw new Error('error' in payload ? payload.error : 'RTMS API 호출 실패')
-        }
-
-        const rtmsPayload = payload as RtmsResponse
-        setRtmsData(rtmsPayload)
-        onLiveDealsChange(rtmsPayload.deals)
-        setRtmsStatus(rtmsPayload.meta.resultCode === 'REFRESHING' ? 'refreshing' : 'ready')
-      } catch (error) {
-        if (controller.signal.aborted) return
-        const message = error instanceof Error ? error.message : 'RTMS API 호출 실패'
-        console.warn(message)
-        setRtmsStatus('error')
-        setRtmsError(message)
+    return () => {
+      window.clearTimeout(initialTimer)
+      controller.abort()
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
       }
     }
-
-    fetchRtmsDeals()
-
-    return () => controller.abort()
-  }, [defaultDealYmd, onLiveDealsChange, rtmsScope, syncTick])
+  }, [fetchRtmsDeals, syncTick])
 
   useEffect(() => {
     let timerId: number
@@ -2342,6 +2360,12 @@ function ApartmentMap({
     }
   }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, userListings])
 
+  const hasDisplayableMarkers =
+    liveDeals.length > 0 ||
+    userListings.length > 0 ||
+    apartmentMarkers(apartments, latestApartmentDeals).length > 0
+  const shouldShowMapStatus = !mapReady || mapError || (!hasDisplayableMarkers && rtmsStatus !== 'loading')
+
   return (
     <section className="map-panel">
       <div className="map-toolbar">
@@ -2354,7 +2378,7 @@ function ApartmentMap({
 
       <div className="map-canvas">
         <div ref={mapNode} className={mapReady ? 'kakao-map visible' : 'kakao-map'} />
-        {(!mapReady || mapError || (rtmsStatus !== 'loading' && liveDeals.length === 0 && userListings.length === 0)) && (
+        {shouldShowMapStatus && (
           <MapDataStatus status={rtmsStatus} error={rtmsError} mapError={mapError} />
         )}
         <div className="map-filter-overlay" aria-label="지도 거래 필터">
