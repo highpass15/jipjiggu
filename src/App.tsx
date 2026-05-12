@@ -340,6 +340,14 @@ const ensureKakaoMapSdk = (kakaoKey: string) => {
   return window.__kakaoMapSdkLoading
 }
 
+const KAKAO_MAP_PUBLIC_JS_KEY = '42ca8463bf3a2c6fc7b2698cfacd9461'
+const LEGACY_KAKAO_MAP_JS_KEY = '10929e60c7dc672c23f88e4473300e9a'
+const getKakaoMapKey = () => {
+  const envKey = import.meta.env.VITE_KAKAO_MAP_JS_KEY || import.meta.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY
+
+  return !envKey || envKey === LEGACY_KAKAO_MAP_JS_KEY ? KAKAO_MAP_PUBLIC_JS_KEY : envKey
+}
+
 const apartments: Apartment[] = [
   {
     name: '래미안 원베일리',
@@ -2088,7 +2096,7 @@ function ApartmentMap({
   const selectedMarkerRef = useRef<MapValueMarker | null>(selectedMarker)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState(false)
-  const kakaoKey = import.meta.env.VITE_KAKAO_MAP_JS_KEY || import.meta.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY
+  const kakaoKey = getKakaoMapKey()
 
   useEffect(() => {
     selectedMarkerRef.current = selectedMarker
@@ -2483,7 +2491,7 @@ function useBuildingLedger(marker: MapValueMarker, latestDeal: LiveRtmsDeal | un
 function RoadviewPanel({ marker }: { marker: MapValueMarker }) {
   const roadviewNode = useRef<HTMLDivElement | null>(null)
   const [roadviewStatus, setRoadviewStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
-  const kakaoKey = import.meta.env.VITE_KAKAO_MAP_JS_KEY || import.meta.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY
+  const kakaoKey = getKakaoMapKey()
 
   useEffect(() => {
     if (!kakaoKey || !roadviewNode.current) {
