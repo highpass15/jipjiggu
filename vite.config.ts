@@ -168,12 +168,23 @@ const loadRuntimeEnv = () => ({ ...loadEnv('', process.cwd(), ''), ...process.en
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const fetchWithTimeout = async (url: string, timeoutMs = 9000) => {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 const fetchTextWithRetry = async (url: string, attempts = 3) => {
   let lastResponse: Response | null = null
   let lastRaw = ''
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const apiResponse = await fetch(url)
+    const apiResponse = await fetchWithTimeout(url)
     const raw = await apiResponse.text()
 
     lastResponse = apiResponse
@@ -617,8 +628,14 @@ const findLatestApartmentDeal = async ({
   const dealYmds = getRecentDealYmds(resolvedDealYmd, monthsBack)
   const normalizedTargetName = normalizeComparableName(aptName)
   if (!normalizedTargetName) return null
+  const scanStartedAt = Date.now()
+  const maxScanMs = 22_000
 
   for (const dealYmd of dealYmds) {
+    if (Date.now() - scanStartedAt > maxScanMs) {
+      break
+    }
+
     const result = await fetchDistrictTrades(district, serviceKey, dealYmd, '1000')
     const matches = result.rawDeals
       .filter((deal) => deal.status === 'active')
