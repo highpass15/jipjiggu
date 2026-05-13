@@ -143,8 +143,8 @@ const pyeongchonCoreDongsByLawdCd: Record<string, string[]> = {
 
 const targetGroups: Record<string, TargetGroup> = {
   'pyeongchon-core': {
-    label: '평촌·과천·의왕',
-    districts: gyeonggiDistricts.filter((district) => ['41173', '41290', '41430'].includes(district.code)),
+    label: '평촌·만안·과천·의왕',
+    districts: gyeonggiDistricts.filter((district) => ['41171', '41173', '41290', '41430'].includes(district.code)),
     legalDongsByLawdCd: pyeongchonCoreDongsByLawdCd,
   },
   capital: { label: '서울·경기·인천', districts: capitalAreaDistricts },
@@ -1356,7 +1356,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
     const scheduleDailyRefresh = () => {
       dailyRefreshTimer = setTimeout(() => {
         void (async () => {
-          await startMapMarkerRefresh('pyeongchon-core', '', { maxDistricts: 3 })
+          await startMapMarkerRefresh('pyeongchon-core', '', { maxDistricts: 4 })
           await startMapMarkerRefresh('capital', '', { maxDistricts: rtmsMapMarkerBatchSize })
         })().finally(scheduleDailyRefresh)
       }, getMsUntilNextDailyRefresh(rtmsDailyRefreshHour))
@@ -1660,7 +1660,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
         if (markerCache.markers.length > 0) {
           if (kakaoRestApiKey && markerCache.refreshedDistricts < markerCache.searchedDistricts) {
             void startMapMarkerRefresh(query.scope, query.lawdCd, {
-              maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 3 : rtmsMapMarkerBatchSize,
+              maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 4 : rtmsMapMarkerBatchSize,
             })
           }
 
@@ -1690,7 +1690,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
 
         if (kakaoRestApiKey) {
           void startMapMarkerRefresh(query.scope, query.lawdCd, {
-            maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 3 : rtmsMapMarkerBatchSize,
+            maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 4 : rtmsMapMarkerBatchSize,
           })
         }
 

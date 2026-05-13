@@ -660,7 +660,7 @@ const navItems: Array<{
 ]
 
 const regionOptions = [
-  '평촌·과천·의왕',
+  '평촌·만안·과천·의왕',
   '서울·경기·인천 전체',
   '서울 전체',
   '경기 전체',
@@ -774,7 +774,7 @@ const mapFilterGroups = [
 }>
 
 const rtmsScopeByRegion: Record<string, string> = {
-  '평촌·과천·의왕': 'pyeongchon-core',
+  '평촌·만안·과천·의왕': 'pyeongchon-core',
   '서울·경기·인천 전체': 'capital',
   '서울 전체': 'seoul',
   '경기 전체': 'gyeonggi',
@@ -1061,7 +1061,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
-  const [selectedRegion, setSelectedRegion] = useState('평촌·과천·의왕')
+  const [selectedRegion, setSelectedRegion] = useState('평촌·만안·과천·의왕')
   const [salePrice, setSalePrice] = useState(5)
   const [income, setIncome] = useState(9000)
   const [assets, setAssets] = useState(30000)
@@ -1095,8 +1095,10 @@ function App() {
 
     return apartments.filter((apartment) => {
       const regionMatch =
-        selectedRegion === '평촌·과천·의왕'
-          ? ['안양시 동안구', '과천시', '의왕시'].some((region) => apartment.region.includes(region))
+        selectedRegion === '평촌·만안·과천·의왕'
+          ? ['안양시 동안구', '안양시 만안구', '과천시', '의왕시'].some((region) =>
+              apartment.region.includes(region),
+            )
         : selectedRegion === '서울·경기·인천 전체'
           ? true
           : selectedRegion === '서울 전체'
