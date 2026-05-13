@@ -1242,6 +1242,42 @@ const formatTelegramLeadMessage = (lead: TelegramLead) => {
   return lines.join('\n').slice(0, 3900)
 }
 
+const getMissingTelegramKeys = (env: Record<string, string | undefined>) =>
+  ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'].filter((key) => !env[key])
+
+const sendTelegramMessage = async (env: Record<string, string | undefined>, text: string) => {
+  const missingKeys = getMissingTelegramKeys(env)
+  if (missingKeys.length > 0) {
+    return {
+      ok: false,
+      configured: false,
+      missingKeys,
+      message: `${missingKeys.join(', ')}가 설정되지 않았습니다.`,
+    }
+  }
+
+  const telegramResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: env.TELEGRAM_CHAT_ID,
+      text,
+      disable_web_page_preview: true,
+    }),
+  })
+
+  if (!telegramResponse.ok) {
+    const telegramRaw = await telegramResponse.text()
+    return {
+      ok: false,
+      configured: true,
+      error: telegramRaw || telegramResponse.statusText,
+    }
+  }
+
+  return { ok: true, configured: true }
+}
+
 type RtmsMiddlewareServer =
   | Pick<ViteDevServer, 'middlewares' | 'httpServer'>
   | Pick<PreviewServer, 'middlewares' | 'httpServer'>
@@ -1415,9 +1451,31 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
           })),
           rtmsServiceKeyPresent: Boolean(env.MOLIT_APT_TRADE_SERVICE_KEY),
           buildingLedgerServiceKeyPresent: Boolean(env.MOLIT_BUILDING_LEDGER_SERVICE_KEY),
+          telegramBotTokenPresent: Boolean(env.TELEGRAM_BOT_TOKEN),
+          telegramChatIdPresent: Boolean(env.TELEGRAM_CHAT_ID),
+          telegramConfigured: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID),
           updatedAt: new Date().toISOString(),
         }),
       )
+    })
+
+    server.middlewares.use('/api/telegram/test', async (_request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+
+      try {
+        const env = loadRuntimeEnv()
+        const createdAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+        const result = await sendTelegramMessage(
+          env,
+          `[집직구] 텔레그램 연결 테스트\n접수시각: ${createdAt}\n이 메시지가 보이면 알림 연결이 정상입니다.`,
+        )
+
+        response.statusCode = result.ok ? 200 : result.configured ? 502 : 200
+        response.end(JSON.stringify(result))
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
     })
 
     server.middlewares.use('/api/telegram/notify', async (request, response) => {
@@ -1431,43 +1489,13 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
 
       try {
         const env = loadRuntimeEnv()
-        const botToken = env.TELEGRAM_BOT_TOKEN
-        const chatId = env.TELEGRAM_CHAT_ID
         const rawBody = await readRequestBody(request)
         const lead = rawBody ? (JSON.parse(rawBody) as TelegramLead) : {}
         const text = formatTelegramLeadMessage(lead)
+        const result = await sendTelegramMessage(env, text)
 
-        if (!botToken || !chatId) {
-          response.statusCode = 200
-          response.end(
-            JSON.stringify({
-              ok: false,
-              configured: false,
-              message: 'TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 설정되지 않았습니다.',
-            }),
-          )
-          return
-        }
-
-        const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            disable_web_page_preview: true,
-          }),
-        })
-
-        if (!telegramResponse.ok) {
-          const telegramRaw = await telegramResponse.text()
-          response.statusCode = 502
-          response.end(JSON.stringify({ ok: false, error: telegramRaw || telegramResponse.statusText }))
-          return
-        }
-
-        response.statusCode = 200
-        response.end(JSON.stringify({ ok: true, configured: true }))
+        response.statusCode = result.ok ? 200 : result.configured ? 502 : 200
+        response.end(JSON.stringify(result))
       } catch (error) {
         response.statusCode = 500
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
