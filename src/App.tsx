@@ -73,11 +73,27 @@ type Apartment = {
   tags: string[]
 }
 
-type RecommendedApartment = Apartment & {
+type AiPreferenceKey = 'budget' | 'pyeong' | 'subway' | 'commute' | 'growth' | 'newness' | 'direct'
+
+type RecommendedApartment = {
+  name: string
+  region: string
+  station: string
+  pyeong: string
+  priceEok: number
+  previousEok: number
+  recentDeals: Array<{
+    date: string
+    priceEok: number
+  }>
   budgetDistance: number
   recommendationScore: number
   commuteToOffice: number
   fitReasons: string[]
+  source: 'rtms' | 'curated'
+  oneYearGrowthRate: number | null
+  latestDealDate: string
+  dealCount: number
 }
 
 type LiveRtmsDeal = {
@@ -675,6 +691,19 @@ const officeAreaOptions: OfficeArea[] = ['강남', '여의도', '광화문', '�
 const pyeongPreferenceOptions = [25, 32, 34, 40]
 const subwayPreferenceOptions = [5, 8, 10, 15]
 const commutePreferenceOptions = [20, 30, 40, 60]
+const aiPreferenceOptions: Array<{ value: AiPreferenceKey; label: string; shortLabel: string }> = [
+  { value: 'budget', label: '예산 적합도', shortLabel: '예산' },
+  { value: 'pyeong', label: '선호 평형', shortLabel: '평형' },
+  { value: 'subway', label: '역과의 거리', shortLabel: '역세권' },
+  { value: 'commute', label: '직장과의 거리', shortLabel: '직장' },
+  { value: 'growth', label: '최근 1년 상승률', shortLabel: '상승률' },
+  { value: 'newness', label: '입주년차', shortLabel: '연식' },
+  { value: 'direct', label: '직거래 사례', shortLabel: '직거래' },
+]
+const aiPreferenceLabelByKey = aiPreferenceOptions.reduce(
+  (labels, option) => ({ ...labels, [option.value]: option.shortLabel }),
+  {} as Record<AiPreferenceKey, string>,
+)
 const defaultMapFilters: MapFilterState = {
   tradeType: 'all',
   pyeong: 'all',
@@ -992,6 +1021,313 @@ const formatNearbyComparisonNames = (deals: LiveRtmsDeal[], currentAptName: stri
 
 const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
 
+const clampScore = (value: number) => Math.min(100, Math.max(0, value))
+
+const uniqueAiPreferenceRanks = (ranks: AiPreferenceKey[]) => {
+  const fallback: AiPreferenceKey[] = ['budget', 'commute', 'growth']
+  const uniqueRanks = ranks.filter((rank, index) => ranks.indexOf(rank) === index)
+
+  fallback.forEach((rank) => {
+    if (uniqueRanks.length < 3 && !uniqueRanks.includes(rank)) {
+      uniqueRanks.push(rank)
+    }
+  })
+
+  aiPreferenceOptions.forEach((option) => {
+    if (uniqueRanks.length < 3 && !uniqueRanks.includes(option.value)) {
+      uniqueRanks.push(option.value)
+    }
+  })
+
+  return uniqueRanks.slice(0, 3)
+}
+
+const getRecommendationDealKey = (deal: LiveRtmsDeal) =>
+  deal.aptSeq || normalizeSearchText(`${deal.aptName}-${deal.address}-${deal.jibun}`)
+
+const getOneYearGrowth = (deals: LiveRtmsDeal[]) => {
+  const sortedDeals = dedupeDeals(deals)
+    .filter((deal) => deal.status === 'active')
+    .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
+  const latestDeal = sortedDeals.at(-1)
+
+  if (!latestDeal) return null
+
+  const latestTime = dealTimestamp(latestDeal)
+  const startDate = new Date(latestTime)
+  startDate.setFullYear(startDate.getFullYear() - 1)
+
+  const firstComparableDeal =
+    sortedDeals.find((deal) => dealTimestamp(deal) >= startDate.getTime()) ?? sortedDeals[0]
+
+  if (!firstComparableDeal || firstComparableDeal.id === latestDeal.id) return null
+
+  return ((latestDeal.priceEok - firstComparableDeal.priceEok) / Math.max(firstComparableDeal.priceEok, 0.1)) * 100
+}
+
+const getRtmsStationHint = (deal: LiveRtmsDeal, subwayMinutes: number) => {
+  const target = `${deal.aptName} ${deal.address} ${deal.legalDong}`
+
+  if (target.includes('범계')) return `범계역 ${subwayMinutes}분권`
+  if (target.includes('평촌')) return `평촌역 ${subwayMinutes}분권`
+  if (target.includes('인덕원') || target.includes('관양')) return `인덕원역 ${subwayMinutes}분권`
+  if (target.includes('과천')) return `과천권 ${subwayMinutes}분권`
+  if (target.includes('내손') || target.includes('포일')) return `인덕원·내손 ${subwayMinutes}분권`
+  if (target.includes('비산')) return `비산·안양 ${subwayMinutes}분권`
+
+  return `생활권 ${subwayMinutes}분권`
+}
+
+const estimateRtmsSubwayMinutes = (deal: LiveRtmsDeal) => {
+  const target = `${deal.aptName} ${deal.address} ${deal.legalDong}`
+
+  if (target.includes('역세권') || target.includes('센트럴')) return 5
+  if (target.includes('범계') || target.includes('평촌') || target.includes('인덕원')) return 7
+  if (target.includes('관양') || target.includes('호계') || target.includes('과천')) return 9
+  if (target.includes('비산') || target.includes('내손') || target.includes('포일')) return 11
+  if (deal.district.includes('서울')) return 10
+
+  return 13
+}
+
+const estimateRtmsCommuteMinutes = (deal: LiveRtmsDeal, officeArea: OfficeArea) => {
+  const region = `${deal.district} ${deal.legalDong} ${deal.address}`
+  const baseByOffice: Record<OfficeArea, number> = { 강남: 44, 여의도: 52, 광화문: 60, 판교: 38 }
+
+  if (region.includes('과천시')) {
+    return ({ 강남: 30, 여의도: 42, 광화문: 48, 판교: 36 } as Record<OfficeArea, number>)[officeArea]
+  }
+  if (region.includes('안양시 동안구')) {
+    return ({ 강남: 38, 여의도: 48, 광화문: 56, 판교: 29 } as Record<OfficeArea, number>)[officeArea]
+  }
+  if (region.includes('안양시 만안구')) {
+    return ({ 강남: 46, 여의도: 44, 광화문: 55, 판교: 38 } as Record<OfficeArea, number>)[officeArea]
+  }
+  if (region.includes('의왕시')) {
+    return ({ 강남: 41, 여의도: 53, 광화문: 60, 판교: 26 } as Record<OfficeArea, number>)[officeArea]
+  }
+  if (region.includes('분당구')) {
+    return ({ 강남: 34, 여의도: 58, 광화문: 66, 판교: 14 } as Record<OfficeArea, number>)[officeArea]
+  }
+  if (region.includes('서초구') || region.includes('강남구')) {
+    return ({ 강남: 18, 여의도: 34, 광화문: 38, 판교: 28 } as Record<OfficeArea, number>)[officeArea]
+  }
+
+  return baseByOffice[officeArea]
+}
+
+const scoreRecommendationPreference = (
+  preference: AiPreferenceKey,
+  context: {
+    priceEok: number
+    budgetEok: number
+    pyeong: number
+    preferredPyeong: number
+    subwayMinutes: number
+    maxSubwayMinutes: number
+    commuteMinutes: number
+    maxCommuteMinutes: number
+    buildYear: number
+    oneYearGrowthRate: number | null
+    directDealCount: number
+  },
+) => {
+  switch (preference) {
+    case 'budget':
+      return clampScore(100 - Math.abs(context.priceEok - context.budgetEok) * 9)
+    case 'pyeong':
+      return clampScore(100 - Math.abs(context.pyeong - context.preferredPyeong) * 8)
+    case 'subway':
+      return clampScore(100 - Math.max(0, context.subwayMinutes - context.maxSubwayMinutes) * 12 - context.subwayMinutes * 1.4)
+    case 'commute':
+      return clampScore(100 - Math.max(0, context.commuteMinutes - context.maxCommuteMinutes) * 4 - context.commuteMinutes * 0.45)
+    case 'growth':
+      return context.oneYearGrowthRate === null ? 50 : clampScore(54 + context.oneYearGrowthRate * 4.5)
+    case 'newness':
+      return clampScore(102 - Math.max(0, currentYear - context.buildYear) * 2.6)
+    case 'direct':
+      return context.directDealCount > 0 ? 100 : 58
+    default:
+      return 50
+  }
+}
+
+const formatGrowth = (value: number | null) => (value === null ? '산정중' : formatPercent(value))
+
+const buildRtmsRecommendationCandidates = ({
+  deals,
+  preferenceRanks,
+  budgetEok,
+  minPriceEok,
+  maxPriceEok,
+  preferredPyeong,
+  maxSubwayMinutes,
+  officeArea,
+  maxCommuteMinutes,
+}: {
+  deals: LiveRtmsDeal[]
+  preferenceRanks: AiPreferenceKey[]
+  budgetEok: number
+  minPriceEok: number
+  maxPriceEok: number
+  preferredPyeong: number
+  maxSubwayMinutes: number
+  officeArea: OfficeArea
+  maxCommuteMinutes: number
+}): RecommendedApartment[] => {
+  const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
+  const groupedDeals = Array.from(
+    deals
+      .filter((deal) => deal.status === 'active' && deal.priceEok >= minPriceEok && deal.priceEok <= maxPriceEok)
+      .reduce((group, deal) => {
+        const key = getRecommendationDealKey(deal)
+        group.set(key, [...(group.get(key) ?? []), deal])
+        return group
+      }, new Map<string, LiveRtmsDeal[]>())
+      .values(),
+  )
+
+  return groupedDeals
+    .map((groupDeals): RecommendedApartment | null => {
+      const history = dedupeDeals(groupDeals)
+      const latestDeal = history[0]
+
+      if (!latestDeal) return null
+
+      const oneYearGrowthRate = getOneYearGrowth(history)
+      const subwayMinutes = estimateRtmsSubwayMinutes(latestDeal)
+      const commuteToOffice = estimateRtmsCommuteMinutes(latestDeal, officeArea)
+      const budgetDistance = Math.abs(latestDeal.priceEok - budgetEok)
+      const directDealCount = history.filter((deal) => deal.tradeType === 'direct').length
+      const context = {
+        priceEok: latestDeal.priceEok,
+        budgetEok,
+        pyeong: latestDeal.pyeong,
+        preferredPyeong,
+        subwayMinutes,
+        maxSubwayMinutes,
+        commuteMinutes: commuteToOffice,
+        maxCommuteMinutes,
+        buildYear: latestDeal.buildYear,
+        oneYearGrowthRate,
+        directDealCount,
+      }
+      const preferenceWeights = [0.44, 0.31, 0.2]
+      const preferenceScore = rankedPreferences.reduce(
+        (score, preference, index) => score + scoreRecommendationPreference(preference, context) * preferenceWeights[index],
+        0,
+      )
+      const baseFitScore =
+        scoreRecommendationPreference('budget', context) * 0.03 +
+        scoreRecommendationPreference('pyeong', context) * 0.01 +
+        Math.min(history.length, 12) * 0.35
+      const recommendationScore = Math.round(Math.min(99, preferenceScore + baseFitScore))
+      const recentDeals = history.slice(0, 5).map((deal) => ({
+        date: formatShortDate(deal.dealDate),
+        priceEok: deal.priceEok,
+      }))
+
+      return {
+        name: latestDeal.aptName,
+        region: `${latestDeal.district} ${latestDeal.legalDong}`.trim() || latestDeal.address,
+        station: getRtmsStationHint(latestDeal, subwayMinutes),
+        pyeong: `${Math.round(latestDeal.pyeong)}평`,
+        priceEok: latestDeal.priceEok,
+        previousEok: history[1]?.priceEok ?? latestDeal.priceEok,
+        recentDeals,
+        budgetDistance,
+        recommendationScore,
+        commuteToOffice,
+        source: 'rtms' as const,
+        oneYearGrowthRate,
+        latestDealDate: latestDeal.dealDate,
+        dealCount: history.length,
+        fitReasons: [
+          `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
+          `${formatEok(latestDeal.priceEok)} · ${Math.round(latestDeal.pyeong)}평`,
+          `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
+          `${officeArea} ${commuteToOffice}분`,
+          directDealCount > 0 ? `직거래 ${directDealCount}건 포함` : `거래 ${history.length}건 분석`,
+        ],
+      }
+    })
+    .filter((candidate): candidate is RecommendedApartment => candidate !== null)
+}
+
+const buildCuratedRecommendationCandidates = ({
+  preferenceRanks,
+  budgetEok,
+  minPriceEok,
+  maxPriceEok,
+  preferredPyeong,
+  maxSubwayMinutes,
+  officeArea,
+  maxCommuteMinutes,
+}: {
+  preferenceRanks: AiPreferenceKey[]
+  budgetEok: number
+  minPriceEok: number
+  maxPriceEok: number
+  preferredPyeong: number
+  maxSubwayMinutes: number
+  officeArea: OfficeArea
+  maxCommuteMinutes: number
+}) =>
+  apartments
+    .filter((apartment) => apartment.priceEok >= minPriceEok && apartment.priceEok <= maxPriceEok)
+    .map((apartment): RecommendedApartment => {
+      const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
+      const apartmentPyeong = Number(apartment.pyeong.replace('평', ''))
+      const oneYearGrowthRate =
+        apartment.previousEok > 0 ? ((apartment.priceEok - apartment.previousEok) / apartment.previousEok) * 100 : null
+      const commuteToOffice = apartment.commuteMinutes[officeArea]
+      const context = {
+        priceEok: apartment.priceEok,
+        budgetEok,
+        pyeong: apartmentPyeong,
+        preferredPyeong,
+        subwayMinutes: apartment.subwayMinutes,
+        maxSubwayMinutes,
+        commuteMinutes: commuteToOffice,
+        maxCommuteMinutes,
+        buildYear: apartment.approvalYear,
+        oneYearGrowthRate,
+        directDealCount: apartment.tags.includes('직거래') ? 1 : 0,
+      }
+      const preferenceWeights = [0.44, 0.31, 0.2]
+      const preferenceScore = rankedPreferences.reduce(
+        (score, preference, index) => score + scoreRecommendationPreference(preference, context) * preferenceWeights[index],
+        0,
+      )
+      const budgetDistance = Math.abs(apartment.priceEok - budgetEok)
+      const recommendationScore = Math.round(
+        Math.min(99, preferenceScore + scoreRecommendationPreference('budget', context) * 0.03),
+      )
+
+      return {
+        name: apartment.name,
+        region: apartment.region,
+        station: apartment.station,
+        pyeong: apartment.pyeong,
+        priceEok: apartment.priceEok,
+        previousEok: apartment.previousEok,
+        recentDeals: apartment.recentDeals,
+        budgetDistance,
+        recommendationScore,
+        commuteToOffice,
+        fitReasons: [
+          `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
+          `${formatEok(apartment.priceEok)} 실거래`,
+          `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
+          `${officeArea} ${commuteToOffice}분`,
+        ],
+        source: 'curated',
+        oneYearGrowthRate,
+        latestDealDate: apartment.recentDeals[0]?.date ?? '',
+        dealCount: apartment.recentDeals.length,
+      }
+    })
+
 const estimateDealFacts = (deal: LiveRtmsDeal) => {
   const aptSeed = deal.aptSeq
     .split('')
@@ -1072,6 +1408,7 @@ function App() {
   const [maxCommuteMinutes, setMaxCommuteMinutes] = useState(40)
   const [minTradePriceEok, setMinTradePriceEok] = useState(0)
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
+  const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['budget', 'commute', 'growth'])
   const [userListings, setUserListings] = useState<UserListing[]>([])
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
@@ -1089,6 +1426,10 @@ function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }, 30)
   }, [mode])
+
+  const mergeCapitalLiveDeals = useCallback((deals: LiveRtmsDeal[]) => {
+    setCapitalLiveDeals((currentDeals) => dedupeDeals([...deals, ...currentDeals]).slice(0, 50000))
+  }, [])
 
   const filteredApartments = useMemo(() => {
     const normalized = query.trim()
@@ -1323,46 +1664,52 @@ function App() {
   const recommendationStretchEok = recommendationBudgetEok * 1.12
   const normalizedMinTradePriceEok = Math.min(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
   const normalizedMaxTradePriceEok = Math.max(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
-  const recommendedApartments = useMemo<RecommendedApartment[]>(
-    () =>
-      apartments
-        .filter(
-          (apartment) =>
-            apartment.priceEok >= normalizedMinTradePriceEok &&
-            apartment.priceEok <= normalizedMaxTradePriceEok,
-        )
-        .map((apartment) => {
-          const apartmentPyeong = Number(apartment.pyeong.replace('평', ''))
-          const budgetDistance = Math.abs(apartment.priceEok - recommendationBudgetEok)
-          const commuteToOffice = apartment.commuteMinutes[officeArea]
-          const budgetScore = Math.max(0, 35 - Math.min(budgetDistance * 3.2, 35))
-          const pyeongGap = Math.abs(apartmentPyeong - preferredPyeong)
-          const pyeongScore = Math.max(0, 20 - Math.min(pyeongGap * 1.8, 20))
-          const subwayScore = Math.max(0, 20 - Math.max(0, apartment.subwayMinutes - maxSubwayMinutes) * 3)
-          const commuteScore = Math.max(0, 25 - Math.max(0, commuteToOffice - maxCommuteMinutes) * 0.8)
-          const recommendationScore = Math.round(
-            Math.min(99, budgetScore + pyeongScore + subwayScore + commuteScore),
-          )
+  const recommendedApartments = useMemo<RecommendedApartment[]>(() => {
+    const rtmsCandidates = buildRtmsRecommendationCandidates({
+      deals: capitalLiveDeals,
+      preferenceRanks: aiPreferenceRanks,
+      budgetEok: recommendationBudgetEok,
+      minPriceEok: normalizedMinTradePriceEok,
+      maxPriceEok: normalizedMaxTradePriceEok,
+      preferredPyeong,
+      maxSubwayMinutes,
+      officeArea,
+      maxCommuteMinutes,
+    })
+    const curatedCandidates = buildCuratedRecommendationCandidates({
+      preferenceRanks: aiPreferenceRanks,
+      budgetEok: recommendationBudgetEok,
+      minPriceEok: normalizedMinTradePriceEok,
+      maxPriceEok: normalizedMaxTradePriceEok,
+      preferredPyeong,
+      maxSubwayMinutes,
+      officeArea,
+      maxCommuteMinutes,
+    })
+    const candidatesByName = new Map<string, RecommendedApartment>()
 
-          return {
-            ...apartment,
-            budgetDistance,
-            recommendationScore,
-            commuteToOffice,
-            fitReasons: [
-              `${formatEok(apartment.priceEok)} 실거래`,
-              `${officeArea} ${commuteToOffice}분`,
-              `역 도보 ${apartment.subwayMinutes}분`,
-              `${apartment.pyeong} 추천`,
-            ],
-          }
-        })
-        .sort(
-          (a, b) =>
-            b.recommendationScore - a.recommendationScore ||
-            a.budgetDistance - b.budgetDistance,
-        ),
+    ;[...rtmsCandidates, ...curatedCandidates].forEach((candidate) => {
+      const key = normalizeSearchText(`${candidate.name}-${candidate.region}`)
+      const current = candidatesByName.get(key)
+      if (!current || candidate.source === 'rtms' || candidate.recommendationScore > current.recommendationScore) {
+        candidatesByName.set(key, candidate)
+      }
+    })
+
+    return Array.from(candidatesByName.values()).sort((a, b) => {
+      const scoreGap = b.recommendationScore - a.recommendationScore
+      if (Math.abs(scoreGap) > 3) return scoreGap
+
+      return (
+        (b.oneYearGrowthRate ?? -999) - (a.oneYearGrowthRate ?? -999) ||
+        b.dealCount - a.dealCount ||
+        a.budgetDistance - b.budgetDistance
+      )
+    })
+  },
     [
+      aiPreferenceRanks,
+      capitalLiveDeals,
       officeArea,
       maxCommuteMinutes,
       maxSubwayMinutes,
@@ -1456,7 +1803,7 @@ function App() {
               userListings={userListings}
               focusListing={focusListing}
               focusLiveDeal={focusLiveDeal}
-              onLiveDealsChange={setCapitalLiveDeals}
+              onLiveDealsChange={mergeCapitalLiveDeals}
             />
           )}
 
@@ -1480,6 +1827,8 @@ function App() {
               maxTradePriceEok={maxTradePriceEok}
               setMinTradePriceEok={setMinTradePriceEok}
               setMaxTradePriceEok={setMaxTradePriceEok}
+              aiPreferenceRanks={aiPreferenceRanks}
+              setAiPreferenceRanks={setAiPreferenceRanks}
               budget={recommendationBudgetEok}
               stretch={recommendationStretchEok}
               apartments={recommendedApartments}
@@ -1765,7 +2114,7 @@ function PriceView({
       )
 
       const markerDeals = dedupeDeals(payload.markers.flatMap((marker) => marker.relatedDeals ?? []))
-      if (markerDeals.length > 0 && liveDeals.length === 0) {
+      if (markerDeals.length > 0) {
         onLiveDealsChange(markerDeals)
       }
 
@@ -1779,7 +2128,7 @@ function PriceView({
       if (signal?.aborted) return
       console.warn(error instanceof Error ? error.message : '지도 마커 캐시 호출 실패')
     }
-  }, [defaultDealYmd, liveDeals.length, onLiveDealsChange, rtmsScope])
+  }, [defaultDealYmd, onLiveDealsChange, rtmsScope])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -3522,6 +3871,8 @@ function AiView({
   maxTradePriceEok,
   setMinTradePriceEok,
   setMaxTradePriceEok,
+  aiPreferenceRanks,
+  setAiPreferenceRanks,
   budget,
   stretch,
   apartments,
@@ -3544,15 +3895,32 @@ function AiView({
   maxTradePriceEok: number
   setMinTradePriceEok: (value: number) => void
   setMaxTradePriceEok: (value: number) => void
+  aiPreferenceRanks: AiPreferenceKey[]
+  setAiPreferenceRanks: (value: AiPreferenceKey[] | ((current: AiPreferenceKey[]) => AiPreferenceKey[])) => void
   budget: number
   stretch: number
   apartments: RecommendedApartment[]
 }) {
   const [hasSearched, setHasSearched] = useState(false)
   const searchResults = useMemo(() => (hasSearched ? apartments.slice(0, 5) : []), [apartments, hasSearched])
+  const rankedPreferences = uniqueAiPreferenceRanks(aiPreferenceRanks)
 
   const handleRecommendationSearch = () => {
     setHasSearched(true)
+  }
+
+  const handlePreferenceRankChange = (rankIndex: number, value: AiPreferenceKey) => {
+    setAiPreferenceRanks((currentRanks) => {
+      const nextRanks = uniqueAiPreferenceRanks([...currentRanks])
+      const previousIndex = nextRanks.indexOf(value)
+
+      if (previousIndex >= 0 && previousIndex !== rankIndex) {
+        nextRanks[previousIndex] = nextRanks[rankIndex]
+      }
+
+      nextRanks[rankIndex] = value
+      return uniqueAiPreferenceRanks(nextRanks)
+    })
   }
 
   return (
@@ -3574,7 +3942,21 @@ function AiView({
       <section className="preference-panel" aria-label="아파트 추천 선호 조건">
         <div className="preference-head">
           <span>선호 조건</span>
-          <strong>통근과 생활동선까지 반영</strong>
+          <strong>1~3순위 기준으로 점수화</strong>
+        </div>
+        <div className="preference-rank-grid" aria-label="추천 우선순위">
+          {rankedPreferences.map((rank, index) => (
+            <label className="preference-rank-card" key={`ai-rank-${index + 1}`}>
+              <span>{index + 1}순위</span>
+              <select value={rank} onChange={(event) => handlePreferenceRankChange(index, event.target.value as AiPreferenceKey)}>
+                {aiPreferenceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
         </div>
         <div className="preference-grid">
           <SelectField
@@ -3638,7 +4020,7 @@ function AiView({
           <section className="recommend-empty">
             <Sparkles size={20} />
             <strong>조건을 고른 뒤 검색하기를 눌러주세요</strong>
-            <p>예산, 가격대, 평형, 역 도보, 직장 거리 조건을 반영해 적합도 순으로 5개 단지를 보여드립니다.</p>
+            <p>1~3순위 선호도를 먼저 반영하고, 점수가 비슷하면 최근 1년 상승률이 높은 단지를 위로 보여드립니다.</p>
           </section>
         )}
 
@@ -3669,6 +4051,13 @@ function AiView({
               <p>
                 {apartment.region} · {apartment.station} · {officeArea} {apartment.commuteToOffice}분
               </p>
+              <div className="recommend-meta-row">
+                <span className={apartment.source === 'rtms' ? 'source-pill live' : 'source-pill'}>
+                  {apartment.source === 'rtms' ? 'RTMS 실거래 기반' : '초기 표본'}
+                </span>
+                <span className="growth-pill">1년 {formatGrowth(apartment.oneYearGrowthRate)}</span>
+                <span>{apartment.dealCount}건 분석</span>
+              </div>
               <div className="tag-row">
                 {apartment.fitReasons.map((reason) => (
                   <span key={reason}>{reason}</span>
