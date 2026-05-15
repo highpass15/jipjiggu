@@ -2619,6 +2619,60 @@ h1 {
   color: #246bfe;
 }
 
+.recommend-meta-row .upside-pill {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.recommend-deal-strip {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 9px;
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(12, 181, 155, 0.18);
+  border-radius: 15px;
+  background:
+    linear-gradient(135deg, rgba(210, 247, 239, 0.9), rgba(255, 255, 255, 0.94)),
+    #ffffff;
+}
+
+.recommend-deal-strip span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.recommend-deal-strip strong {
+  justify-self: end;
+  color: var(--text-strong);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.recommend-deal-strip em {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.commute-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #fff7e8;
+  color: #b56a00;
+  font-size: 11px;
+  font-weight: 950;
+  text-decoration: none;
+}
+
 .rank-badge {
   grid-column: 1 / -1;
   justify-self: start;
