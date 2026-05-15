@@ -136,12 +136,32 @@
 }
 
 .topbar .icon-button {
+  position: relative;
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     0 9px 22px rgba(0, 0, 0, 0.14);
+}
+
+.notification-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ff3b6b;
+  color: #ffffff;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 950;
 }
 
 button,
@@ -490,6 +510,9 @@ h1 {
 .report-preview-card,
 .report-subscribe-card,
 .report-message-preview,
+.notification-hero,
+.notification-card,
+.notification-empty,
 .appraisal-hero,
 .appraisal-form,
 .tax-appraisal-card,
@@ -3058,7 +3081,8 @@ h1 {
   gap: 14px;
 }
 
-.report-hero {
+.report-hero,
+.notification-hero {
   padding: 18px;
   color: #ffffff;
   background:
@@ -3068,6 +3092,7 @@ h1 {
 }
 
 .report-hero span,
+.notification-hero span,
 .report-subscribe-card > div span,
 .report-message-preview > span {
   color: rgba(222, 255, 249, 0.88);
@@ -3075,7 +3100,8 @@ h1 {
   font-weight: 950;
 }
 
-.report-hero h2 {
+.report-hero h2,
+.notification-hero h2 {
   margin-top: 6px;
   color: #ffffff;
   font-size: 28px;
@@ -3084,6 +3110,7 @@ h1 {
 }
 
 .report-hero p,
+.notification-hero p,
 .report-subscribe-card > div p,
 .report-message-preview p {
   margin-top: 8px;
@@ -3221,6 +3248,64 @@ h1 {
   color: var(--accent);
   font-size: 12px;
   font-weight: 950;
+}
+
+.notification-view {
+  gap: 14px;
+}
+
+.notification-list {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-card,
+.notification-empty {
+  padding: 16px;
+}
+
+.notification-card {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-card div {
+  display: grid;
+  gap: 6px;
+}
+
+.notification-card span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.notification-card strong,
+.notification-empty strong {
+  color: var(--text-strong);
+  font-size: 18px;
+  line-height: 1.22;
+  font-weight: 950;
+}
+
+.notification-card p,
+.notification-empty p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 800;
+}
+
+.notification-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px 18px;
+  text-align: center;
+}
+
+.notification-empty svg {
+  color: var(--accent);
 }
 
 .listing-registration {

@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance' | 'report'
+type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance' | 'report' | 'notifications'
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
@@ -166,6 +166,16 @@ type UserListing = {
 }
 
 type LeadPayload = Record<string, string | number | boolean | null | undefined>
+
+type AppNotification = {
+  id: string
+  kind: 'weekly-report' | 'system'
+  title: string
+  body: string
+  region?: string
+  createdAt: string
+  read: boolean
+}
 
 type ListingApartmentCandidate = {
   id: string
@@ -1738,7 +1748,15 @@ function App() {
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
   const [appToast, setAppToast] = useState('')
   const [filterOpenRequest, setFilterOpenRequest] = useState(0)
+  const [appNotifications, setAppNotifications] = useState<AppNotification[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem('jipjiggu-app-notifications') ?? '[]') as AppNotification[]
+    } catch {
+      return []
+    }
+  })
   const contentPanelRef = useRef<HTMLElement | null>(null)
+  const unreadNotificationCount = appNotifications.filter((notification) => !notification.read).length
 
   const handleHomeClick = useCallback(() => {
     if (mode !== 'prices') {
@@ -1816,6 +1834,32 @@ function App() {
     const timerId = window.setTimeout(() => setAppToast(''), 4200)
     return () => window.clearTimeout(timerId)
   }, [appToast])
+
+  useEffect(() => {
+    window.localStorage.setItem('jipjiggu-app-notifications', JSON.stringify(appNotifications.slice(0, 30)))
+  }, [appNotifications])
+
+  const handleOpenNotifications = useCallback(() => {
+    setMode('notifications')
+    setAppNotifications((currentNotifications) =>
+      currentNotifications.map((notification) => ({ ...notification, read: true })),
+    )
+  }, [])
+
+  const handleCreateAppNotification = useCallback((notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => {
+    const createdAt = new Date().toISOString()
+
+    setAppNotifications((currentNotifications) => [
+      {
+        ...notification,
+        id: `notification-${Date.now()}`,
+        createdAt,
+        read: false,
+      },
+      ...currentNotifications,
+    ].slice(0, 30))
+    setAppToast('집직구 앱 알림함에 주간 리포트가 도착했습니다.')
+  }, [])
 
   const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
     const normalized = query.trim()
@@ -2085,8 +2129,14 @@ function App() {
             </div>
             <span className="brand-subtitle">전국민 안심 직거래</span>
           </div>
-          <button className="icon-button" aria-label="우리동네 리포트 알림 신청" type="button" onClick={() => setMode('report')}>
+          <button
+            className="icon-button notification-button"
+            aria-label="앱 알림함"
+            type="button"
+            onClick={handleOpenNotifications}
+          >
             <Bell size={20} />
+            {unreadNotificationCount > 0 && <span className="notification-badge">{unreadNotificationCount}</span>}
           </button>
         </header>
 
@@ -2163,6 +2213,16 @@ function App() {
               liveDeals={capitalLiveDeals}
               recommendations={recommendedApartments}
               onOpenAi={() => setMode('ai')}
+              onOpenMap={() => setMode('prices')}
+              onCreateAppNotification={handleCreateAppNotification}
+              onOpenNotifications={handleOpenNotifications}
+            />
+          )}
+
+          {mode === 'notifications' && (
+            <NotificationCenterView
+              notifications={appNotifications}
+              onOpenReport={() => setMode('report')}
               onOpenMap={() => setMode('prices')}
             />
           )}
@@ -2716,11 +2776,15 @@ function NeighborhoodReportView({
   recommendations,
   onOpenAi,
   onOpenMap,
+  onCreateAppNotification,
+  onOpenNotifications,
 }: {
   liveDeals: LiveRtmsDeal[]
   recommendations: RecommendedApartment[]
   onOpenAi: () => void
   onOpenMap: () => void
+  onCreateAppNotification: (notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => void
+  onOpenNotifications: () => void
 }) {
   const [region, setRegion] = useState(weeklyReportRegionOptions[0])
   const [apartmentName, setApartmentName] = useState('')
@@ -2761,23 +2825,32 @@ function NeighborhoodReportView({
   const averagePrice =
     regionDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(regionDeals.length, 1)
   const directCount = regionDeals.filter((deal) => deal.tradeType === 'direct').length
-  const reportLink = 'https://jipjiggu.onrender.com/'
   const canSubmit = phone.trim().replace(/[^0-9]/g, '').length >= 8 && requiredAgreed
+  const inAppReportBody = `최신 거래 ${
+    previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'
+  } · 직거래 ${directCount}건 · AI추천 ${topRecommendation?.name ?? '분석중'}`
 
   const handleSubmit = () => {
     if (!canSubmit) return
 
+    onCreateAppNotification({
+      kind: 'weekly-report',
+      title: `${region} 주간 리포트 도착`,
+      body: inAppReportBody,
+      region,
+    })
     void sendTelegramLead('weekly_report', {
       이름: name.trim() || '미입력',
       연락처: phone.trim(),
       관심지역: region,
       관심단지: apartmentName.trim() || '지역 전체',
       발송주기: '주 1회',
-      알림채널: '카카오 알림톡',
+      알림채널: '집직구 앱 알림',
       필수동의: requiredAgreed ? '동의' : '미동의',
       마케팅수신동의: marketingAgreed ? '동의' : '미동의',
     })
     setSubmitted(true)
+    window.setTimeout(onOpenNotifications, 450)
   }
 
   return (
@@ -2843,9 +2916,9 @@ function NeighborhoodReportView({
 
       <section className="report-subscribe-card" aria-label="주간 리포트 알림 신청">
         <div>
-          <span>주 1회 카카오 알림톡</span>
+          <span>주 1회 앱 알림</span>
           <strong>한두 개 핵심만 보내고, 전체 내용은 앱에서 보게 합니다</strong>
-          <p>알림톡에는 최신 거래 1건과 AI추천 1개만 넣고, 전체 리포트는 집직구 링크로 유도합니다.</p>
+          <p>집직구 알림함에는 최신 거래 1건과 AI추천 1개를 먼저 띄우고, 누르면 앱 안에서 전체 리포트를 봅니다.</p>
         </div>
         <label>
           <span>관심 지역</span>
@@ -2906,22 +2979,85 @@ function NeighborhoodReportView({
           주 1회 리포트 받아보기
           <Bell size={16} />
         </button>
-        {submitted && <p className="lead-success">신청되었습니다. 카카오 알림톡 연동 후 주 1회 리포트로 보내드릴게요.</p>}
+        {submitted && <p className="lead-success">신청되었습니다. 앱 알림함에 이번 주 리포트가 도착했습니다.</p>}
       </section>
 
-      <section className="report-message-preview" aria-label="카카오 알림톡 예시">
-        <span>알림톡 예시</span>
+      <section className="report-message-preview" aria-label="앱 알림 예시">
+        <span>앱 알림 예시</span>
         <strong>[집직구] 이번 주 {region} 리포트</strong>
-        <p>
-          최신 거래 {previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'} · 직거래{' '}
-          {directCount}건 · AI추천 {topRecommendation?.name ?? '분석중'}
-        </p>
+        <p>{inAppReportBody}</p>
         <button className="text-button" type="button" onClick={onOpenMap}>
-          앱에서 전체 리포트 보기
-          <ExternalLink size={14} />
+          지도에서 리포트 이어보기
+          <ChevronRight size={14} />
         </button>
-        <em>{reportLink}</em>
+        <em>앱 상단 종 아이콘에서 다시 확인할 수 있습니다.</em>
       </section>
+    </div>
+  )
+}
+
+function NotificationCenterView({
+  notifications,
+  onOpenReport,
+  onOpenMap,
+}: {
+  notifications: AppNotification[]
+  onOpenReport: () => void
+  onOpenMap: () => void
+}) {
+  const latestReport = notifications.find((notification) => notification.kind === 'weekly-report')
+
+  return (
+    <div className="view-stack notification-view">
+      <section className="notification-hero">
+        <span>집직구 앱 알림</span>
+        <h2>리포트와 매물 소식을 앱 안에서 확인하세요</h2>
+        <p>카카오톡 없이도 신청한 동네 리포트가 집직구 알림함에 쌓입니다.</p>
+      </section>
+
+      {notifications.length > 0 ? (
+        <section className="notification-list" aria-label="앱 알림 목록">
+          {notifications.map((notification) => (
+            <article className="notification-card" key={notification.id}>
+              <div>
+                <span>{formatShortDate(notification.createdAt.slice(0, 10))}</span>
+                <strong>{notification.title}</strong>
+                <p>{notification.body}</p>
+              </div>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={notification.kind === 'weekly-report' ? onOpenReport : onOpenMap}
+              >
+                보기
+                <ChevronRight size={15} />
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section className="notification-empty">
+          <Bell size={25} />
+          <strong>아직 도착한 앱 알림이 없습니다</strong>
+          <p>우리동네 리포트를 신청하면 매주 1회 이곳에 실거래 요약과 AI추천이 도착합니다.</p>
+          <button className="primary-action" type="button" onClick={onOpenReport}>
+            리포트 신청하기
+            <ChevronRight size={16} />
+          </button>
+        </section>
+      )}
+
+      {latestReport && (
+        <section className="report-message-preview" aria-label="최근 리포트 바로가기">
+          <span>최근 리포트</span>
+          <strong>{latestReport.title}</strong>
+          <p>{latestReport.body}</p>
+          <button className="text-button" type="button" onClick={onOpenReport}>
+            앱에서 전체 리포트 보기
+            <ChevronRight size={14} />
+          </button>
+        </section>
+      )}
     </div>
   )
 }
