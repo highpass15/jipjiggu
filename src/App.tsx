@@ -1236,14 +1236,99 @@ const buildKakaoRouteUrl = ({
   return `https://m.map.kakao.com/scheme/route?sp=${lat},${lng}&ep=${destination.lat},${destination.lng}&by=publictransit`
 }
 
-const getDevelopmentSignals = (regionText: string) => {
+const calculateDistanceMeters = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+  const earthRadiusMeters = 6371000
+  const toRadians = (degree: number) => (degree * Math.PI) / 180
+  const latDelta = toRadians(to.lat - from.lat)
+  const lngDelta = toRadians(to.lng - from.lng)
+  const fromLat = toRadians(from.lat)
+  const toLat = toRadians(to.lat)
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(fromLat) * Math.cos(toLat) * Math.sin(lngDelta / 2) ** 2
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const formatNearbyDistance = (meters: number) =>
+  meters < 1000 ? `${Math.max(50, Math.round(meters / 10) * 10)}m` : `${(meters / 1000).toFixed(1)}km`
+
+const transitDevelopmentHubs = [
+  {
+    name: '인덕원역',
+    lat: 37.4019,
+    lng: 126.9768,
+    radiusMeters: 1000,
+    label: 'GTX-C·동탄인덕원선·월곶판교선 교통축',
+    score: 18,
+  },
+  {
+    name: '정부과천청사역',
+    lat: 37.4266,
+    lng: 126.9899,
+    radiusMeters: 950,
+    label: 'GTX-C·과천 업무지구 접근',
+    score: 17,
+  },
+  {
+    name: '평촌역',
+    lat: 37.3943,
+    lng: 126.9638,
+    radiusMeters: 850,
+    label: '4호선 평촌 업무·상권축',
+    score: 12,
+  },
+  {
+    name: '범계역',
+    lat: 37.3897,
+    lng: 126.9507,
+    radiusMeters: 850,
+    label: '4호선 범계 상권축',
+    score: 12,
+  },
+]
+
+const getRegionPreferenceBonus = (regionText: string) => {
+  const normalized = normalizeSearchText(regionText)
+
+  if (normalized.includes('서울')) {
+    return {
+      score: 8,
+      label: '서울 입지 가점',
+    }
+  }
+
+  return {
+    score: 0,
+    label: '',
+  }
+}
+
+const getDevelopmentSignals = (regionText: string, location?: { lat?: number; lng?: number }) => {
   const normalized = normalizeSearchText(regionText)
   const signals: string[] = []
   let score = 0
+  const hasLocation = typeof location?.lat === 'number' && typeof location.lng === 'number'
+
+  if (hasLocation) {
+    const nearbyHub = transitDevelopmentHubs
+      .map((hub) => ({
+        ...hub,
+        distance: calculateDistanceMeters({ lat: location.lat!, lng: location.lng! }, hub),
+      }))
+      .filter((hub) => hub.distance <= hub.radiusMeters)
+      .sort((a, b) => a.distance - b.distance)
+      .at(0)
+
+    if (nearbyHub) {
+      signals.push(`인근 ${formatNearbyDistance(nearbyHub.distance)} ${nearbyHub.name} ${nearbyHub.label}`)
+      score += nearbyHub.score
+    }
+  }
 
   if (['인덕원', '관양', '평촌', '호계', '범계'].some((keyword) => normalized.includes(normalizeSearchText(keyword)))) {
-    signals.push('인덕원 환승권·평촌 생활권')
-    score += 14
+    signals.push('인덕원·평촌 생활권 교통 수요')
+    score += hasLocation ? 8 : 14
   }
 
   if (['과천', '정부과천청사', '별양', '부림', '원문'].some((keyword) => normalized.includes(normalizeSearchText(keyword)))) {
@@ -1268,14 +1353,14 @@ const getDevelopmentSignals = (regionText: string) => {
 
   return {
     score: Math.min(score, 30),
-    signals: signals.slice(0, 2),
+    signals: Array.from(new Set(signals)).slice(0, 2),
   }
 }
 
-const calculateUpsideScore = (history: LiveRtmsDeal[], regionText: string) => {
+const calculateUpsideScore = (history: LiveRtmsDeal[], regionText: string, location?: { lat?: number; lng?: number }) => {
   const oneYearGrowthRate = getOneYearGrowth(history)
   const sixMonthChange = calculateSixMonthChange(history)
-  const development = getDevelopmentSignals(regionText)
+  const development = getDevelopmentSignals(regionText, location)
   const dealCountScore = Math.min(history.length, 16) * 1.2
   const oneYearTrendScore =
     oneYearGrowthRate === null ? 10 : clampScore(15 + oneYearGrowthRate * 2.8)
@@ -1338,7 +1423,9 @@ const buildRtmsRecommendationCandidates = ({
       const upside = calculateUpsideScore(
         preferredHistory,
         `${latestDeal.aptName} ${latestDeal.district} ${latestDeal.legalDong} ${latestDeal.address}`,
+        { lat: latestDeal.lat, lng: latestDeal.lng },
       )
+      const regionPremium = getRegionPreferenceBonus(`${latestDeal.district} ${latestDeal.legalDong} ${latestDeal.address}`)
       const context = {
         priceEok: latestDeal.priceEok,
         budgetEok,
@@ -1361,7 +1448,7 @@ const buildRtmsRecommendationCandidates = ({
         scoreRecommendationPreference('budget', context) * 0.03 +
         scoreRecommendationPreference('pyeong', context) * 0.01 +
         Math.min(preferredHistory.length, 12) * 0.35
-      const recommendationScore = Math.round(Math.min(99, preferenceScore + baseFitScore))
+      const recommendationScore = Math.round(Math.min(99, preferenceScore + baseFitScore + regionPremium.score))
       const recentDeals = preferredHistory.slice(0, 5).map((deal) => ({
         date: formatShortDate(deal.dealDate),
         priceEok: deal.priceEok,
@@ -1395,6 +1482,7 @@ const buildRtmsRecommendationCandidates = ({
         dealCount: preferredHistory.length,
         fitReasons: [
           `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
+          regionPremium.label || `입지 ${getRtmsStationHint(latestDeal, subwayMinutes)}`,
           `최근 실거래 ${formatShortDate(latestDeal.dealDate)} · ${Math.round(latestDeal.pyeong)}평 · ${formatEok(latestDeal.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
@@ -1461,7 +1549,12 @@ const buildCuratedRecommendationCandidates = ({
         status: 'active' as const,
         registeredAt: '',
       }))
-      const upside = calculateUpsideScore(curatedHistory, `${apartment.name} ${apartment.region} ${apartment.station}`)
+      const upside = calculateUpsideScore(
+        curatedHistory,
+        `${apartment.name} ${apartment.region} ${apartment.station}`,
+        { lat: apartment.lat, lng: apartment.lng },
+      )
+      const regionPremium = getRegionPreferenceBonus(apartment.region)
       const context = {
         priceEok: apartment.priceEok,
         budgetEok,
@@ -1482,7 +1575,7 @@ const buildCuratedRecommendationCandidates = ({
       )
       const budgetDistance = Math.abs(apartment.priceEok - budgetEok)
       const recommendationScore = Math.round(
-        Math.min(99, preferenceScore + scoreRecommendationPreference('budget', context) * 0.03),
+        Math.min(99, preferenceScore + scoreRecommendationPreference('budget', context) * 0.03 + regionPremium.score),
       )
 
       return {
@@ -1511,6 +1604,7 @@ const buildCuratedRecommendationCandidates = ({
         developmentSignals: upside.signals,
         fitReasons: [
           `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
+          regionPremium.label || `입지 ${apartment.station}`,
           `최근 실거래 ${apartment.recentDeals[0]?.date ?? '확인중'} · ${apartment.pyeong} · ${formatEok(apartment.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
@@ -4239,8 +4333,8 @@ function AiView({
           <strong>1~4순위 기준으로 점수화</strong>
         </div>
         <p className="ai-ranking-note">
-          선호 조건을 먼저 반영하고, 점수가 비슷한 단지는 평형별 실거래 추이, 단지 내 상승률, 인근 개발 호재를 종합해
-          순위를 정합니다.
+          선호 조건을 먼저 반영하되 서울 입지에는 가점을 주고, 점수가 비슷한 단지는 평형별 실거래 추이, 단지 내 상승률,
+          인덕원·GTX-C·동탄인덕원선·월곶판교선 같은 교통 호재를 함께 반영합니다.
         </p>
         <div className="preference-rank-grid" aria-label="추천 우선순위">
           {rankedPreferences.map((rank, index) => (
