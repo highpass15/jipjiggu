@@ -947,19 +947,44 @@ const parseDealTime = (date?: string) => {
 const formatSignedRate = (rate: number) => `${rate >= 0 ? '+' : ''}${rate.toFixed(1)}%`
 const anyangDevelopmentNews = [
   {
+    rank: 1,
     title: '인덕원 교통축',
     area: '관양·평촌·내손',
+    buzzScore: 96,
+    keywords: ['GTX-C', '월곶판교선', '동탄인덕원선'],
     body: '인덕원역 GTX-C, 월곶판교선, 동탄인덕원선 이슈는 관양·평촌·내손권 접근성 프리미엄을 볼 때 계속 체크합니다.',
   },
   {
+    rank: 2,
     title: '평촌 정비사업',
     area: '평촌·범계·귀인',
+    buzzScore: 92,
+    keywords: ['1기 신도시', '특별정비구역', '7,200호'],
     body: '1기 신도시 정비와 단지별 리모델링·재건축 추진 속도는 평형별 가격 탄력에 영향을 줄 수 있어 주간 리포트에 반영합니다.',
   },
   {
+    rank: 3,
     title: '만안 생활권 정비',
     area: '안양동·석수·박달',
+    buzzScore: 87,
+    keywords: ['경부선 지하화', '서부선 연장', '안양역 생활권'],
     body: '안양역·명학역·석수역 생활권 정비사업과 신축 공급 흐름은 만안구 저평가 단지 비교에 함께 반영합니다.',
+  },
+  {
+    rank: 4,
+    title: '박달스마트시티',
+    area: '박달·만안',
+    buzzScore: 84,
+    keywords: ['스마트시티', '군용지 이전', '첨단산업'],
+    body: '박달동 일대 군사시설 이전과 스마트 복합도시 조성 이슈는 만안구 장기 성장성 측면에서 별도 추적합니다.',
+  },
+  {
+    rank: 5,
+    title: '안양교도소 이전·부지 개발',
+    area: '호계·평촌 인접권',
+    buzzScore: 78,
+    keywords: ['공공부지', '이전', '복합개발'],
+    body: '안양교도소 이전과 부지 활용은 확정성보다 정책 이슈 성격이 강해, 실제 일정이 구체화되는지 중심으로 봅니다.',
   },
 ]
 const sendTelegramLead = async (type: string, payload: LeadPayload) => {
@@ -1872,21 +1897,6 @@ function App() {
     )
   }, [])
 
-  const handleCreateAppNotification = useCallback((notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => {
-    const createdAt = new Date().toISOString()
-
-    setAppNotifications((currentNotifications) => [
-      {
-        ...notification,
-        id: `notification-${Date.now()}`,
-        createdAt,
-        read: false,
-      },
-      ...currentNotifications,
-    ].slice(0, 30))
-    setAppToast('집직구 앱 알림함에 주간 리포트가 도착했습니다.')
-  }, [])
-
   const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
     const normalized = query.trim()
 
@@ -2238,8 +2248,6 @@ function App() {
             <NeighborhoodReportView
               liveDeals={capitalLiveDeals}
               recommendations={recommendedApartments}
-              onCreateAppNotification={handleCreateAppNotification}
-              onOpenNotifications={handleOpenNotifications}
             />
           )}
 
@@ -2798,22 +2806,12 @@ function MapFilterSheet({
 function NeighborhoodReportView({
   liveDeals,
   recommendations,
-  onCreateAppNotification,
-  onOpenNotifications,
 }: {
   liveDeals: LiveRtmsDeal[]
   recommendations: RecommendedApartment[]
-  onCreateAppNotification: (notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => void
-  onOpenNotifications: () => void
 }) {
   const [region, setRegion] = useState(weeklyReportRegionOptions[0])
-  const [apartmentName, setApartmentName] = useState('')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [requiredAgreed, setRequiredAgreed] = useState(false)
-  const [marketingAgreed, setMarketingAgreed] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [reportExpanded, setReportExpanded] = useState(false)
+  const [reportExpanded, setReportExpanded] = useState(true)
   const reportDetailRef = useRef<HTMLElement | null>(null)
   const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
 
@@ -2892,7 +2890,6 @@ function NeighborhoodReportView({
       .sort((a, b) => b.growthRate - a.growthRate)
       .slice(0, 5)
   }, [referenceTime, sortedRegionDeals])
-  const canSubmit = phone.trim().replace(/[^0-9]/g, '').length >= 8 && requiredAgreed
   const inAppReportBody = `최신 거래 ${
     previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'
   } · 직거래 ${directCount}건 · 추천 단지 ${topRecommendation?.name ?? '분석중'}`
@@ -2902,35 +2899,29 @@ function NeighborhoodReportView({
     window.setTimeout(() => reportDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
-  const handleSubmit = () => {
-    if (!canSubmit) return
-
-    onCreateAppNotification({
-      kind: 'weekly-report',
-      title: `${region} 주간 리포트 도착`,
-      body: inAppReportBody,
-      region,
-    })
-    void sendTelegramLead('weekly_report', {
-      이름: name.trim() || '미입력',
-      연락처: phone.trim(),
-      관심지역: region,
-      관심단지: apartmentName.trim() || '지역 전체',
-      발송주기: '주 1회',
-      알림채널: '집직구 앱 알림',
-      필수동의: requiredAgreed ? '동의' : '미동의',
-      마케팅수신동의: marketingAgreed ? '동의' : '미동의',
-    })
-    setSubmitted(true)
-    window.setTimeout(onOpenNotifications, 450)
-  }
-
   return (
     <div className="view-stack report-view">
       <section className="report-hero">
         <span>집직구 주간 보고서</span>
         <h2>동네 아파트 관심은 이거 하나로 클리어</h2>
         <p>더 이상 매일 들여다보지 마세요. 집직구가 안양권 실거래, 상승 단지, 개발호재를 주 1회 보고서로 정리합니다.</p>
+        <button className="report-hero-action" type="button" onClick={openPublishedReport}>
+          보고서 바로 보기
+          <ChevronRight size={15} />
+        </button>
+      </section>
+
+      <section className="report-region-tabs" aria-label="보고서 지역 선택">
+        {weeklyReportRegionOptions.map((option) => (
+          <button
+            className={region === option ? 'active' : ''}
+            key={option}
+            type="button"
+            onClick={() => setRegion(option)}
+          >
+            {option}
+          </button>
+        ))}
       </section>
 
       <section className="report-preview-card" aria-label="리포트 미리보기">
@@ -3042,16 +3033,26 @@ function NeighborhoodReportView({
             <div className="detail-section-head">
               <span>
                 <Sparkles size={15} />
-                주간 개발호재 브리핑
+                안양 화제 지역 TOP 5
               </span>
-              <em>안양권 체크</em>
+              <em>뉴스·공시 언급 기준</em>
             </div>
-            <div className="report-news-list">
-              {anyangDevelopmentNews.map((item) => (
+            <div className="report-buzz-list">
+              {anyangDevelopmentNews
+                .slice()
+                .sort((a, b) => b.buzzScore - a.buzzScore)
+                .map((item) => (
                 <article key={item.title}>
-                  <span>{item.area}</span>
-                  <strong>{item.title}</strong>
-                  <p>{item.body}</p>
+                  <div>
+                    <strong>{item.rank}</strong>
+                    <span>{item.area}</span>
+                  </div>
+                  <section>
+                    <h4>{item.title}</h4>
+                    <p>{item.body}</p>
+                    <em>{item.keywords.join(' · ')}</em>
+                  </section>
+                  <b>{item.buzzScore}</b>
                 </article>
               ))}
             </div>
@@ -3059,83 +3060,27 @@ function NeighborhoodReportView({
         </section>
       )}
 
-      <section className="report-subscribe-card" aria-label="주간 리포트 알림 신청">
+      <section className="report-subscribe-card" aria-label="주간 보고서 보기">
         <div>
-          <span>주 1회 앱 알림</span>
-          <strong>한두 개 핵심만 보내고, 전체 내용은 앱에서 보게 합니다</strong>
-          <p>집직구 알림함에는 최신 거래 1건과 추천 단지 1개를 먼저 띄우고, 누르면 앱 안에서 전체 보고서를 봅니다.</p>
+          <span>공개 보고서</span>
+          <strong>전화번호 없이 바로 열람</strong>
+          <p>초기에는 개별 푸시 알림 없이 앱 안에서 바로 보는 공개 리포트로 운영합니다. 평촌권 반응을 보며 알림 기능은 나중에 붙이면 됩니다.</p>
         </div>
-        <label>
-          <span>관심 지역</span>
-          <select value={region} onChange={(event) => setRegion(event.target.value)}>
-            {weeklyReportRegionOptions.map((option) => (
-              <option key={option}>{option}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>관심 단지</span>
-          <input
-            value={apartmentName}
-            onChange={(event) => setApartmentName(event.target.value)}
-            placeholder="예: 인덕원센트럴자이"
-          />
-        </label>
-        <div className="membership-row">
-          <label>
-            <span>이름</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="선택" />
-          </label>
-          <label>
-            <span>휴대폰 번호</span>
-            <input
-              value={phone}
-              onChange={(event) => {
-                setPhone(event.target.value)
-                setSubmitted(false)
-              }}
-              inputMode="tel"
-              placeholder="010-0000-0000"
-            />
-          </label>
-        </div>
-        <div className="terms-panel">
-          <label>
-            <input
-              type="checkbox"
-              checked={requiredAgreed}
-              onChange={(event) => {
-                setRequiredAgreed(event.target.checked)
-                setSubmitted(false)
-              }}
-            />
-            <span>[필수] 주간 리포트 알림 및 개인정보 수집·이용 동의</span>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={marketingAgreed}
-              onChange={(event) => setMarketingAgreed(event.target.checked)}
-            />
-            <span>[선택] 직거래 매물·감정평가 정보 수신 동의</span>
-          </label>
-        </div>
-        <button className="primary-action" type="button" disabled={!canSubmit} onClick={handleSubmit}>
-          주 1회 리포트 받아보기
-          <Bell size={16} />
+        <button className="primary-action" type="button" onClick={openPublishedReport}>
+          리포트 보기
+          <FileText size={16} />
         </button>
-        {submitted && <p className="lead-success">신청되었습니다. 앱 알림함에 이번 주 리포트가 도착했습니다.</p>}
       </section>
 
       <section className="report-message-preview" aria-label="앱 알림 예시">
-        <span>앱 알림 예시</span>
-        <strong>[집직구] 이번 주 {region} 리포트</strong>
+        <span>이번 주 핵심 요약</span>
+        <strong>[집직구] {region} 주간 보고서</strong>
         <p>{inAppReportBody}</p>
         <button className="text-button" type="button" onClick={openPublishedReport}>
-          앱에서 보고서 바로 보기
+          전체 보고서 보기
           <ChevronRight size={14} />
         </button>
-        <em>앱 상단 종 아이콘에서 다시 확인할 수 있습니다.</em>
+        <em>전화번호 입력 없이 바로 볼 수 있습니다.</em>
       </section>
     </div>
   )
@@ -3196,7 +3141,7 @@ function NotificationCenterView({
       <section className="notification-hero">
         <span>집직구 앱 알림</span>
         <h2>리포트와 매물 소식을 앱 안에서 확인하세요</h2>
-        <p>카카오톡 없이도 신청한 동네 리포트가 집직구 알림함에 쌓입니다.</p>
+        <p>개별 휴대폰 알림 없이도 앱 안에서 동네 리포트와 매물 소식을 확인할 수 있습니다.</p>
       </section>
 
       {notifications.length > 0 ? (
@@ -3862,8 +3807,8 @@ function ApartmentMap({
           <button type="button">면적</button>
         </div>
         <button className="map-report-cta" type="button" onClick={onReportClick}>
-          우리동네 리포트 받아보기
-          <Bell size={15} />
+          우리동네 리포트 보기
+          <FileText size={15} />
         </button>
         <button className="map-new-deal" type="button">
           주변 직거래 매물 보기
