@@ -510,6 +510,7 @@ h1 {
 .report-preview-card,
 .report-subscribe-card,
 .report-message-preview,
+.report-detail-card,
 .notification-hero,
 .notification-card,
 .notification-empty,
@@ -3122,7 +3123,8 @@ h1 {
 
 .report-preview-card,
 .report-subscribe-card,
-.report-message-preview {
+.report-message-preview,
+.report-detail-card {
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -3248,6 +3250,166 @@ h1 {
   color: var(--accent);
   font-size: 12px;
   font-weight: 950;
+}
+
+.report-detail-card {
+  gap: 14px;
+  background:
+    linear-gradient(180deg, rgba(12, 181, 155, 0.08), transparent 24%),
+    #ffffff;
+}
+
+.report-detail-title {
+  display: grid;
+  gap: 6px;
+}
+
+.report-detail-title span,
+.report-section .detail-section-head em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.report-detail-title h3 {
+  color: var(--text-strong);
+  font-size: 23px;
+  line-height: 1.16;
+  font-weight: 950;
+}
+
+.report-detail-title p,
+.report-section p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.48;
+  font-weight: 800;
+}
+
+.report-metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-metric-row div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border-radius: 15px;
+  background: #effbf8;
+}
+
+.report-metric-row span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-metric-row strong {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.report-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.report-deal-list,
+.report-rank-list,
+.report-news-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-deal-list div,
+.report-rank-list div,
+.report-news-list article {
+  min-width: 0;
+  border: 1px solid rgba(12, 181, 155, 0.08);
+  border-radius: 15px;
+  background: #f7fbfa;
+}
+
+.report-deal-list div,
+.report-rank-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.report-deal-list span,
+.report-rank-list span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.report-deal-list strong,
+.report-news-list strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-deal-list small,
+.report-rank-list small,
+.report-news-list span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.report-deal-list em,
+.report-rank-list em {
+  flex: 0 0 auto;
+  color: var(--text-strong);
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.report-rank-list strong {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.report-rank-list span {
+  flex: 1 1 auto;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.report-news-list article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.report-news-list p {
+  margin: 0;
 }
 
 .notification-view {

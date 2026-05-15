@@ -710,6 +710,7 @@ const regionOptions = [
 ]
 
 const weeklyReportRegionOptions = [
+  '안양 전체',
   '평촌·범계',
   '호계·신촌·귀인',
   '관양·인덕원',
@@ -719,6 +720,7 @@ const weeklyReportRegionOptions = [
 ]
 
 const weeklyReportRegionKeywords: Record<string, string[]> = {
+  '안양 전체': ['안양', '동안구', '만안구', '평촌', '범계', '호계', '관양', '비산', '안양동', '석수', '박달'],
   '평촌·범계': ['평촌', '범계', '달안'],
   '호계·신촌·귀인': ['호계', '신촌', '귀인'],
   '관양·인덕원': ['관양', '인덕원'],
@@ -936,6 +938,30 @@ const formatMarkerMonth = (date?: string) => {
   const [year, month] = normalized.split('-')
   return year && month ? `${year.slice(2)}.${month.padStart(2, '0')}` : ''
 }
+const parseDealTime = (date?: string) => {
+  if (!date) return 0
+  const normalized = date.includes('-') ? date : `20${date.replaceAll('.', '-')}`
+  const time = new Date(`${normalized}T00:00:00+09:00`).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+const formatSignedRate = (rate: number) => `${rate >= 0 ? '+' : ''}${rate.toFixed(1)}%`
+const anyangDevelopmentNews = [
+  {
+    title: '인덕원 교통축',
+    area: '관양·평촌·내손',
+    body: '인덕원역 GTX-C, 월곶판교선, 동탄인덕원선 이슈는 관양·평촌·내손권 접근성 프리미엄을 볼 때 계속 체크합니다.',
+  },
+  {
+    title: '평촌 정비사업',
+    area: '평촌·범계·귀인',
+    body: '1기 신도시 정비와 단지별 리모델링·재건축 추진 속도는 평형별 가격 탄력에 영향을 줄 수 있어 주간 리포트에 반영합니다.',
+  },
+  {
+    title: '만안 생활권 정비',
+    area: '안양동·석수·박달',
+    body: '안양역·명학역·석수역 생활권 정비사업과 신축 공급 흐름은 만안구 저평가 단지 비교에 함께 반영합니다.',
+  },
+]
 const sendTelegramLead = async (type: string, payload: LeadPayload) => {
   try {
     await fetch('/api/telegram/notify', {
@@ -2212,8 +2238,6 @@ function App() {
             <NeighborhoodReportView
               liveDeals={capitalLiveDeals}
               recommendations={recommendedApartments}
-              onOpenAi={() => setMode('ai')}
-              onOpenMap={() => setMode('prices')}
               onCreateAppNotification={handleCreateAppNotification}
               onOpenNotifications={handleOpenNotifications}
             />
@@ -2774,15 +2798,11 @@ function MapFilterSheet({
 function NeighborhoodReportView({
   liveDeals,
   recommendations,
-  onOpenAi,
-  onOpenMap,
   onCreateAppNotification,
   onOpenNotifications,
 }: {
   liveDeals: LiveRtmsDeal[]
   recommendations: RecommendedApartment[]
-  onOpenAi: () => void
-  onOpenMap: () => void
   onCreateAppNotification: (notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>) => void
   onOpenNotifications: () => void
 }) {
@@ -2793,6 +2813,9 @@ function NeighborhoodReportView({
   const [requiredAgreed, setRequiredAgreed] = useState(false)
   const [marketingAgreed, setMarketingAgreed] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [reportExpanded, setReportExpanded] = useState(false)
+  const reportDetailRef = useRef<HTMLElement | null>(null)
+  const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
 
   const regionDeals = useMemo(
     () =>
@@ -2808,6 +2831,10 @@ function NeighborhoodReportView({
       ),
     [liveDeals, region],
   )
+  const sortedRegionDeals = useMemo(
+    () => [...regionDeals].sort((a, b) => dealTimestamp(b) - dealTimestamp(a)),
+    [regionDeals],
+  )
   const regionRecommendations = useMemo(
     () =>
       recommendations.filter((recommendation) =>
@@ -2820,15 +2847,60 @@ function NeighborhoodReportView({
       ),
     [recommendations, region],
   )
-  const previewDeals = regionDeals.slice(0, 2)
+  const referenceTime = sortedRegionDeals[0] ? parseDealTime(sortedRegionDeals[0].dealDate) : fallbackReferenceTime
+  const weekCutoffTime = referenceTime - 7 * 24 * 60 * 60 * 1000
+  const monthCutoffTime = referenceTime - 30 * 24 * 60 * 60 * 1000
+  const weeklyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= weekCutoffTime)
+  const monthlyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= monthCutoffTime)
+  const previewDeals = weeklyDeals.length > 0 ? weeklyDeals.slice(0, 2) : sortedRegionDeals.slice(0, 2)
   const topRecommendation = regionRecommendations[0] ?? recommendations[0]
   const averagePrice =
-    regionDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(regionDeals.length, 1)
-  const directCount = regionDeals.filter((deal) => deal.tradeType === 'direct').length
+    monthlyDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(monthlyDeals.length, 1)
+  const directCount = weeklyDeals.filter((deal) => deal.tradeType === 'direct').length
+  const growthLeaders = useMemo(() => {
+    const groupedDeals = new Map<string, LiveRtmsDeal[]>()
+    const oneYearCutoffTime = referenceTime - 365 * 24 * 60 * 60 * 1000
+
+    sortedRegionDeals
+      .filter((deal) => parseDealTime(deal.dealDate) >= oneYearCutoffTime)
+      .forEach((deal) => {
+        const key = `${deal.aptSeq || `${deal.aptName}-${deal.address}`}-${Math.round(deal.pyeong)}`
+        groupedDeals.set(key, [...(groupedDeals.get(key) ?? []), deal])
+      })
+
+    return Array.from(groupedDeals.values())
+      .map((deals) => {
+        const orderedDeals = [...deals].sort((a, b) => parseDealTime(a.dealDate) - parseDealTime(b.dealDate))
+        const firstDeal = orderedDeals[0]
+        const latestDeal = orderedDeals.at(-1)
+
+        if (!firstDeal || !latestDeal || orderedDeals.length < 2 || firstDeal.priceEok <= 0) return null
+
+        const growthRate = ((latestDeal.priceEok - firstDeal.priceEok) / firstDeal.priceEok) * 100
+        return {
+          key: `${latestDeal.aptSeq}-${Math.round(latestDeal.pyeong)}`,
+          name: latestDeal.aptName,
+          pyeong: Math.round(latestDeal.pyeong),
+          growthRate,
+          firstPrice: firstDeal.priceEok,
+          latestPrice: latestDeal.priceEok,
+          latestDate: latestDeal.dealDate,
+          dealCount: orderedDeals.length,
+        }
+      })
+      .filter((leader): leader is NonNullable<typeof leader> => Boolean(leader))
+      .sort((a, b) => b.growthRate - a.growthRate)
+      .slice(0, 5)
+  }, [referenceTime, sortedRegionDeals])
   const canSubmit = phone.trim().replace(/[^0-9]/g, '').length >= 8 && requiredAgreed
   const inAppReportBody = `최신 거래 ${
     previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'
-  } · 직거래 ${directCount}건 · AI추천 ${topRecommendation?.name ?? '분석중'}`
+  } · 직거래 ${directCount}건 · 추천 단지 ${topRecommendation?.name ?? '분석중'}`
+
+  const openPublishedReport = () => {
+    setReportExpanded(true)
+    window.setTimeout(() => reportDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -2856,9 +2928,9 @@ function NeighborhoodReportView({
   return (
     <div className="view-stack report-view">
       <section className="report-hero">
-        <span>우리동네 아파트 리포트</span>
+        <span>집직구 주간 보고서</span>
         <h2>동네 아파트 관심은 이거 하나로 클리어</h2>
-        <p>더 이상 매일 들여다보지 마세요. 집직구가 평촌권 실거래와 AI추천을 주 1회 요약해서 알려드립니다.</p>
+        <p>더 이상 매일 들여다보지 마세요. 집직구가 안양권 실거래, 상승 단지, 개발호재를 주 1회 보고서로 정리합니다.</p>
       </section>
 
       <section className="report-preview-card" aria-label="리포트 미리보기">
@@ -2875,12 +2947,12 @@ function NeighborhoodReportView({
             <strong>{region}</strong>
           </div>
           <div>
-            <span>최근 거래</span>
-            <strong>{regionDeals.length ? `${regionDeals.length}건` : '수집중'}</strong>
+            <span>최근 7일</span>
+            <strong>{weeklyDeals.length ? `${weeklyDeals.length}건` : '수집중'}</strong>
           </div>
           <div>
-            <span>평균가</span>
-            <strong>{regionDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
+            <span>최근 30일 평균</span>
+            <strong>{monthlyDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
           </div>
         </div>
         <div className="report-preview-list">
@@ -2901,24 +2973,97 @@ function NeighborhoodReportView({
           )}
           {topRecommendation && (
             <div>
-              <strong>AI 추천 1순위 {topRecommendation.name}</strong>
+              <strong>추천 단지 1순위 {topRecommendation.name}</strong>
               <span>
                 {topRecommendation.pyeong} · {formatEok(topRecommendation.priceEok)} · 상승여력 {topRecommendation.upsideScore}점
               </span>
             </div>
           )}
         </div>
-        <button className="secondary-action" type="button" onClick={onOpenAi}>
-          전체 AI 리포트 보기
+        <button className="secondary-action" type="button" onClick={openPublishedReport}>
+          이번 주 보고서 바로 열기
           <ChevronRight size={16} />
         </button>
       </section>
+
+      {reportExpanded && (
+        <section className="report-detail-card" ref={reportDetailRef} aria-label="집직구 주간 보고서 본문">
+          <div className="report-detail-title">
+            <span>{formatShortDate(new Date(referenceTime).toISOString().slice(0, 10))} 발간</span>
+            <h3>{region} 아파트 주간 보고서</h3>
+            <p>국토부 실거래 캐시와 집직구 추천 로직을 기준으로 이번 주 볼 만한 변화만 압축했습니다.</p>
+          </div>
+
+          <div className="report-metric-row">
+            <div>
+              <span>최근 7일 거래</span>
+              <strong>{weeklyDeals.length}건</strong>
+            </div>
+            <div>
+              <span>최근 30일 거래</span>
+              <strong>{monthlyDeals.length}건</strong>
+            </div>
+            <div>
+              <span>상승률 TOP</span>
+              <strong>{growthLeaders[0] ? formatSignedRate(growthLeaders[0].growthRate) : '집계중'}</strong>
+            </div>
+          </div>
+
+          <ReportDealList title="최근 일주일 거래" deals={weeklyDeals.slice(0, 6)} emptyText="최근 일주일 거래는 수집중입니다." />
+          <ReportDealList title="최근 한달 거래" deals={monthlyDeals.slice(0, 8)} emptyText="최근 한달 거래는 수집중입니다." />
+
+          <div className="report-section">
+            <div className="detail-section-head">
+              <span>
+                <TrendingUp size={15} />
+                상승률 높은 단지 TOP 5
+              </span>
+              <em>최근 1년 동일 평형대 기준</em>
+            </div>
+            <div className="report-rank-list">
+              {growthLeaders.length > 0 ? (
+                growthLeaders.map((leader, index) => (
+                  <div key={leader.key}>
+                    <strong>{index + 1}</strong>
+                    <span>
+                      {leader.name}
+                      <small>{leader.pyeong}평 · {leader.dealCount}건</small>
+                    </span>
+                    <em>{formatSignedRate(leader.growthRate)}</em>
+                  </div>
+                ))
+              ) : (
+                <p>동일 평형대 거래가 2건 이상 쌓이면 상승률 순위가 자동 표시됩니다.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="report-section">
+            <div className="detail-section-head">
+              <span>
+                <Sparkles size={15} />
+                주간 개발호재 브리핑
+              </span>
+              <em>안양권 체크</em>
+            </div>
+            <div className="report-news-list">
+              {anyangDevelopmentNews.map((item) => (
+                <article key={item.title}>
+                  <span>{item.area}</span>
+                  <strong>{item.title}</strong>
+                  <p>{item.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="report-subscribe-card" aria-label="주간 리포트 알림 신청">
         <div>
           <span>주 1회 앱 알림</span>
           <strong>한두 개 핵심만 보내고, 전체 내용은 앱에서 보게 합니다</strong>
-          <p>집직구 알림함에는 최신 거래 1건과 AI추천 1개를 먼저 띄우고, 누르면 앱 안에서 전체 리포트를 봅니다.</p>
+          <p>집직구 알림함에는 최신 거래 1건과 추천 단지 1개를 먼저 띄우고, 누르면 앱 안에서 전체 보고서를 봅니다.</p>
         </div>
         <label>
           <span>관심 지역</span>
@@ -2986,12 +3131,51 @@ function NeighborhoodReportView({
         <span>앱 알림 예시</span>
         <strong>[집직구] 이번 주 {region} 리포트</strong>
         <p>{inAppReportBody}</p>
-        <button className="text-button" type="button" onClick={onOpenMap}>
-          지도에서 리포트 이어보기
+        <button className="text-button" type="button" onClick={openPublishedReport}>
+          앱에서 보고서 바로 보기
           <ChevronRight size={14} />
         </button>
         <em>앱 상단 종 아이콘에서 다시 확인할 수 있습니다.</em>
       </section>
+    </div>
+  )
+}
+
+function ReportDealList({
+  title,
+  deals,
+  emptyText,
+}: {
+  title: string
+  deals: LiveRtmsDeal[]
+  emptyText: string
+}) {
+  return (
+    <div className="report-section">
+      <div className="detail-section-head">
+        <span>
+          <FileText size={15} />
+          {title}
+        </span>
+        <em>{deals.length ? `${deals.length}건 보기` : '수집중'}</em>
+      </div>
+      <div className="report-deal-list">
+        {deals.length > 0 ? (
+          deals.map((deal) => (
+            <div key={`weekly-report-deal-${deal.id}`}>
+              <span>
+                <strong>{deal.aptName}</strong>
+                <small>
+                  {formatShortDate(deal.dealDate)} · {Math.round(deal.pyeong)}평 · {deal.floor}층 · {deal.tradeTypeLabel}
+                </small>
+              </span>
+              <em>{formatEok(deal.priceEok)}</em>
+            </div>
+          ))
+        ) : (
+          <p>{emptyText}</p>
+        )}
+      </div>
     </div>
   )
 }
@@ -3039,7 +3223,7 @@ function NotificationCenterView({
         <section className="notification-empty">
           <Bell size={25} />
           <strong>아직 도착한 앱 알림이 없습니다</strong>
-          <p>우리동네 리포트를 신청하면 매주 1회 이곳에 실거래 요약과 AI추천이 도착합니다.</p>
+          <p>우리동네 리포트를 신청하면 매주 1회 이곳에 실거래 요약과 추천 단지가 도착합니다.</p>
           <button className="primary-action" type="button" onClick={onOpenReport}>
             리포트 신청하기
             <ChevronRight size={16} />
