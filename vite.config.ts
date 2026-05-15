@@ -1216,6 +1216,7 @@ const telegramLeadTitleByType: Record<string, string> = {
   appraisal: '상속증여 탁상감정 신청',
   signup: '회원가입/알림 신청',
   review: '리뷰 작성',
+  weekly_report: '우리동네 주간 리포트 신청',
 }
 
 const stringifyLeadValue = (value: unknown): string => {

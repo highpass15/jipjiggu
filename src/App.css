@@ -486,6 +486,10 @@ h1 {
 .listing-market-hero,
 .listing-market-section,
 .membership-card,
+.report-hero,
+.report-preview-card,
+.report-subscribe-card,
+.report-message-preview,
 .appraisal-hero,
 .appraisal-form,
 .tax-appraisal-card,
@@ -674,6 +678,7 @@ h1 {
 
 .map-filter-overlay,
 .map-side-tools,
+.map-report-cta,
 .map-new-deal {
   position: absolute;
   z-index: 3;
@@ -749,6 +754,24 @@ h1 {
   color: var(--text-strong);
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
   font-size: 15px;
+  font-weight: 950;
+}
+
+.map-report-cta {
+  left: 22px;
+  right: 22px;
+  bottom: 72px;
+  min-height: 44px;
+  border: 2px solid rgba(12, 181, 155, 0.38);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(14, 165, 148, 0.94);
+  color: #ffffff;
+  box-shadow: 0 16px 30px rgba(15, 118, 110, 0.22);
+  font-size: 14px;
   font-weight: 950;
 }
 
@@ -3027,6 +3050,175 @@ h1 {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-soft);
   color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.report-view {
+  gap: 14px;
+}
+
+.report-hero {
+  padding: 18px;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 12% -28%, rgba(95, 255, 223, 0.25), transparent 42%),
+    linear-gradient(125deg, #102335 0%, #0d4e55 48%, #0b9987 100%);
+  box-shadow: 0 22px 45px rgba(4, 35, 39, 0.2);
+}
+
+.report-hero span,
+.report-subscribe-card > div span,
+.report-message-preview > span {
+  color: rgba(222, 255, 249, 0.88);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.report-hero h2 {
+  margin-top: 6px;
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.report-hero p,
+.report-subscribe-card > div p,
+.report-message-preview p {
+  margin-top: 8px;
+  color: rgba(239, 255, 252, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 800;
+}
+
+.report-preview-card,
+.report-subscribe-card,
+.report-message-preview {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-summary-grid div,
+.report-preview-list div {
+  min-width: 0;
+  border-radius: 15px;
+  background: #f5fbf9;
+}
+
+.report-summary-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+}
+
+.report-summary-grid span,
+.report-preview-list span,
+.report-message-preview em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.report-summary-grid strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-preview-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-preview-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+}
+
+.report-preview-list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-preview-list span {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.report-subscribe-card > div span,
+.report-message-preview > span {
+  color: var(--accent);
+}
+
+.report-subscribe-card > div strong,
+.report-message-preview strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 19px;
+  line-height: 1.24;
+  font-weight: 950;
+}
+
+.report-subscribe-card > div p,
+.report-message-preview p {
+  color: var(--text-muted);
+}
+
+.report-subscribe-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.report-subscribe-card label > span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.report-subscribe-card input,
+.report-subscribe-card select {
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 0 12px;
+  background: #fbfdfc;
+  color: var(--text-strong);
+  font-weight: 850;
+}
+
+.report-message-preview {
+  background:
+    linear-gradient(135deg, rgba(12, 181, 155, 0.12), transparent 60%),
+    #ffffff;
+}
+
+.report-message-preview .text-button {
+  justify-content: start;
+  gap: 5px;
+  padding: 0;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 950;
 }

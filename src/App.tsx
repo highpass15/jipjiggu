@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance'
+type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance' | 'report'
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
@@ -699,6 +699,24 @@ const regionOptions = [
   '광교·수원',
 ]
 
+const weeklyReportRegionOptions = [
+  '평촌·범계',
+  '호계·신촌·귀인',
+  '관양·인덕원',
+  '비산·만안',
+  '과천',
+  '의왕 내손·포일',
+]
+
+const weeklyReportRegionKeywords: Record<string, string[]> = {
+  '평촌·범계': ['평촌', '범계', '달안'],
+  '호계·신촌·귀인': ['호계', '신촌', '귀인'],
+  '관양·인덕원': ['관양', '인덕원'],
+  '비산·만안': ['비산', '만안', '안양동', '석수', '박달'],
+  과천: ['과천', '별양', '부림', '원문', '중앙동'],
+  '의왕 내손·포일': ['내손', '포일', '의왕'],
+}
+
 const officeAreaOptions: OfficeArea[] = ['강남', '여의도', '광화문', '판교']
 const officeAreaDestinations: Record<OfficeArea, { name: string; lat: number; lng: number }> = {
   강남: { name: '강남역', lat: 37.4979, lng: 127.0276 },
@@ -891,6 +909,17 @@ const getDefaultRtmsDealYmd = () => {
 }
 const getMapRtmsDealYmd = () => 'auto'
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
+const matchesWeeklyReportRegion = (
+  region: string,
+  source: { aptName?: string; district?: string; legalDong?: string; address?: string },
+) => {
+  const keywords = weeklyReportRegionKeywords[region] ?? []
+  const target = normalizeSearchText(
+    `${source.aptName ?? ''} ${source.district ?? ''} ${source.legalDong ?? ''} ${source.address ?? ''}`,
+  )
+
+  return keywords.some((keyword) => target.includes(normalizeSearchText(keyword)))
+}
 const formatMarkerMonth = (date?: string) => {
   if (!date) return ''
   const normalized = date.includes('-') ? date : `20${date.replaceAll('.', '-')}`
@@ -2056,7 +2085,7 @@ function App() {
             </div>
             <span className="brand-subtitle">전국민 안심 직거래</span>
           </div>
-          <button className="icon-button" aria-label="알림">
+          <button className="icon-button" aria-label="우리동네 리포트 알림 신청" type="button" onClick={() => setMode('report')}>
             <Bell size={20} />
           </button>
         </header>
@@ -2125,6 +2154,16 @@ function App() {
               focusLiveDeal={focusLiveDeal}
               onLiveDealsChange={mergeCapitalLiveDeals}
               filterOpenRequest={filterOpenRequest}
+              onOpenReport={() => setMode('report')}
+            />
+          )}
+
+          {mode === 'report' && (
+            <NeighborhoodReportView
+              liveDeals={capitalLiveDeals}
+              recommendations={recommendedApartments}
+              onOpenAi={() => setMode('ai')}
+              onOpenMap={() => setMode('prices')}
             />
           )}
 
@@ -2257,6 +2296,7 @@ function PriceView({
   focusLiveDeal,
   onLiveDealsChange,
   filterOpenRequest,
+  onOpenReport,
 }: {
   apartments: Apartment[]
   selectedRegion: string
@@ -2267,6 +2307,7 @@ function PriceView({
   focusLiveDeal: LiveRtmsDeal | null
   onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
   filterOpenRequest: number
+  onOpenReport: () => void
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
@@ -2557,6 +2598,7 @@ function PriceView({
           selectedMarker={selectedMapMarker}
           onSelectMarker={handleMapMarkerSelect}
           onClearMarker={() => setSelectedMapMarker(null)}
+          onReportClick={onOpenReport}
         />
       ) : (
         <div className="apartment-list">
@@ -2666,6 +2708,221 @@ function MapFilterSheet({
         </div>
       </div>
     </section>
+  )
+}
+
+function NeighborhoodReportView({
+  liveDeals,
+  recommendations,
+  onOpenAi,
+  onOpenMap,
+}: {
+  liveDeals: LiveRtmsDeal[]
+  recommendations: RecommendedApartment[]
+  onOpenAi: () => void
+  onOpenMap: () => void
+}) {
+  const [region, setRegion] = useState(weeklyReportRegionOptions[0])
+  const [apartmentName, setApartmentName] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [requiredAgreed, setRequiredAgreed] = useState(false)
+  const [marketingAgreed, setMarketingAgreed] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  const regionDeals = useMemo(
+    () =>
+      dedupeDeals(
+        liveDeals.filter((deal) =>
+          matchesWeeklyReportRegion(region, {
+            aptName: deal.aptName,
+            district: deal.district,
+            legalDong: deal.legalDong,
+            address: deal.address,
+          }),
+        ),
+      ),
+    [liveDeals, region],
+  )
+  const regionRecommendations = useMemo(
+    () =>
+      recommendations.filter((recommendation) =>
+        matchesWeeklyReportRegion(region, {
+          aptName: recommendation.name,
+          district: recommendation.region,
+          legalDong: recommendation.region,
+          address: recommendation.station,
+        }),
+      ),
+    [recommendations, region],
+  )
+  const previewDeals = regionDeals.slice(0, 2)
+  const topRecommendation = regionRecommendations[0] ?? recommendations[0]
+  const averagePrice =
+    regionDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(regionDeals.length, 1)
+  const directCount = regionDeals.filter((deal) => deal.tradeType === 'direct').length
+  const reportLink = 'https://jipjiggu.onrender.com/'
+  const canSubmit = phone.trim().replace(/[^0-9]/g, '').length >= 8 && requiredAgreed
+
+  const handleSubmit = () => {
+    if (!canSubmit) return
+
+    void sendTelegramLead('weekly_report', {
+      이름: name.trim() || '미입력',
+      연락처: phone.trim(),
+      관심지역: region,
+      관심단지: apartmentName.trim() || '지역 전체',
+      발송주기: '주 1회',
+      알림채널: '카카오 알림톡',
+      필수동의: requiredAgreed ? '동의' : '미동의',
+      마케팅수신동의: marketingAgreed ? '동의' : '미동의',
+    })
+    setSubmitted(true)
+  }
+
+  return (
+    <div className="view-stack report-view">
+      <section className="report-hero">
+        <span>우리동네 아파트 리포트</span>
+        <h2>동네 아파트 관심은 이거 하나로 클리어</h2>
+        <p>더 이상 매일 들여다보지 마세요. 집직구가 평촌권 실거래와 AI추천을 주 1회 요약해서 알려드립니다.</p>
+      </section>
+
+      <section className="report-preview-card" aria-label="리포트 미리보기">
+        <div className="detail-section-head">
+          <span>
+            <FileText size={15} />
+            이번 주 미리보기
+          </span>
+          <em>더보기는 앱에서</em>
+        </div>
+        <div className="report-summary-grid">
+          <div>
+            <span>관심 지역</span>
+            <strong>{region}</strong>
+          </div>
+          <div>
+            <span>최근 거래</span>
+            <strong>{regionDeals.length ? `${regionDeals.length}건` : '수집중'}</strong>
+          </div>
+          <div>
+            <span>평균가</span>
+            <strong>{regionDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
+          </div>
+        </div>
+        <div className="report-preview-list">
+          {previewDeals.length > 0 ? (
+            previewDeals.map((deal) => (
+              <div key={`report-preview-${deal.id}`}>
+                <strong>{deal.aptName}</strong>
+                <span>
+                  {formatShortDate(deal.dealDate)} · {Math.round(deal.pyeong)}평 · {formatEok(deal.priceEok)}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div>
+              <strong>실거래 캐시 반영 대기</strong>
+              <span>주간 리포트에는 최근 신고 거래와 평형별 흐름이 자동으로 들어갑니다.</span>
+            </div>
+          )}
+          {topRecommendation && (
+            <div>
+              <strong>AI 추천 1순위 {topRecommendation.name}</strong>
+              <span>
+                {topRecommendation.pyeong} · {formatEok(topRecommendation.priceEok)} · 상승여력 {topRecommendation.upsideScore}점
+              </span>
+            </div>
+          )}
+        </div>
+        <button className="secondary-action" type="button" onClick={onOpenAi}>
+          전체 AI 리포트 보기
+          <ChevronRight size={16} />
+        </button>
+      </section>
+
+      <section className="report-subscribe-card" aria-label="주간 리포트 알림 신청">
+        <div>
+          <span>주 1회 카카오 알림톡</span>
+          <strong>한두 개 핵심만 보내고, 전체 내용은 앱에서 보게 합니다</strong>
+          <p>알림톡에는 최신 거래 1건과 AI추천 1개만 넣고, 전체 리포트는 집직구 링크로 유도합니다.</p>
+        </div>
+        <label>
+          <span>관심 지역</span>
+          <select value={region} onChange={(event) => setRegion(event.target.value)}>
+            {weeklyReportRegionOptions.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>관심 단지</span>
+          <input
+            value={apartmentName}
+            onChange={(event) => setApartmentName(event.target.value)}
+            placeholder="예: 인덕원센트럴자이"
+          />
+        </label>
+        <div className="membership-row">
+          <label>
+            <span>이름</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="선택" />
+          </label>
+          <label>
+            <span>휴대폰 번호</span>
+            <input
+              value={phone}
+              onChange={(event) => {
+                setPhone(event.target.value)
+                setSubmitted(false)
+              }}
+              inputMode="tel"
+              placeholder="010-0000-0000"
+            />
+          </label>
+        </div>
+        <div className="terms-panel">
+          <label>
+            <input
+              type="checkbox"
+              checked={requiredAgreed}
+              onChange={(event) => {
+                setRequiredAgreed(event.target.checked)
+                setSubmitted(false)
+              }}
+            />
+            <span>[필수] 주간 리포트 알림 및 개인정보 수집·이용 동의</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={marketingAgreed}
+              onChange={(event) => setMarketingAgreed(event.target.checked)}
+            />
+            <span>[선택] 직거래 매물·감정평가 정보 수신 동의</span>
+          </label>
+        </div>
+        <button className="primary-action" type="button" disabled={!canSubmit} onClick={handleSubmit}>
+          주 1회 리포트 받아보기
+          <Bell size={16} />
+        </button>
+        {submitted && <p className="lead-success">신청되었습니다. 카카오 알림톡 연동 후 주 1회 리포트로 보내드릴게요.</p>}
+      </section>
+
+      <section className="report-message-preview" aria-label="카카오 알림톡 예시">
+        <span>알림톡 예시</span>
+        <strong>[집직구] 이번 주 {region} 리포트</strong>
+        <p>
+          최신 거래 {previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'} · 직거래{' '}
+          {directCount}건 · AI추천 {topRecommendation?.name ?? '분석중'}
+        </p>
+        <button className="text-button" type="button" onClick={onOpenMap}>
+          앱에서 전체 리포트 보기
+          <ExternalLink size={14} />
+        </button>
+        <em>{reportLink}</em>
+      </section>
+    </div>
   )
 }
 
@@ -3048,6 +3305,7 @@ function ApartmentMap({
   selectedMarker,
   onSelectMarker,
   onClearMarker,
+  onReportClick,
 }: {
   liveDeals: LiveRtmsDeal[]
   serverMarkers: MapValueMarker[]
@@ -3064,6 +3322,7 @@ function ApartmentMap({
   selectedMarker: MapValueMarker | null
   onSelectMarker: (marker: MapValueMarker, options?: { scrollToDetail?: boolean }) => void
   onClearMarker: () => void
+  onReportClick: () => void
 }) {
   const mapNode = useRef<HTMLDivElement | null>(null)
   const kakaoMapRef = useRef<KakaoMapInstance | null>(null)
@@ -3282,6 +3541,10 @@ function ApartmentMap({
           <button type="button">거리</button>
           <button type="button">면적</button>
         </div>
+        <button className="map-report-cta" type="button" onClick={onReportClick}>
+          우리동네 리포트 받아보기
+          <Bell size={15} />
+        </button>
         <button className="map-new-deal" type="button">
           주변 직거래 매물 보기
           <ChevronRight size={16} />
