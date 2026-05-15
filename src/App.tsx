@@ -38,6 +38,7 @@ type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
   pyeong: 'all' | 'p25' | 'p34' | 'under25' | 'over40'
   price: 'all' | 'under5' | 'between5and10' | 'between10and20' | 'between20and40' | 'over40'
+  subway: 'all' | 'within5' | 'within10' | 'within15'
   households: 'all' | 'over500' | 'over1000' | 'over3000'
   approval: 'all' | 'within10' | 'within20' | 'over30'
   jeonseRatio: 'all' | 'over60' | 'over70'
@@ -725,6 +726,7 @@ const defaultMapFilters: MapFilterState = {
   tradeType: 'all',
   pyeong: 'all',
   price: 'all',
+  subway: 'all',
   households: 'all',
   approval: 'all',
   jeonseRatio: 'all',
@@ -756,7 +758,7 @@ const mapFilterGroups = [
   },
   {
     key: 'price',
-    label: '가격',
+    label: '거래금액대',
     options: [
       ['all', '전체'],
       ['under5', '5억 이하'],
@@ -764,6 +766,16 @@ const mapFilterGroups = [
       ['between10and20', '10~20억'],
       ['between20and40', '20~40억'],
       ['over40', '40억 이상'],
+    ],
+  },
+  {
+    key: 'subway',
+    label: '역과의 거리',
+    options: [
+      ['all', '전체'],
+      ['within5', '5분 이내'],
+      ['within10', '10분 이내'],
+      ['within15', '15분 이내'],
     ],
   },
   {
@@ -1041,7 +1053,7 @@ const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixe
 const clampScore = (value: number) => Math.min(100, Math.max(0, value))
 
 const uniqueAiPreferenceRanks = (ranks: AiPreferenceKey[]) => {
-  const fallback: AiPreferenceKey[] = ['budget', 'commute', 'growth']
+  const fallback: AiPreferenceKey[] = ['budget', 'commute', 'growth', 'pyeong']
   const uniqueRanks = ranks.filter((rank, index) => ranks.indexOf(rank) === index)
 
   fallback.forEach((rank) => {
@@ -1056,7 +1068,7 @@ const uniqueAiPreferenceRanks = (ranks: AiPreferenceKey[]) => {
     }
   })
 
-  return uniqueRanks.slice(0, 3)
+  return uniqueRanks.slice(0, 4)
 }
 
 const getRecommendationDealKey = (deal: LiveRtmsDeal) =>
@@ -1340,7 +1352,7 @@ const buildRtmsRecommendationCandidates = ({
         oneYearGrowthRate,
         directDealCount,
       }
-      const preferenceWeights = [0.44, 0.31, 0.2]
+      const preferenceWeights = [0.38, 0.27, 0.2, 0.11]
       const preferenceScore = rankedPreferences.reduce(
         (score, preference, index) => score + scoreRecommendationPreference(preference, context) * preferenceWeights[index],
         0,
@@ -1463,7 +1475,7 @@ const buildCuratedRecommendationCandidates = ({
         oneYearGrowthRate,
         directDealCount: apartment.tags.includes('직거래') ? 1 : 0,
       }
-      const preferenceWeights = [0.44, 0.31, 0.2]
+      const preferenceWeights = [0.38, 0.27, 0.2, 0.11]
       const preferenceScore = rankedPreferences.reduce(
         (score, preference, index) => score + scoreRecommendationPreference(preference, context) * preferenceWeights[index],
         0,
@@ -1555,6 +1567,11 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
   if (filters.price === 'between20and40' && (deal.priceEok < 20 || deal.priceEok > 40)) return false
   if (filters.price === 'over40' && deal.priceEok < 40) return false
 
+  const subwayMinutes = estimateRtmsSubwayMinutes(deal)
+  if (filters.subway === 'within5' && subwayMinutes > 5) return false
+  if (filters.subway === 'within10' && subwayMinutes > 10) return false
+  if (filters.subway === 'within15' && subwayMinutes > 15) return false
+
   if (filters.households === 'over500' && facts.householdCount < 500) return false
   if (filters.households === 'over1000' && facts.householdCount < 1000) return false
   if (filters.households === 'over3000' && facts.householdCount < 3000) return false
@@ -1591,12 +1608,13 @@ function App() {
   const [maxCommuteMinutes, setMaxCommuteMinutes] = useState(40)
   const [minTradePriceEok, setMinTradePriceEok] = useState(0)
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
-  const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['budget', 'commute', 'growth'])
+  const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['budget', 'commute', 'growth', 'pyeong'])
   const [userListings, setUserListings] = useState<UserListing[]>([])
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
   const [appToast, setAppToast] = useState('')
+  const [filterOpenRequest, setFilterOpenRequest] = useState(0)
   const contentPanelRef = useRef<HTMLElement | null>(null)
 
   const handleHomeClick = useCallback(() => {
@@ -1622,6 +1640,13 @@ function App() {
       return dedupeDeals(Array.from(mergedDeals.values())).slice(0, 50000)
     })
   }, [])
+
+  const handleSearchFilterOpen = useCallback(() => {
+    if (mode !== 'prices') {
+      setMode('prices')
+    }
+    setFilterOpenRequest((request) => request + 1)
+  }, [mode])
 
   const filteredApartments = useMemo(() => {
     const normalized = query.trim()
@@ -1943,7 +1968,7 @@ function App() {
         </header>
 
         <section className="search-hero">
-          <label className="search-box" htmlFor="search">
+          <div className="search-box">
             <Search size={19} />
             <input
               id="search"
@@ -1953,8 +1978,16 @@ function App() {
               onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
               placeholder="아파트, 지역, 역 이름 검색"
             />
-            <SlidersHorizontal size={18} />
-          </label>
+            <button
+              className="search-filter-button"
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={handleSearchFilterOpen}
+              aria-label="실거래 필터 열기"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+          </div>
 
           {searchFocused && (visibleSearchSuggestions.length > 0 || searchHasNoResults) && (
             <div
@@ -1997,6 +2030,7 @@ function App() {
               focusListing={focusListing}
               focusLiveDeal={focusLiveDeal}
               onLiveDealsChange={mergeCapitalLiveDeals}
+              filterOpenRequest={filterOpenRequest}
             />
           )}
 
@@ -2128,6 +2162,7 @@ function PriceView({
   focusListing,
   focusLiveDeal,
   onLiveDealsChange,
+  filterOpenRequest,
 }: {
   apartments: Apartment[]
   selectedRegion: string
@@ -2137,6 +2172,7 @@ function PriceView({
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
   onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
+  filterOpenRequest: number
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
@@ -2330,6 +2366,16 @@ function PriceView({
       console.warn(error instanceof Error ? error.message : '지도 마커 캐시 호출 실패')
     }
   }, [defaultDealYmd, onLiveDealsChange, rtmsScope])
+
+  useEffect(() => {
+    if (filterOpenRequest <= 0) return undefined
+
+    const timerId = window.setTimeout(() => {
+      setFilterOpen(true)
+    }, 0)
+
+    return () => window.clearTimeout(timerId)
+  }, [filterOpenRequest])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -4190,8 +4236,12 @@ function AiView({
       <section className="preference-panel" aria-label="아파트 추천 선호 조건">
         <div className="preference-head">
           <span>선호 조건</span>
-          <strong>1~3순위 기준으로 점수화</strong>
+          <strong>1~4순위 기준으로 점수화</strong>
         </div>
+        <p className="ai-ranking-note">
+          선호 조건을 먼저 반영하고, 점수가 비슷한 단지는 평형별 실거래 추이, 단지 내 상승률, 인근 개발 호재를 종합해
+          순위를 정합니다.
+        </p>
         <div className="preference-rank-grid" aria-label="추천 우선순위">
           {rankedPreferences.map((rank, index) => (
             <label className="preference-rank-card" key={`ai-rank-${index + 1}`}>
@@ -4268,7 +4318,7 @@ function AiView({
           <section className="recommend-empty">
             <Sparkles size={20} />
             <strong>조건을 고른 뒤 검색하기를 눌러주세요</strong>
-            <p>1~3순위 선호도를 먼저 반영하고, 점수가 비슷하면 최근 1년 상승률이 높은 단지를 위로 보여드립니다.</p>
+            <p>1~4순위 선호도를 먼저 반영하고, 나머지는 실거래 추이와 개발 호재를 함께 고려합니다.</p>
           </section>
         )}
 
@@ -4803,19 +4853,57 @@ function ListingView({
 }
 
 function MembershipSignupCard() {
+  const [userId, setUserId] = useState('')
+  const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [birth, setBirth] = useState('')
+  const [gender, setGender] = useState('선택 안함')
   const [interest, setInterest] = useState('직거래 매물 알림')
+  const [agreements, setAgreements] = useState({
+    service: false,
+    privacy: false,
+    location: false,
+    listingSafety: false,
+    marketing: false,
+  })
   const [submitted, setSubmitted] = useState(false)
-  const canSubmit = phone.trim().length >= 8
+  const requiredAgreed = agreements.service && agreements.privacy && agreements.location && agreements.listingSafety
+  const canSubmit =
+    userId.trim().length >= 4 &&
+    password.trim().length >= 6 &&
+    name.trim().length >= 2 &&
+    phone.trim().length >= 8 &&
+    requiredAgreed
+
+  const updateAgreement = (key: keyof typeof agreements, value: boolean) => {
+    setAgreements((current) => ({ ...current, [key]: value }))
+    setSubmitted(false)
+  }
+
+  const handleAgreeAll = (value: boolean) => {
+    setAgreements({
+      service: value,
+      privacy: value,
+      location: value,
+      listingSafety: value,
+      marketing: value,
+    })
+    setSubmitted(false)
+  }
 
   const handleSubmit = () => {
     if (!canSubmit) return
 
     void sendTelegramLead('signup', {
-      이름: name.trim() || '미입력',
+      아이디: userId.trim(),
+      이름: name.trim(),
       연락처: phone.trim(),
+      생년월일: birth.trim() || '미입력',
+      성별: gender,
       관심서비스: interest,
+      필수약관동의: requiredAgreed ? '완료' : '미완료',
+      마케팅수신동의: agreements.marketing ? '동의' : '미동의',
     })
     setSubmitted(true)
   }
@@ -4823,13 +4911,46 @@ function MembershipSignupCard() {
   return (
     <section className="membership-card" aria-label="집직구 회원가입">
       <div>
-        <span>멤버십</span>
-        <strong>직거래 매물 알림 받기</strong>
-        <p>원하는 매물과 검증 진행 알림을 받을 연락처를 남겨주세요.</p>
+        <span>회원가입</span>
+        <strong>매물 등록과 알림을 한 번에</strong>
+        <p>아이디를 만들면 관심 단지 알림, 매물 등록, 실소유자 확인 진행 상태를 이어서 관리할 수 있습니다.</p>
       </div>
       <label>
+        <span>아이디</span>
+        <input
+          value={userId}
+          onChange={(event) => {
+            setUserId(event.target.value)
+            setSubmitted(false)
+          }}
+          autoComplete="username"
+          placeholder="영문/숫자 4자 이상"
+        />
+      </label>
+      <label>
+        <span>비밀번호</span>
+        <input
+          value={password}
+          onChange={(event) => {
+            setPassword(event.target.value)
+            setSubmitted(false)
+          }}
+          type="password"
+          autoComplete="new-password"
+          placeholder="6자 이상"
+        />
+      </label>
+      <label>
         <span>이름</span>
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="선택" />
+        <input
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value)
+            setSubmitted(false)
+          }}
+          autoComplete="name"
+          placeholder="이름"
+        />
       </label>
       <label>
         <span>연락처</span>
@@ -4843,6 +4964,25 @@ function MembershipSignupCard() {
           placeholder="010-0000-0000"
         />
       </label>
+      <div className="membership-row">
+        <label>
+          <span>생년월일</span>
+          <input
+            value={birth}
+            onChange={(event) => setBirth(event.target.value)}
+            inputMode="numeric"
+            placeholder="예: 900101"
+          />
+        </label>
+        <label>
+          <span>성별</span>
+          <select value={gender} onChange={(event) => setGender(event.target.value)}>
+            <option>선택 안함</option>
+            <option>남성</option>
+            <option>여성</option>
+          </select>
+        </label>
+      </div>
       <label>
         <span>관심 내용</span>
         <select value={interest} onChange={(event) => setInterest(event.target.value)}>
@@ -4851,10 +4991,44 @@ function MembershipSignupCard() {
           <option>매도인 검증 매물 등록</option>
         </select>
       </label>
+      <div className="terms-panel" aria-label="회원가입 약관 동의">
+        <label className="terms-all">
+          <input
+            type="checkbox"
+            checked={Object.values(agreements).every(Boolean)}
+            onChange={(event) => handleAgreeAll(event.target.checked)}
+          />
+          <span>전체 동의</span>
+        </label>
+        <label>
+          <input type="checkbox" checked={agreements.service} onChange={(event) => updateAgreement('service', event.target.checked)} />
+          <span>[필수] 집직구 서비스 이용약관</span>
+        </label>
+        <label>
+          <input type="checkbox" checked={agreements.privacy} onChange={(event) => updateAgreement('privacy', event.target.checked)} />
+          <span>[필수] 개인정보 수집·이용 동의</span>
+        </label>
+        <label>
+          <input type="checkbox" checked={agreements.location} onChange={(event) => updateAgreement('location', event.target.checked)} />
+          <span>[필수] 위치기반 서비스 이용 동의</span>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={agreements.listingSafety}
+            onChange={(event) => updateAgreement('listingSafety', event.target.checked)}
+          />
+          <span>[필수] 허위매물 금지 및 실소유자 확인 동의</span>
+        </label>
+        <label>
+          <input type="checkbox" checked={agreements.marketing} onChange={(event) => updateAgreement('marketing', event.target.checked)} />
+          <span>[선택] 마케팅 정보 수신 동의</span>
+        </label>
+      </div>
       <button className="secondary-action" type="button" disabled={!canSubmit} onClick={handleSubmit}>
-        회원가입 알림 보내기
+        회원가입 완료하기
       </button>
-      {submitted && <p className="lead-success">접수되었습니다. 새 매물과 상담 가능 여부를 확인해드릴게요.</p>}
+      {submitted && <p className="lead-success">가입 신청이 접수되었습니다. 매물 등록과 관심 단지 알림을 이어서 도와드릴게요.</p>}
     </section>
   )
 }
