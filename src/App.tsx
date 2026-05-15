@@ -74,6 +74,7 @@ type Apartment = {
 }
 
 type AiPreferenceKey = 'budget' | 'pyeong' | 'subway' | 'commute' | 'growth' | 'newness' | 'direct'
+type TradePyeongBandKey = 'under20' | 'p20' | 'p25' | 'p34' | 'p40' | 'over50'
 
 type RecommendedApartment = {
   name: string
@@ -1153,6 +1154,23 @@ const scoreRecommendationPreference = (
 }
 
 const formatGrowth = (value: number | null) => (value === null ? '산정중' : formatPercent(value))
+
+const tradePyeongBands: Array<{
+  key: TradePyeongBandKey
+  label: string
+  min: number
+  max: number
+}> = [
+  { key: 'under20', label: '20평 이하', min: 0, max: 20.9 },
+  { key: 'p20', label: '20평대', min: 21, max: 23.9 },
+  { key: 'p25', label: '25평형대', min: 24, max: 29.9 },
+  { key: 'p34', label: '34평형대', min: 30, max: 37.9 },
+  { key: 'p40', label: '40평대', min: 38, max: 49.9 },
+  { key: 'over50', label: '50평 이상', min: 50, max: 999 },
+]
+
+const getTradePyeongBand = (pyeong: number) =>
+  tradePyeongBands.find((band) => pyeong >= band.min && pyeong <= band.max) ?? tradePyeongBands.at(-1)!
 
 const buildRtmsRecommendationCandidates = ({
   deals,
@@ -3593,12 +3611,44 @@ function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
 
 function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose: () => void }) {
   const { history, status } = useMarkerHistory(marker)
+  const [pyeongSelection, setPyeongSelection] = useState<{ markerId: string; band: TradePyeongBandKey }>({
+    markerId: marker.id,
+    band: 'p34',
+  })
   const listing = marker.listing
   const isSpecMarker = Boolean(marker.apartment) && marker.tradeTypeLabel === '기본 스펙'
-  const chartSourceDeals = [...history]
+  const availablePyeongBands = useMemo(() => {
+    const bandMap = new Map<TradePyeongBandKey, { key: TradePyeongBandKey; label: string; count: number }>()
+
+    history.forEach((deal) => {
+      const band = getTradePyeongBand(deal.pyeong)
+      const current = bandMap.get(band.key)
+      bandMap.set(band.key, {
+        key: band.key,
+        label: band.label,
+        count: (current?.count ?? 0) + 1,
+      })
+    })
+
+    return tradePyeongBands
+      .map((band) => bandMap.get(band.key))
+      .filter((band): band is { key: TradePyeongBandKey; label: string; count: number } => Boolean(band))
+  }, [history])
+  const selectedPyeongBand = pyeongSelection.markerId === marker.id ? pyeongSelection.band : 'p34'
+  const defaultPyeongBand =
+    availablePyeongBands.find((band) => band.key === 'p34')?.key ??
+    (history[0] ? getTradePyeongBand(history[0].pyeong).key : 'p34')
+  const activePyeongBand = availablePyeongBands.some((band) => band.key === selectedPyeongBand)
+    ? selectedPyeongBand
+    : defaultPyeongBand
+  const selectedBandHistory = useMemo(
+    () => history.filter((deal) => getTradePyeongBand(deal.pyeong).key === activePyeongBand),
+    [activePyeongBand, history],
+  )
+  const chartSourceDeals = [...selectedBandHistory]
     .filter((deal) => deal.dealDate >= '2022-01-01')
     .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
-  const latestDeal = history[0]
+  const latestDeal = selectedBandHistory[0] ?? history[0]
   const chartDeals = chartSourceDeals.length ? chartSourceDeals : latestDeal ? [latestDeal] : []
   const hasTradePrice = Boolean(latestDeal) || (marker.hasPrice !== false && marker.priceEok > 0)
   const prices = chartDeals.map((deal) => deal.priceEok)
@@ -3700,6 +3750,21 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
               </span>
               <em>{trendSummary}</em>
             </div>
+            {availablePyeongBands.length > 0 && (
+              <div className="trend-pyeong-tabs" aria-label="평형별 매매 추이 선택">
+                {availablePyeongBands.map((band) => (
+                  <button
+                    key={band.key}
+                    className={activePyeongBand === band.key ? 'active' : ''}
+                    type="button"
+                    onClick={() => setPyeongSelection({ markerId: marker.id, band: band.key })}
+                  >
+                    {band.label}
+                    <small>{band.count}건</small>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {chartDeals.length > 0 ? (
               <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
@@ -3739,7 +3804,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
 
           {history.length > 0 && (
             <div className="history-list">
-              {history.slice(0, 5).map((deal) => (
+              {selectedBandHistory.slice(0, 5).map((deal) => (
                 <article key={deal.id}>
                   <div>
                     <strong>{formatShortDate(deal.dealDate)}</strong>
@@ -3758,7 +3823,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
       <ListingMediaPanel marker={marker} />
       <RoadviewPanel marker={marker} />
       <BuildingLedgerPanel marker={marker} latestDeal={latestDeal} />
-      {!listing && <AiTrendAnalysisPanel marker={marker} history={history} />}
+      {!listing && <AiTrendAnalysisPanel marker={marker} history={selectedBandHistory.length ? selectedBandHistory : history} />}
       <ReviewsPanel marker={marker} />
     </section>
   )
