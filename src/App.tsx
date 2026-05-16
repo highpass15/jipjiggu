@@ -2833,9 +2833,7 @@ function PriceView({
     <div className="view-stack price-view">
       <section className="local-report-entry" aria-label="우리동네 리포트 바로가기">
         <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
-          <span>우리동네 리포트</span>
-          <strong>우리동네 리포트</strong>
-          <em>지역별 실거래와 개발 소식을 바로 확인하세요</em>
+          <strong>우리동네 리포트 보기</strong>
         </button>
         <div className="local-report-region-row">
           {weeklyReportRegionOptions.slice(0, 5).map((region) => (
@@ -3017,6 +3015,7 @@ function NeighborhoodReportView({
 }) {
   const [region, setRegion] = useState(initialRegion)
   const [reportExpanded, setReportExpanded] = useState(true)
+  const [reportSubscribed, setReportSubscribed] = useState(false)
   const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
   const [reportNewsUpdatedAt, setReportNewsUpdatedAt] = useState('')
   const reportDetailRef = useRef<HTMLElement | null>(null)
@@ -3095,7 +3094,6 @@ function NeighborhoodReportView({
   const topRecommendation = regionRecommendations[0] ?? recommendations[0]
   const averagePrice =
     monthlyDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(monthlyDeals.length, 1)
-  const directCount = weeklyDeals.filter((deal) => deal.tradeType === 'direct').length
   const growthLeaders = useMemo(() => {
     const groupedDeals = new Map<string, LiveRtmsDeal[]>()
     const oneYearCutoffTime = referenceTime - 365 * 24 * 60 * 60 * 1000
@@ -3131,9 +3129,6 @@ function NeighborhoodReportView({
       .sort((a, b) => b.growthRate - a.growthRate)
       .slice(0, 5)
   }, [referenceTime, sortedRegionDeals])
-  const inAppReportBody = `최신 거래 ${
-    previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'
-  } · 직거래 ${directCount}건 · 추천 단지 ${topRecommendation?.name ?? '분석중'}`
   const developmentProgressAverage = Math.round(
     anyangDevelopmentNews.reduce((sum, item) => sum + item.progress, 0) / anyangDevelopmentNews.length,
   )
@@ -3152,7 +3147,7 @@ function NeighborhoodReportView({
     <div className="view-stack report-view">
       <section className="report-hero">
         <span>매주 토요일 아침 갱신</span>
-        <h2>우리동네 리포트</h2>
+        <h2>우리동네 리포트 보기</h2>
         <p>지역을 고르면 실거래와 개발 소식이 바로 열립니다.</p>
         <button className="report-hero-action" type="button" onClick={openPublishedReport}>
           리포트 바로 보기
@@ -3436,27 +3431,16 @@ function NeighborhoodReportView({
         </section>
       )}
 
-      <section className="report-subscribe-card" aria-label="주간 리포트 보기">
+      <section className="report-subscribe-card" aria-label="주간 리포트 알림 신청">
         <div>
           <span>매주 토요일 아침 갱신</span>
-          <strong>전화번호 없이 바로 열람</strong>
-          <p>새 주간 리포트가 준비되면 앱 알림함에 카드로 남겨둡니다. 우리동네 거래와 개발 소식만 골라서 확인하세요.</p>
+          <strong>앱 알림함에 받아보기</strong>
+          <p>신청하면 새 리포트가 준비될 때 앱 안 알림함에 카드로 남겨둡니다.</p>
         </div>
-        <button className="primary-action" type="button" onClick={openPublishedReport}>
-          리포트 보기
-          <FileText size={16} />
+        <button className="primary-action" type="button" onClick={() => setReportSubscribed(true)}>
+          {reportSubscribed ? '신청완료' : '알림신청'}
+          <Bell size={16} />
         </button>
-      </section>
-
-      <section className="report-message-preview" aria-label="앱 알림 예시">
-        <span>토요일 아침 리포트</span>
-        <strong>[집직구] {region} 우리동네 리포트</strong>
-        <p>{inAppReportBody}</p>
-        <button className="text-button" type="button" onClick={openPublishedReport}>
-          전체 보고서 보기
-          <ChevronRight size={14} />
-        </button>
-        <em>전화번호 입력 없이 바로 볼 수 있습니다.</em>
       </section>
     </div>
   )
