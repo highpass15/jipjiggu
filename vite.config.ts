@@ -275,36 +275,74 @@ const reportNewsQueriesByRegion: Record<string, string[]> = {
     '안양 박달스마트시티',
     '안양교도소 이전 부지 개발',
   ],
-  평촌권: ['평촌신도시 정비사업 선도지구', '평촌 범계 귀인동 재건축 리모델링'],
-  인덕원권: ['인덕원 GTX-C 월곶판교선 동탄인덕원선', '관양동 인덕원역 개발'],
-  만안권: ['안양 만안구 정비사업', '박달스마트시티 안양', '안양역 생활권 개발'],
-  과천권: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트'],
-  의왕내손권: ['의왕 내손 포일 인덕원 개발', '의왕 백운밸리 인덕원 교통'],
+  '평촌·범계': ['평촌신도시 정비사업 선도지구', '평촌 범계 귀인동 재건축 리모델링'],
+  '호계·신촌·귀인': ['호계동 신촌동 귀인동 재건축 리모델링', '평촌 귀인동 범계동 정비사업'],
+  '관양·인덕원': ['인덕원 GTX-C 월곶판교선 동탄인덕원선', '관양동 인덕원역 개발'],
+  '비산·만안': ['안양 만안구 정비사업', '박달스마트시티 안양', '안양역 생활권 개발', '비산동 재건축'],
+  과천: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트', '과천 원도심 재건축'],
+  '의왕 내손·포일': ['의왕 내손 포일 인덕원 개발', '의왕 백운밸리 인덕원 교통', '내손동 포일동 아파트 정비'],
 }
 
-const fallbackReportNews: ReportNewsItem[] = [
-  {
-    title: '평촌신도시 특별정비구역과 선도지구 추진 속도 점검',
-    link: 'https://www.anyang.go.kr/',
-    source: '집직구 브리핑',
-    publishedAt: new Date().toISOString(),
-    keyword: '평촌 정비사업',
-  },
-  {
-    title: '인덕원역 GTX-C·월곶판교선·동탄인덕원선 교통축 체크',
-    link: 'https://www.anyang.go.kr/',
-    source: '집직구 브리핑',
-    publishedAt: new Date().toISOString(),
-    keyword: '인덕원 교통축',
-  },
-  {
-    title: '박달스마트시티와 만안구 장기 개발 기대감 추적',
-    link: 'https://www.anyang.go.kr/',
-    source: '집직구 브리핑',
-    publishedAt: new Date().toISOString(),
-    keyword: '박달스마트시티',
-  },
-]
+const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
+  '안양 전체': [
+    {
+      title: '평촌신도시 특별정비구역과 선도지구 추진 속도 점검',
+      link: 'https://www.anyang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '평촌 정비사업',
+    },
+    {
+      title: '인덕원역 GTX-C·월곶판교선·동탄인덕원선 교통축 체크',
+      link: 'https://www.anyang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '인덕원 교통축',
+    },
+    {
+      title: '박달스마트시티와 만안구 장기 개발 기대감 추적',
+      link: 'https://www.anyang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '박달스마트시티',
+    },
+  ],
+  과천: [
+    {
+      title: '과천 원도심 재건축과 지식정보타운 생활권 변화 점검',
+      link: 'https://www.gccity.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '과천 재건축',
+    },
+    {
+      title: '정부과천청사역 교통축과 GTX-C 일정 확인',
+      link: 'https://www.gccity.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '정부과천청사역',
+    },
+  ],
+  '의왕 내손·포일': [
+    {
+      title: '내손·포일 생활권 정비와 인덕원 접근성 변화 점검',
+      link: 'https://www.uiwang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '내손·포일',
+    },
+    {
+      title: '의왕 인덕원권 교통축과 신축 생활권 흐름 확인',
+      link: 'https://www.uiwang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '의왕 인덕원권',
+    },
+  ],
+}
+
+const getFallbackReportNews = (region: string) =>
+  fallbackReportNewsByRegion[region] ?? fallbackReportNewsByRegion['안양 전체']
 
 const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> => {
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:14d`)}&hl=ko&gl=KR&ceid=KR:ko`
@@ -349,6 +387,7 @@ const buildReportNewsPayload = async (region: string) => {
   }
 
   const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양 전체']
+  const fallbackReportNews = getFallbackReportNews(normalizedRegion)
   const results = await runInBatches(queries, 2, fetchGoogleNewsItems, 250)
   const dedupedItems = Array.from(
     new Map(
@@ -1552,10 +1591,10 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
     server.middlewares.use('/api/report/anyang-news', async (request, response) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
       response.setHeader('Cache-Control', 'public, max-age=600')
+      const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+      const region = incomingUrl.searchParams.get('region') || '안양 전체'
 
       try {
-        const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
-        const region = incomingUrl.searchParams.get('region') || '안양 전체'
         const payload = await buildReportNewsPayload(region)
 
         response.statusCode = 200
@@ -1567,7 +1606,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
             ok: false,
             source: '집직구 기본 브리핑',
             updatedAt: new Date().toISOString(),
-            items: fallbackReportNews,
+            items: getFallbackReportNews(region),
             error: error instanceof Error ? error.message : 'Unknown error',
           }),
         )

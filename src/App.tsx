@@ -728,18 +728,6 @@ const navItems: Array<{
   { id: 'inheritance', label: '증여', icon: Calculator },
 ]
 
-const regionOptions = [
-  '평촌·만안·과천·의왕',
-  '서울·경기·인천 전체',
-  '서울 전체',
-  '경기 전체',
-  '인천 전체',
-  '강남3구',
-  '마포·용산',
-  '분당·판교',
-  '광교·수원',
-]
-
 const weeklyReportRegionOptions = [
   '안양 전체',
   '평촌·범계',
@@ -1105,6 +1093,166 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     ],
   },
 ]
+
+const gwacheonDevelopmentNews: DevelopmentIssue[] = [
+  {
+    rank: 1,
+    title: '과천 원도심 재건축',
+    area: '별양·부림·중앙',
+    buzzScore: 94,
+    progress: 58,
+    activeStageIndex: 2,
+    expectedYear: '2026~2029 구역별 추진',
+    plainBrief: '과천 원도심 주요 단지가 인허가와 사업 속도를 얼마나 앞당기는지 보는 단계입니다.',
+    phase: '재건축 인허가·이주 일정 확인',
+    nextMilestone: '다음 확인: 조합별 인허가, 이주 일정, 분양 일정',
+    priceImpact: '역세권 구축 단지는 거래량보다 신고가 재등장 여부를 우선 체크',
+    affectedDongs: ['별양동', '부림동', '중앙동', '원문동'],
+    relatedApartments: ['과천주공4단지', '과천주공5단지', '과천위버필드'],
+    keywords: ['과천 재건축', '원도심 정비', '이주 일정'],
+    body: '과천 원도심은 단지별 사업 단계 차이가 커서 같은 과천 안에서도 가격 반응이 다르게 나타날 수 있습니다.',
+    timeline: [
+      { label: '정비계획', status: 'done' },
+      { label: '인허가·이주', status: 'active' },
+      { label: '분양·입주 반영', status: 'watch' },
+    ],
+  },
+  {
+    rank: 2,
+    title: '과천지식정보타운',
+    area: '갈현·문원 인접권',
+    buzzScore: 89,
+    progress: 72,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 생활권 안정',
+    plainBrief: '신축 입주와 업무시설 입주가 생활권 가격에 얼마나 반영되는지 확인 중입니다.',
+    phase: '입주·업무시설 활성화',
+    nextMilestone: '다음 확인: 상권 형성, 학교·교통 이용 안정화',
+    priceImpact: '신축 프리미엄은 전세가율과 실거래 회전 속도를 함께 봐야 합니다.',
+    affectedDongs: ['갈현동', '문원동', '원문동'],
+    relatedApartments: ['과천푸르지오라비엔오', '과천제이드자이', '과천르센토데시앙'],
+    keywords: ['지식정보타운', '신축 입주', '업무시설'],
+    body: '지식정보타운은 과천 내 신축 수요와 업무시설 출퇴근 수요가 만나는 축이라 주간 거래 변화가 중요합니다.',
+    timeline: [
+      { label: '택지 공급', status: 'done' },
+      { label: '입주 진행', status: 'done' },
+      { label: '상권·교통 안정화', status: 'active' },
+    ],
+  },
+  {
+    rank: 3,
+    title: '정부과천청사역 교통축',
+    area: '중앙·별양·갈현',
+    buzzScore: 85,
+    progress: 46,
+    activeStageIndex: 1,
+    expectedYear: '2027~2030 일정 확인',
+    plainBrief: 'GTX-C와 환승 동선이 실제 생활 편의로 이어질지 지켜보는 단계입니다.',
+    phase: '광역교통 일정 확인',
+    nextMilestone: '다음 확인: 정거장 계획, 환승 동선, 착공 일정',
+    priceImpact: '교통 기대감은 확정 일정이 나올 때 거래 박스권을 다시 확인해야 합니다.',
+    affectedDongs: ['중앙동', '별양동', '갈현동'],
+    relatedApartments: ['과천자이', '래미안슈르', '과천위버필드'],
+    keywords: ['GTX-C', '정부과천청사역', '환승'],
+    body: '정부과천청사역 주변 교통 개선은 원도심과 지식정보타운을 동시에 보는 핵심 이슈입니다.',
+    timeline: [
+      { label: '노선 논의', status: 'done' },
+      { label: '정거장·환승 검토', status: 'active' },
+      { label: '착공·운영 반영', status: 'watch' },
+    ],
+  },
+]
+
+const uiwangDevelopmentNews: DevelopmentIssue[] = [
+  {
+    rank: 1,
+    title: '내손·포일 생활권 정비',
+    area: '내손·포일',
+    buzzScore: 90,
+    progress: 52,
+    activeStageIndex: 1,
+    expectedYear: '2026~2028 구역별 확인',
+    plainBrief: '내손·포일 구축 단지의 정비 속도와 인덕원 접근성 프리미엄을 함께 보는 단계입니다.',
+    phase: '정비 추진·사업성 확인',
+    nextMilestone: '다음 확인: 단지별 추진위, 동의율, 사업성 검토',
+    priceImpact: '인덕원 생활권과 학군 수요가 겹치는 단지의 거래 회복이 중요합니다.',
+    affectedDongs: ['내손동', '포일동'],
+    relatedApartments: ['인덕원센트럴자이', '의왕내손e편한세상', '포일숲속마을'],
+    keywords: ['내손동 정비', '포일동 아파트', '인덕원 생활권'],
+    body: '내손·포일은 행정구역은 의왕이지만 인덕원·평촌 수요와 같이 움직이는 구간이라 별도 추적합니다.',
+    timeline: [
+      { label: '정비 기대감', status: 'done' },
+      { label: '사업성 검토', status: 'active' },
+      { label: '구역 확정', status: 'watch' },
+    ],
+  },
+  {
+    rank: 2,
+    title: '인덕원역 연결 효과',
+    area: '내손·포일·관양 인접',
+    buzzScore: 87,
+    progress: 61,
+    activeStageIndex: 3,
+    expectedYear: '2028~2030 예상',
+    plainBrief: '인덕원역 교통축이 내손·포일 단지 가격에 얼마나 반영되는지 보는 중입니다.',
+    phase: '철도 공사·환승 동선 체크',
+    nextMilestone: '다음 확인: GTX-C, 월곶판교선, 동탄인덕원선 일정',
+    priceImpact: '역 접근 시간이 짧은 단지일수록 신고가 회복 속도를 따로 봅니다.',
+    affectedDongs: ['내손동', '포일동', '관양동'],
+    relatedApartments: ['인덕원센트럴자이', '포일자이', '평촌더샵아이파크'],
+    keywords: ['인덕원역', 'GTX-C', '월곶판교선'],
+    body: '인덕원역 다중 철도 이슈는 내손·포일권의 가장 큰 외부 변수입니다.',
+    timeline: [
+      { label: '노선 확정', status: 'done' },
+      { label: '공사·환승 설계', status: 'active' },
+      { label: '역세권 반영', status: 'watch' },
+    ],
+  },
+  {
+    rank: 3,
+    title: '백운·오전 생활권 확장',
+    area: '의왕 남부 연계',
+    buzzScore: 76,
+    progress: 44,
+    activeStageIndex: 1,
+    expectedYear: '2027년 이후 관찰',
+    plainBrief: '의왕 내 생활권 확장이 내손·포일 수요를 얼마나 나눌지 확인하는 단계입니다.',
+    phase: '생활권 확장 관찰',
+    nextMilestone: '다음 확인: 신규 공급, 상권 안정, 전세 수요 이동',
+    priceImpact: '내손·포일과 백운권의 가격 차이가 줄어드는지 확인해야 합니다.',
+    affectedDongs: ['내손동', '포일동', '오전동'],
+    relatedApartments: ['백운밸리', '포일숲속마을', '내손라구역 인접단지'],
+    keywords: ['의왕 생활권', '백운밸리', '신규 공급'],
+    body: '의왕 내부 신규 생활권은 내손·포일의 상대 매력도를 비교할 때 함께 봐야 합니다.',
+    timeline: [
+      { label: '신규 생활권 형성', status: 'done' },
+      { label: '가격 차이 관찰', status: 'active' },
+      { label: '수요 재배분', status: 'watch' },
+    ],
+  },
+]
+
+const reportDevelopmentNewsByRegion: Record<string, DevelopmentIssue[]> = {
+  '안양 전체': anyangDevelopmentNews,
+  '평촌·범계': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) => ['평촌동', '범계동', '귀인동', '부림동', '달안동'].includes(dong)),
+  ),
+  '호계·신촌·귀인': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) => ['호계동', '신촌동', '귀인동', '평촌동', '범계동'].includes(dong)),
+  ),
+  '관양·인덕원': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) => ['관양동', '인덕원', '평촌동', '내손동', '포일동'].includes(dong)),
+  ),
+  '비산·만안': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) => ['비산동', '안양동', '석수동', '박달동'].includes(dong)),
+  ),
+  과천: gwacheonDevelopmentNews,
+  '의왕 내손·포일': uiwangDevelopmentNews,
+}
+
+const getReportDevelopmentNews = (region: string) =>
+  reportDevelopmentNewsByRegion[region]?.length ? reportDevelopmentNewsByRegion[region] : anyangDevelopmentNews
+
 const sendTelegramLead = async (type: string, payload: LeadPayload) => {
   try {
     await fetch('/api/telegram/notify', {
@@ -1966,7 +2114,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
-  const [selectedRegion, setSelectedRegion] = useState('평촌·만안·과천·의왕')
+  const selectedRegion = '평촌·만안·과천·의왕'
   const [salePrice, setSalePrice] = useState(5)
   const [income, setIncome] = useState(9000)
   const [assets, setAssets] = useState(30000)
@@ -2452,7 +2600,6 @@ function App() {
             <PriceView
               apartments={filteredApartments}
               selectedRegion={selectedRegion}
-              setSelectedRegion={setSelectedRegion}
               focusApartment={focusApartment}
               userListings={userListings}
               focusListing={focusListing}
@@ -2466,7 +2613,6 @@ function App() {
           {mode === 'report' && (
             <NeighborhoodReportView
               liveDeals={capitalLiveDeals}
-              recommendations={recommendedApartments}
               initialRegion={activeReportRegion}
               onRegionChange={setActiveReportRegion}
             />
@@ -2608,7 +2754,6 @@ function App() {
 function PriceView({
   apartments,
   selectedRegion,
-  setSelectedRegion,
   focusApartment,
   userListings,
   focusListing,
@@ -2619,7 +2764,6 @@ function PriceView({
 }: {
   apartments: Apartment[]
   selectedRegion: string
-  setSelectedRegion: (region: string) => void
   focusApartment: Apartment | null
   userListings: UserListing[]
   focusListing: UserListing | null
@@ -2876,13 +3020,6 @@ function PriceView({
         <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
           <strong>지역선택 후 리포트 보기</strong>
         </button>
-        <div className="local-report-region-row">
-          {weeklyReportRegionOptions.slice(0, 5).map((region) => (
-            <button key={`home-report-${region}`} type="button" onClick={() => onOpenReport(region)}>
-              {region}
-            </button>
-          ))}
-        </div>
       </section>
 
       <div className="section-title">
@@ -2898,19 +3035,6 @@ function PriceView({
             목록
           </button>
         </div>
-      </div>
-
-      <div className="region-scroll" aria-label="지역 필터">
-        {regionOptions.map((region) => (
-          <button
-            key={region}
-            className={selectedRegion === region ? 'region-chip active' : 'region-chip'}
-            onClick={() => setSelectedRegion(region)}
-            type="button"
-          >
-            {region}
-          </button>
-        ))}
       </div>
 
       {view === 'map' ? (
@@ -3045,12 +3169,10 @@ function MapFilterSheet({
 
 function NeighborhoodReportView({
   liveDeals,
-  recommendations,
   initialRegion,
   onRegionChange,
 }: {
   liveDeals: LiveRtmsDeal[]
-  recommendations: RecommendedApartment[]
   initialRegion: string
   onRegionChange: (region: string) => void
 }) {
@@ -3113,31 +3235,15 @@ function NeighborhoodReportView({
     () => [...regionDeals].sort((a, b) => dealTimestamp(b) - dealTimestamp(a)),
     [regionDeals],
   )
-  const regionRecommendations = useMemo(
-    () =>
-      recommendations.filter((recommendation) =>
-        matchesWeeklyReportRegion(region, {
-          aptName: recommendation.name,
-          district: recommendation.region,
-          legalDong: recommendation.region,
-          address: recommendation.station,
-        }),
-      ),
-    [recommendations, region],
-  )
   const referenceTime = sortedRegionDeals[0] ? parseDealTime(sortedRegionDeals[0].dealDate) : fallbackReferenceTime
   const weekCutoffTime = referenceTime - 7 * 24 * 60 * 60 * 1000
   const monthCutoffTime = referenceTime - 30 * 24 * 60 * 60 * 1000
   const weeklyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= weekCutoffTime)
   const monthlyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= monthCutoffTime)
-  const previewDeals = weeklyDeals.length > 0 ? weeklyDeals.slice(0, 2) : sortedRegionDeals.slice(0, 2)
-  const previewNewsItems = reportNewsItems.slice(0, 2)
   const reportTradeWindowLabel = sortedRegionDeals.length
     ? `최근 공개 7일 · ${formatReportDateRange(weekCutoffTime, referenceTime)}`
     : '실거래 캐시 준비중'
-  const topRecommendation = regionRecommendations[0] ?? recommendations[0]
-  const averagePrice =
-    monthlyDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(monthlyDeals.length, 1)
+  const developmentIssues = useMemo(() => getReportDevelopmentNews(region), [region])
   const growthLeaders = useMemo(() => {
     const groupedDeals = new Map<string, LiveRtmsDeal[]>()
     const oneYearCutoffTime = referenceTime - 365 * 24 * 60 * 60 * 1000
@@ -3173,7 +3279,7 @@ function NeighborhoodReportView({
       .sort((a, b) => b.growthRate - a.growthRate)
       .slice(0, 5)
   }, [referenceTime, sortedRegionDeals])
-  const topIssue = anyangDevelopmentNews
+  const topIssue = developmentIssues
     .slice()
     .sort((a, b) => b.buzzScore - a.buzzScore)
     .at(0)
@@ -3210,81 +3316,6 @@ function NeighborhoodReportView({
             {option}
           </button>
         ))}
-      </section>
-
-      <section className="report-preview-card" aria-label="리포트 미리보기">
-        <div className="detail-section-head">
-          <span>
-            <FileText size={15} />
-            이번 주 미리보기
-          </span>
-          <em>더보기는 앱에서</em>
-        </div>
-        <div className="report-summary-grid">
-          <div>
-            <span>관심 지역</span>
-            <strong>{region}</strong>
-          </div>
-          <div>
-            <span>직전 공개주 거래</span>
-            <strong>{weeklyDeals.length ? `${weeklyDeals.length}건` : '수집중'}</strong>
-          </div>
-          <div>
-            <span>최근 30일 평균</span>
-            <strong>{monthlyDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
-          </div>
-          <div>
-            <span>뉴스 언급</span>
-            <strong>{previewNewsItems.length ? `${previewNewsItems.length}건` : '수집중'}</strong>
-          </div>
-        </div>
-        <div className="report-preview-list">
-          <div className="report-preview-window">
-            <strong>{reportTradeWindowLabel}</strong>
-            <span>현재 공개된 RTMS 기준으로 직전 주 거래를 요약합니다.</span>
-          </div>
-          {previewDeals.length > 0 ? (
-            previewDeals.map((deal) => (
-              <div key={`report-preview-${deal.id}`}>
-                <strong>새 실거래 · {deal.aptName}</strong>
-                <span>
-                  {formatShortDate(deal.dealDate)} · {Math.round(deal.pyeong)}평 · {formatEok(deal.priceEok)}
-                </span>
-              </div>
-            ))
-          ) : (
-            <div>
-              <strong>실거래 캐시 반영 대기</strong>
-              <span>주간 리포트에는 최근 신고 거래와 평형별 흐름이 자동으로 들어갑니다.</span>
-            </div>
-          )}
-          {previewNewsItems.map((item) => (
-            <div key={`report-preview-news-${item.link}-${item.title}`}>
-              <strong>뉴스 언급 · {item.keyword}</strong>
-              <span>{item.title}</span>
-            </div>
-          ))}
-          {topIssue && (
-            <div>
-              <strong>이번 주 화제축 · {topIssue.title}</strong>
-              <span>
-                {topIssue.plainBrief}
-              </span>
-            </div>
-          )}
-          {topRecommendation && (
-            <div>
-              <strong>추천 단지 1순위 · {topRecommendation.name}</strong>
-              <span>
-                {topRecommendation.pyeong} · {formatEok(topRecommendation.priceEok)} · 상승여력 {topRecommendation.upsideScore}점
-              </span>
-            </div>
-          )}
-        </div>
-        <button className="secondary-action" type="button" onClick={openPublishedReport}>
-          이번 주 리포트 바로 열기
-          <ChevronRight size={16} />
-        </button>
       </section>
 
       {reportExpanded && (
@@ -3335,7 +3366,7 @@ function NeighborhoodReportView({
               <em>공정·일정·가격 영향</em>
             </div>
             <div className="development-tracker">
-              {anyangDevelopmentNews
+              {developmentIssues
                 .slice()
                 .sort((a, b) => b.buzzScore - a.buzzScore)
                 .map((item) => (
@@ -3396,7 +3427,7 @@ function NeighborhoodReportView({
             <div className="detail-section-head">
               <span>
                 <ExternalLink size={15} />
-                최신 뉴스 스캔
+                요번주 동네뉴스
               </span>
               <em>{reportNewsUpdatedAt ? `${formatKoreanDateTime(reportNewsUpdatedAt)} 갱신` : '자동 수집'}</em>
             </div>
@@ -3459,7 +3490,7 @@ function NeighborhoodReportView({
               <em>뉴스·공시 언급 기준</em>
             </div>
             <div className="report-buzz-list">
-              {anyangDevelopmentNews
+              {developmentIssues
                 .slice()
                 .sort((a, b) => b.buzzScore - a.buzzScore)
                 .map((item) => (
