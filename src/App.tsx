@@ -21,6 +21,7 @@ import {
   MapPin,
   MapPinned,
   MessageCircle,
+  Plus,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -112,6 +113,7 @@ type DevelopmentIssue = {
   area: string
   buzzScore: number
   progress: number
+  activeStageIndex: number
   phase: string
   nextMilestone: string
   priceImpact: string
@@ -720,7 +722,7 @@ const navItems: Array<{
   { id: 'prices', label: '지도', icon: MapPinned },
   { id: 'ai', label: 'AI추천', icon: Sparkles },
   { id: 'listing', label: '직거래', icon: ShieldCheck },
-  { id: 'directListings', label: '매물', icon: Store },
+  { id: 'report', label: '리포트', icon: FileText },
   { id: 'inheritance', label: '증여', icon: Calculator },
 ]
 
@@ -755,6 +757,8 @@ const weeklyReportRegionKeywords: Record<string, string[]> = {
   과천: ['과천', '별양', '부림', '원문', '중앙동'],
   '의왕 내손·포일': ['내손', '포일', '의왕'],
 }
+
+const developmentStageLabels = ['이슈화', '계획', '인허가', '착공·공사', '완공·반영']
 
 const officeAreaOptions: OfficeArea[] = ['강남', '여의도', '광화문', '판교']
 const officeAreaDestinations: Record<OfficeArea, { name: string; lat: number; lng: number }> = {
@@ -986,6 +990,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     area: '관양·평촌·내손',
     buzzScore: 96,
     progress: 62,
+    activeStageIndex: 3,
     phase: '철도 3축 동시 체크',
     nextMilestone: 'GTX-C 정거장·환승 동선 구체화, 월곶판교선 공정 공개',
     priceImpact: '인덕원역 반경 1km 단지는 매물 회전과 호가 반응을 주간 체크',
@@ -1005,6 +1010,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     area: '평촌·범계·귀인',
     buzzScore: 92,
     progress: 55,
+    activeStageIndex: 1,
     phase: '1기 신도시 정비구역 선별',
     nextMilestone: '특별정비구역·선도지구별 주민 동의율과 추진위 속도 확인',
     priceImpact: '학군·역세권 대단지는 평형별 신고가 회복 여부가 핵심',
@@ -1024,6 +1030,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     area: '안양동·석수·박달',
     buzzScore: 87,
     progress: 48,
+    activeStageIndex: 1,
     phase: '원도심 정비·교통망 관찰',
     nextMilestone: '안양역 생활권 정비사업 인허가와 철도 지하화 논의 추적',
     priceImpact: '상대적으로 낮은 진입가 단지의 거래량 회복 여부가 관건',
@@ -1043,6 +1050,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     area: '박달·만안',
     buzzScore: 84,
     progress: 43,
+    activeStageIndex: 1,
     phase: '부지 이전·복합개발 협의',
     nextMilestone: '군용지 이전 협의, 사업시행 구조, 산업·주거 배치안 확인',
     priceImpact: '확정 전 기대감이 큰 테마라 실거래 반응은 보수적으로 해석',
@@ -1062,6 +1070,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     area: '호계·평촌 인접권',
     buzzScore: 78,
     progress: 36,
+    activeStageIndex: 0,
     phase: '정책 이슈·부지 활용 검토',
     nextMilestone: '이전 후보지, 법무부·지자체 협의, 부지 활용 방향 확인',
     priceImpact: '확정 전에는 호가보다 실제 신고가와 거래량 변화를 우선 관찰',
@@ -1140,6 +1149,43 @@ const getMsUntilNextDailySync = (hour: number) => {
   }
 
   return nextSync.getTime() - now.getTime()
+}
+
+const getLatestSaturdayMorning = (baseDate = new Date()) => {
+  const saturdayMorning = new Date(baseDate)
+  const daysSinceSaturday = (saturdayMorning.getDay() + 1) % 7
+  saturdayMorning.setDate(saturdayMorning.getDate() - daysSinceSaturday)
+  saturdayMorning.setHours(8, 0, 0, 0)
+
+  if (saturdayMorning.getTime() > baseDate.getTime()) {
+    saturdayMorning.setDate(saturdayMorning.getDate() - 7)
+  }
+
+  return saturdayMorning
+}
+
+const getLocalDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+const withCurrentWeeklyReportNotification = (notifications: AppNotification[]): AppNotification[] => {
+  const latestSaturdayMorning = getLatestSaturdayMorning()
+  const notificationId = `weekly-report-${getLocalDateKey(latestSaturdayMorning)}`
+
+  if (notifications.some((notification) => notification.id === notificationId)) {
+    return notifications
+  }
+
+  const weeklyReportNotification: AppNotification = {
+    id: notificationId,
+    kind: 'weekly-report',
+    title: '이번 주 우리동네 리포트 도착',
+    body: '토요일 아침 갱신 · 안양권 실거래, 개발 진척, 화제 단지를 확인하세요.',
+    region: weeklyReportRegionOptions[0],
+    createdAt: latestSaturdayMorning.toISOString(),
+    read: false,
+  }
+
+  return [weeklyReportNotification, ...notifications].slice(0, 30)
 }
 
 const buildReviewNotes = (marker: MapValueMarker) => {
@@ -1867,6 +1913,7 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
 
 function App() {
   const [mode, setMode] = useState<Mode>('prices')
+  const [activeReportRegion, setActiveReportRegion] = useState(weeklyReportRegionOptions[0])
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
@@ -1890,9 +1937,11 @@ function App() {
   const [filterOpenRequest, setFilterOpenRequest] = useState(0)
   const [appNotifications, setAppNotifications] = useState<AppNotification[]>(() => {
     try {
-      return JSON.parse(window.localStorage.getItem('jipjiggu-app-notifications') ?? '[]') as AppNotification[]
+      return withCurrentWeeklyReportNotification(
+        JSON.parse(window.localStorage.getItem('jipjiggu-app-notifications') ?? '[]') as AppNotification[],
+      )
     } catch {
-      return []
+      return withCurrentWeeklyReportNotification([])
     }
   })
   const contentPanelRef = useRef<HTMLElement | null>(null)
@@ -2123,6 +2172,11 @@ function App() {
     setFocusApartment(null)
   }
 
+  const handleOpenReport = (region = activeReportRegion) => {
+    setActiveReportRegion(region)
+    setMode('report')
+  }
+
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
     setQuery(suggestion.title)
     setFocusApartment(suggestion.apartment)
@@ -2329,7 +2383,7 @@ function App() {
               focusLiveDeal={focusLiveDeal}
               onLiveDealsChange={mergeCapitalLiveDeals}
               filterOpenRequest={filterOpenRequest}
-              onOpenReport={() => setMode('report')}
+              onOpenReport={handleOpenReport}
             />
           )}
 
@@ -2337,13 +2391,15 @@ function App() {
             <NeighborhoodReportView
               liveDeals={capitalLiveDeals}
               recommendations={recommendedApartments}
+              initialRegion={activeReportRegion}
+              onRegionChange={setActiveReportRegion}
             />
           )}
 
           {mode === 'notifications' && (
             <NotificationCenterView
               notifications={appNotifications}
-              onOpenReport={() => setMode('report')}
+              onOpenReport={(region) => handleOpenReport(region)}
               onOpenMap={() => setMode('prices')}
             />
           )}
@@ -2377,20 +2433,10 @@ function App() {
           )}
 
           {mode === 'listing' && (
-            <ListingView
-              salePrice={salePrice}
-              setSalePrice={setSalePrice}
-              brokerage={brokerage}
-              listingCandidates={listingApartmentCandidates}
-              onCreateListing={handleListingCreate}
-            />
-          )}
-
-          {mode === 'directListings' && (
             <DirectListingsView
               userListings={userListings}
               liveDeals={capitalLiveDeals}
-              onRegister={() => setMode('listing')}
+              onRegister={() => setMode('directListings')}
               onOpenListing={(listing) => {
                 setFocusListing(listing)
                 setFocusApartment(null)
@@ -2408,16 +2454,27 @@ function App() {
             />
           )}
 
+          {mode === 'directListings' && (
+            <ListingView
+              salePrice={salePrice}
+              setSalePrice={setSalePrice}
+              brokerage={brokerage}
+              listingCandidates={listingApartmentCandidates}
+              onCreateListing={handleListingCreate}
+            />
+          )}
+
           {mode === 'inheritance' && <InheritanceView />}
         </section>
 
         <nav className="bottom-nav" aria-label="하단 메뉴">
           {navItems.map((item) => {
             const Icon = item.icon
+            const isActive = mode === item.id || (mode === 'directListings' && item.id === 'listing')
             return (
               <button
                 key={item.id}
-                className={mode === item.id ? 'active' : ''}
+                className={isActive ? 'active' : ''}
                 onClick={() => setMode(item.id)}
                 type="button"
               >
@@ -2488,7 +2545,7 @@ function PriceView({
   focusLiveDeal: LiveRtmsDeal | null
   onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
   filterOpenRequest: number
-  onOpenReport: () => void
+  onOpenReport: (region?: string) => void
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
@@ -2734,6 +2791,21 @@ function PriceView({
 
   return (
     <div className="view-stack price-view">
+      <section className="local-report-entry" aria-label="우리동네 리포트 바로가기">
+        <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
+          <span>우리동네 리포트</span>
+          <strong>평촌·인덕원 개발 진척과 실거래를 한 번에</strong>
+          <em>지역을 고르면 해당 리포트가 바로 열립니다</em>
+        </button>
+        <div className="local-report-region-row">
+          {weeklyReportRegionOptions.slice(0, 5).map((region) => (
+            <button key={`home-report-${region}`} type="button" onClick={() => onOpenReport(region)}>
+              {region}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <div className="section-title">
         <div>
           <span>지도</span>
@@ -2895,16 +2967,26 @@ function MapFilterSheet({
 function NeighborhoodReportView({
   liveDeals,
   recommendations,
+  initialRegion,
+  onRegionChange,
 }: {
   liveDeals: LiveRtmsDeal[]
   recommendations: RecommendedApartment[]
+  initialRegion: string
+  onRegionChange: (region: string) => void
 }) {
-  const [region, setRegion] = useState(weeklyReportRegionOptions[0])
+  const [region, setRegion] = useState(initialRegion)
   const [reportExpanded, setReportExpanded] = useState(true)
   const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
   const [reportNewsUpdatedAt, setReportNewsUpdatedAt] = useState('')
   const reportDetailRef = useRef<HTMLElement | null>(null)
   const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
+
+  const handleRegionSelect = (nextRegion: string) => {
+    setRegion(nextRegion)
+    onRegionChange(nextRegion)
+    setReportExpanded(true)
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -3039,12 +3121,16 @@ function NeighborhoodReportView({
       </section>
 
       <section className="report-region-tabs" aria-label="보고서 지역 선택">
+        <div className="report-region-guide">
+          <span>지역 선택</span>
+          <strong>{region} 리포트</strong>
+        </div>
         {weeklyReportRegionOptions.map((option) => (
           <button
             className={region === option ? 'active' : ''}
             key={option}
             type="button"
-            onClick={() => setRegion(option)}
+            onClick={() => handleRegionSelect(option)}
           >
             {option}
           </button>
@@ -3177,6 +3263,23 @@ function NeighborhoodReportView({
                     <div className="development-progress" aria-label={`${item.title} 진척도 ${item.progress}%`}>
                       <span style={{ width: `${item.progress}%` }} />
                     </div>
+                    <div className="development-stage-map" aria-label={`${item.title} 전체 사업 단계`}>
+                      {developmentStageLabels.map((stageLabel, index) => (
+                        <span
+                          className={
+                            index < item.activeStageIndex
+                              ? 'done'
+                              : index === item.activeStageIndex
+                                ? 'active'
+                                : 'watch'
+                          }
+                          key={`${item.title}-${stageLabel}`}
+                        >
+                          <i>{index + 1}</i>
+                          {stageLabel}
+                        </span>
+                      ))}
+                    </div>
                     <div className="development-timeline">
                       {item.timeline.map((step) => (
                         <span className={step.status} key={`${item.title}-${step.label}`}>
@@ -3291,9 +3394,9 @@ function NeighborhoodReportView({
 
       <section className="report-subscribe-card" aria-label="주간 보고서 보기">
         <div>
-          <span>공개 보고서</span>
+          <span>매주 토요일 아침 갱신</span>
           <strong>전화번호 없이 바로 열람</strong>
-          <p>초기에는 개별 푸시 알림 없이 앱 안에서 바로 보는 공개 리포트로 운영합니다. 평촌권 반응을 보며 알림 기능은 나중에 붙이면 됩니다.</p>
+          <p>새 주간 리포트가 준비되면 앱 알림함에 카드로 남겨둡니다. 평촌·안양권 거래와 개발 진척만 골라서 확인하세요.</p>
         </div>
         <button className="primary-action" type="button" onClick={openPublishedReport}>
           리포트 보기
@@ -3302,7 +3405,7 @@ function NeighborhoodReportView({
       </section>
 
       <section className="report-message-preview" aria-label="앱 알림 예시">
-        <span>이번 주 핵심 요약</span>
+        <span>토요일 아침 리포트</span>
         <strong>[집직구] {region} 주간 보고서</strong>
         <p>{inAppReportBody}</p>
         <button className="text-button" type="button" onClick={openPublishedReport}>
@@ -3360,7 +3463,7 @@ function NotificationCenterView({
   onOpenMap,
 }: {
   notifications: AppNotification[]
-  onOpenReport: () => void
+  onOpenReport: (region?: string) => void
   onOpenMap: () => void
 }) {
   const latestReport = notifications.find((notification) => notification.kind === 'weekly-report')
@@ -3385,7 +3488,14 @@ function NotificationCenterView({
               <button
                 className="secondary-action"
                 type="button"
-                onClick={notification.kind === 'weekly-report' ? onOpenReport : onOpenMap}
+                onClick={() => {
+                  if (notification.kind === 'weekly-report') {
+                    onOpenReport(notification.region)
+                    return
+                  }
+
+                  onOpenMap()
+                }}
               >
                 보기
                 <ChevronRight size={15} />
@@ -3398,7 +3508,7 @@ function NotificationCenterView({
           <Bell size={25} />
           <strong>아직 도착한 앱 알림이 없습니다</strong>
           <p>현재는 별도 알림 신청 없이 앱에서 안양권 리포트를 바로 볼 수 있습니다.</p>
-          <button className="primary-action" type="button" onClick={onOpenReport}>
+          <button className="primary-action" type="button" onClick={() => onOpenReport()}>
             리포트 보기
             <ChevronRight size={16} />
           </button>
@@ -3410,7 +3520,7 @@ function NotificationCenterView({
           <span>최근 리포트</span>
           <strong>{latestReport.title}</strong>
           <p>{latestReport.body}</p>
-          <button className="text-button" type="button" onClick={onOpenReport}>
+          <button className="text-button" type="button" onClick={() => onOpenReport()}>
             앱에서 전체 리포트 보기
             <ChevronRight size={14} />
           </button>
@@ -5910,31 +6020,24 @@ function DirectListingsView({
     <div className="view-stack">
       <div className="section-title">
         <div>
-          <span>직거래 매물보기</span>
-          <h2>확인중 매물과 직거래 신고 사례를 함께 봅니다</h2>
+          <span>직거래</span>
+          <h2>등록 매물부터 바로 확인</h2>
         </div>
         <Store size={22} />
       </div>
 
-      <section className="listing-market-hero">
-        <span>집직구 안심 직거래</span>
-        <strong>매도인이 올리고, 중개사가 실소유자와 허위매물을 확인합니다</strong>
-        <p>등록 매물은 지도에 노란색 매물 박스로 표시되고, 확인 단계가 끝나면 공개 매물로 전환됩니다.</p>
-        <button className="primary-action" type="button" onClick={onRegister}>
-          매물 등록하기
-          <ChevronRight size={18} />
-        </button>
-      </section>
-
-      <MembershipSignupCard />
-
-      <section className="listing-market-section" aria-label="등록된 직거래 매물">
-        <div className="detail-section-head">
+      <section className="listing-market-section listing-market-primary" aria-label="등록된 직거래 매물">
+        <div className="detail-section-head listing-market-head">
           <span>
             <ShieldCheck size={15} />
             등록된 매물
           </span>
-          <em>{userListings.length ? `${userListings.length}건` : '모집중'}</em>
+          <div>
+            <em>{userListings.length ? `${userListings.length}건` : '모집중'}</em>
+            <button className="round-add-button" type="button" onClick={onRegister} aria-label="매물 등록하기">
+              <Plus size={18} />
+            </button>
+          </div>
         </div>
 
         {userListings.length > 0 ? (
@@ -5956,9 +6059,25 @@ function DirectListingsView({
           <div className="listing-market-empty">
             <strong>아직 공개된 직거래 매물이 없습니다</strong>
             <span>첫 매물을 등록하면 실소유자 확인 후 지도에 노란 매물 박스로 노출됩니다.</span>
+            <button className="secondary-action" type="button" onClick={onRegister}>
+              첫 매물 등록하기
+              <Plus size={16} />
+            </button>
           </div>
         )}
       </section>
+
+      <section className="listing-market-hero">
+        <span>집직구 안심 직거래</span>
+        <strong>매도인이 올리고, 중개사가 실소유자와 허위매물을 확인합니다</strong>
+        <p>등록 매물은 지도에 노란색 매물 박스로 표시되고, 확인 단계가 끝나면 공개 매물로 전환됩니다.</p>
+        <button className="primary-action" type="button" onClick={onRegister}>
+          매물 등록하기
+          <ChevronRight size={18} />
+        </button>
+      </section>
+
+      <MembershipSignupCard />
 
       <section className="listing-market-section" aria-label="최근 직거래 신고 사례">
         <div className="detail-section-head">
