@@ -20,6 +20,10 @@
   box-shadow: var(--shadow-xl);
 }
 
+.mobile-stage.mode-report {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .topbar,
 .search-hero,
 .content-panel,
@@ -849,7 +853,7 @@ h1 {
 .map-report-cta {
   left: 22px;
   right: 22px;
-  bottom: 72px;
+  bottom: 92px;
   min-height: 44px;
   border: 2px solid rgba(12, 181, 155, 0.38);
   border-radius: 999px;

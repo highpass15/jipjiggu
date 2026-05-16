@@ -269,22 +269,22 @@ const normalizeNewsTitle = (value: string) =>
     .trim()
 
 const reportNewsQueriesByRegion: Record<string, string[]> = {
-  '안양 전체': [
-    '안양 평촌신도시 정비사업',
-    '안양 인덕원 GTX-C 월곶판교선 동탄인덕원선',
-    '안양 박달스마트시티',
-    '안양교도소 이전 부지 개발',
+  '안양시 동안구': [
+    '안양 동안구 평촌신도시 정비사업',
+    '평촌 범계 호계 귀인 재건축 리모델링',
+    '관양 인덕원 GTX-C 월곶판교선 동탄인덕원선',
   ],
-  '평촌·범계': ['평촌신도시 정비사업 선도지구', '평촌 범계 귀인동 재건축 리모델링'],
-  '호계·신촌·귀인': ['호계동 신촌동 귀인동 재건축 리모델링', '평촌 귀인동 범계동 정비사업'],
-  '관양·인덕원': ['인덕원 GTX-C 월곶판교선 동탄인덕원선', '관양동 인덕원역 개발'],
-  '비산·만안': ['안양 만안구 정비사업', '박달스마트시티 안양', '안양역 생활권 개발', '비산동 재건축'],
-  과천: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트', '과천 원도심 재건축'],
-  '의왕 내손·포일': ['의왕 내손 포일 인덕원 개발', '의왕 백운밸리 인덕원 교통', '내손동 포일동 아파트 정비'],
+  '안양시 만안구': [
+    '안양 만안구 정비사업',
+    '박달스마트시티 안양',
+    '안양역 생활권 개발 석수 박달',
+  ],
+  의왕시: ['의왕 내손 포일 인덕원 개발', '의왕 백운밸리 인덕원 교통', '내손동 포일동 아파트 정비'],
+  과천시: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트', '과천 원도심 재건축'],
 }
 
 const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
-  '안양 전체': [
+  '안양시 동안구': [
     {
       title: '평촌신도시 특별정비구역과 선도지구 추진 속도 점검',
       link: 'https://www.anyang.go.kr/',
@@ -299,6 +299,8 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
       publishedAt: new Date().toISOString(),
       keyword: '인덕원 교통축',
     },
+  ],
+  '안양시 만안구': [
     {
       title: '박달스마트시티와 만안구 장기 개발 기대감 추적',
       link: 'https://www.anyang.go.kr/',
@@ -306,8 +308,15 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
       publishedAt: new Date().toISOString(),
       keyword: '박달스마트시티',
     },
+    {
+      title: '안양역·석수·박달 생활권 정비사업 흐름 점검',
+      link: 'https://www.anyang.go.kr/',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: '만안구 정비사업',
+    },
   ],
-  과천: [
+  과천시: [
     {
       title: '과천 원도심 재건축과 지식정보타운 생활권 변화 점검',
       link: 'https://www.gccity.go.kr/',
@@ -323,7 +332,7 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
       keyword: '정부과천청사역',
     },
   ],
-  '의왕 내손·포일': [
+  의왕시: [
     {
       title: '내손·포일 생활권 정비와 인덕원 접근성 변화 점검',
       link: 'https://www.uiwang.go.kr/',
@@ -342,7 +351,7 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
 }
 
 const getFallbackReportNews = (region: string) =>
-  fallbackReportNewsByRegion[region] ?? fallbackReportNewsByRegion['안양 전체']
+  fallbackReportNewsByRegion[region] ?? fallbackReportNewsByRegion['안양시 동안구']
 
 const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> => {
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:14d`)}&hl=ko&gl=KR&ceid=KR:ko`
@@ -379,14 +388,14 @@ const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> =>
 }
 
 const buildReportNewsPayload = async (region: string) => {
-  const normalizedRegion = region || '안양 전체'
+  const normalizedRegion = region || '안양시 동안구'
   const cached = reportNewsCache.get(normalizedRegion)
 
   if (cached && Date.now() - cached.updatedAt < reportNewsCacheMs) {
     return cached.payload
   }
 
-  const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양 전체']
+  const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양시 동안구']
   const fallbackReportNews = getFallbackReportNews(normalizedRegion)
   const results = await runInBatches(queries, 2, fetchGoogleNewsItems, 250)
   const dedupedItems = Array.from(

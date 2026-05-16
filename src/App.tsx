@@ -34,6 +34,8 @@ import {
 import './App.css'
 
 type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance' | 'report' | 'notifications'
+const appModes: Mode[] = ['prices', 'ai', 'listing', 'directListings', 'inheritance', 'report', 'notifications']
+const isAppMode = (value: unknown): value is Mode => typeof value === 'string' && appModes.includes(value as Mode)
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
   tradeType: 'all' | 'brokered' | 'direct'
@@ -729,23 +731,17 @@ const navItems: Array<{
 ]
 
 const weeklyReportRegionOptions = [
-  '안양 전체',
-  '평촌·범계',
-  '호계·신촌·귀인',
-  '관양·인덕원',
-  '비산·만안',
-  '과천',
-  '의왕 내손·포일',
+  '안양시 동안구',
+  '안양시 만안구',
+  '의왕시',
+  '과천시',
 ]
 
 const weeklyReportRegionKeywords: Record<string, string[]> = {
-  '안양 전체': ['안양', '동안구', '만안구', '평촌', '범계', '호계', '관양', '비산', '안양동', '석수', '박달'],
-  '평촌·범계': ['평촌', '범계', '달안'],
-  '호계·신촌·귀인': ['호계', '신촌', '귀인'],
-  '관양·인덕원': ['관양', '인덕원'],
-  '비산·만안': ['비산', '만안', '안양동', '석수', '박달'],
-  과천: ['과천', '별양', '부림', '원문', '중앙동'],
-  '의왕 내손·포일': ['내손', '포일', '의왕'],
+  '안양시 동안구': ['안양시동안구', '동안구', '평촌', '범계', '호계', '신촌', '귀인', '달안', '부림', '갈산', '비산', '관양', '인덕원'],
+  '안양시 만안구': ['안양시만안구', '만안구', '안양동', '석수', '박달'],
+  의왕시: ['의왕', '내손', '포일', '오전', '청계', '백운'],
+  과천시: ['과천', '별양', '부림', '원문', '중앙', '갈현', '문원'],
 }
 
 const developmentStageLabels = ['이슈화', '계획', '인허가', '착공·공사', '완공·반영']
@@ -1233,21 +1229,16 @@ const uiwangDevelopmentNews: DevelopmentIssue[] = [
 ]
 
 const reportDevelopmentNewsByRegion: Record<string, DevelopmentIssue[]> = {
-  '안양 전체': anyangDevelopmentNews,
-  '평촌·범계': anyangDevelopmentNews.filter((item) =>
-    item.affectedDongs.some((dong) => ['평촌동', '범계동', '귀인동', '부림동', '달안동'].includes(dong)),
+  '안양시 동안구': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) =>
+      ['평촌동', '범계동', '호계동', '신촌동', '귀인동', '달안동', '부림동', '갈산동', '비산동', '관양동', '내손동', '포일동'].includes(dong),
+    ),
   ),
-  '호계·신촌·귀인': anyangDevelopmentNews.filter((item) =>
-    item.affectedDongs.some((dong) => ['호계동', '신촌동', '귀인동', '평촌동', '범계동'].includes(dong)),
+  '안양시 만안구': anyangDevelopmentNews.filter((item) =>
+    item.affectedDongs.some((dong) => ['안양동', '석수동', '박달동'].includes(dong)),
   ),
-  '관양·인덕원': anyangDevelopmentNews.filter((item) =>
-    item.affectedDongs.some((dong) => ['관양동', '인덕원', '평촌동', '내손동', '포일동'].includes(dong)),
-  ),
-  '비산·만안': anyangDevelopmentNews.filter((item) =>
-    item.affectedDongs.some((dong) => ['비산동', '안양동', '석수동', '박달동'].includes(dong)),
-  ),
-  과천: gwacheonDevelopmentNews,
-  '의왕 내손·포일': uiwangDevelopmentNews,
+  의왕시: uiwangDevelopmentNews,
+  과천시: gwacheonDevelopmentNews,
 }
 
 const getReportDevelopmentNews = (region: string) =>
@@ -2142,7 +2133,54 @@ function App() {
     }
   })
   const contentPanelRef = useRef<HTMLElement | null>(null)
+  const modeRef = useRef<Mode>(mode)
+  const historyReadyRef = useRef(false)
+  const restoringHistoryRef = useRef(false)
+  const lastHistoryModeRef = useRef<Mode | null>(null)
   const unreadNotificationCount = appNotifications.filter((notification) => !notification.read).length
+
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+
+  useEffect(() => {
+    const state = { jipjiggu: true, mode: modeRef.current }
+    window.history.replaceState(state, '', window.location.href)
+    historyReadyRef.current = true
+    lastHistoryModeRef.current = modeRef.current
+
+    const handlePopState = (event: PopStateEvent) => {
+      const nextState = event.state as { jipjiggu?: boolean; mode?: unknown } | null
+
+      if (nextState?.jipjiggu && isAppMode(nextState.mode)) {
+        restoringHistoryRef.current = true
+        setMode(nextState.mode)
+        setPriceHeaderMinimized(false)
+        return
+      }
+
+      window.history.pushState({ jipjiggu: true, mode: modeRef.current }, '', window.location.href)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  useEffect(() => {
+    if (!historyReadyRef.current) return
+
+    modeRef.current = mode
+    if (restoringHistoryRef.current) {
+      restoringHistoryRef.current = false
+      lastHistoryModeRef.current = mode
+      return
+    }
+
+    if (lastHistoryModeRef.current === mode) return
+
+    window.history.pushState({ jipjiggu: true, mode }, '', window.location.href)
+    lastHistoryModeRef.current = mode
+  }, [mode])
 
   const handleHomeClick = useCallback(() => {
     setPriceHeaderMinimized(false)
@@ -2389,6 +2427,7 @@ function App() {
       typeof region === 'string' && weeklyReportRegionOptions.includes(region) ? region : activeReportRegion
 
     setActiveReportRegion(nextRegion)
+    setSearchFocused(false)
     setMode('report')
     setPriceHeaderMinimized(false)
 
@@ -2543,57 +2582,59 @@ function App() {
           </button>
         </header>
 
-        <section className="search-hero">
-          <div className="search-box">
-            <Search size={19} />
-            <input
-              id="search"
-              value={query}
-              onChange={(event) => handleSearchChange(event.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
-              placeholder="아파트, 지역, 역 이름 검색"
-            />
-            <button
-              className="search-filter-button"
-              type="button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={handleSearchFilterOpen}
-              aria-label="실거래 필터 열기"
-            >
-              <SlidersHorizontal size={18} />
-            </button>
-          </div>
-
-          {searchFocused && (visibleSearchSuggestions.length > 0 || searchHasNoResults) && (
-            <div
-              className={searchHasNoResults ? 'search-suggestions empty' : 'search-suggestions'}
-              role="listbox"
-              aria-label="추천 검색어"
-            >
-              {query.trim().length < 2 && visibleSearchSuggestions.length > 0 && (
-                <span className="suggestion-kicker">많이 찾는 단지</span>
-              )}
-              {visibleSearchSuggestions.map((apartment) => (
-                <button
-                  key={`${apartment.id}-suggestion`}
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => handleSearchSuggestionClick(apartment)}
-                >
-                  <strong>{apartment.title}</strong>
-                  <span>{apartment.subtitle}</span>
-                </button>
-              ))}
-              {searchHasNoResults && (
-                <div className="suggestion-empty">
-                  <strong>검색 결과가 아직 없습니다</strong>
-                  <span>아파트명은 붙여쓰기나 일부 이름으로도 다시 찾아볼 수 있어요.</span>
-                </div>
-              )}
+        {mode !== 'report' && (
+          <section className="search-hero">
+            <div className="search-box">
+              <Search size={19} />
+              <input
+                id="search"
+                value={query}
+                onChange={(event) => handleSearchChange(event.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
+                placeholder="아파트, 지역, 역 이름 검색"
+              />
+              <button
+                className="search-filter-button"
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={handleSearchFilterOpen}
+                aria-label="실거래 필터 열기"
+              >
+                <SlidersHorizontal size={18} />
+              </button>
             </div>
-          )}
-        </section>
+
+            {searchFocused && (visibleSearchSuggestions.length > 0 || searchHasNoResults) && (
+              <div
+                className={searchHasNoResults ? 'search-suggestions empty' : 'search-suggestions'}
+                role="listbox"
+                aria-label="추천 검색어"
+              >
+                {query.trim().length < 2 && visibleSearchSuggestions.length > 0 && (
+                  <span className="suggestion-kicker">많이 찾는 단지</span>
+                )}
+                {visibleSearchSuggestions.map((apartment) => (
+                  <button
+                    key={`${apartment.id}-suggestion`}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSearchSuggestionClick(apartment)}
+                  >
+                    <strong>{apartment.title}</strong>
+                    <span>{apartment.subtitle}</span>
+                  </button>
+                ))}
+                {searchHasNoResults && (
+                  <div className="suggestion-empty">
+                    <strong>검색 결과가 아직 없습니다</strong>
+                    <span>아파트명은 붙여쓰기나 일부 이름으로도 다시 찾아볼 수 있어요.</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="content-panel" ref={contentPanelRef}>
           {mode === 'prices' && (
@@ -2818,9 +2859,9 @@ function PriceView({
           const containerRect = scrollContainer.getBoundingClientRect()
           const detailRect = detailNode.getBoundingClientRect()
           const targetTop = scrollContainer.scrollTop + detailRect.top - containerRect.top - 6
-          scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+          scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' })
         } else {
-          detailNode.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          detailNode.scrollIntoView({ behavior: 'auto', block: 'start' })
         }
         return
       }
@@ -3017,8 +3058,8 @@ function PriceView({
   return (
     <div className="view-stack price-view">
       <section className="local-report-entry" aria-label="우리동네 리포트 바로가기">
-        <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
-          <strong>지역선택 후 리포트 보기</strong>
+        <button className="local-report-main" type="button" onClick={() => onOpenReport('안양시 동안구')}>
+          <strong>우리 동네 리포트 보기</strong>
         </button>
       </section>
 
@@ -4257,7 +4298,7 @@ function ApartmentMap({
           <button type="button">면적</button>
         </div>
         <button className="map-report-cta" type="button" onClick={() => onReportClick()}>
-          지역선택 후 리포트 보기
+          우리 동네 리포트 보기
           <FileText size={15} />
         </button>
         <button className="map-new-deal" type="button">
@@ -4471,9 +4512,12 @@ function useMarkerHistory(marker: MapValueMarker) {
       }
     }
 
-    fetchHistory()
+    const timerId = window.setTimeout(fetchHistory, 120)
 
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      window.clearTimeout(timerId)
+    }
   }, [cachedHistory, historyCacheKey, marker, seedDeals])
 
   const isCurrent = remoteHistory?.markerId === marker.id
@@ -4481,7 +4525,7 @@ function useMarkerHistory(marker: MapValueMarker) {
 
   return {
     history: resolvedHistory ? resolvedHistory.deals : seedDeals,
-    status: resolvedHistory ? resolvedHistory.status : marker.lawdCd ? 'loading' : 'fallback',
+    status: resolvedHistory ? resolvedHistory.status : seedDeals.length > 0 ? 'fallback' : marker.lawdCd ? 'loading' : 'fallback',
   }
 }
 
