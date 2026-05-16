@@ -6,6 +6,7 @@ import {
   Building2,
   BusFront,
   Calculator,
+  CalendarDays,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -33,8 +34,25 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-type Mode = 'prices' | 'ai' | 'listing' | 'directListings' | 'inheritance' | 'report' | 'notifications'
-const appModes: Mode[] = ['prices', 'ai', 'listing', 'directListings', 'inheritance', 'report', 'notifications']
+type Mode =
+  | 'prices'
+  | 'ai'
+  | 'listing'
+  | 'directListings'
+  | 'inheritance'
+  | 'report'
+  | 'subscription'
+  | 'notifications'
+const appModes: Mode[] = [
+  'prices',
+  'ai',
+  'listing',
+  'directListings',
+  'inheritance',
+  'report',
+  'subscription',
+  'notifications',
+]
 const isAppMode = (value: unknown): value is Mode => typeof value === 'string' && appModes.includes(value as Mode)
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
 type MapFilterState = {
@@ -137,6 +155,22 @@ type ReportNewsItem = {
   source: string
   publishedAt: string
   keyword: string
+}
+
+type SubscriptionNotice = {
+  id: string
+  title: string
+  address: string
+  region: '전국' | '서울' | '경기' | '인천' | '부산'
+  category: 'private' | 'public' | 'result'
+  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사'
+  status: string
+  deadlineLabel: string
+  visitors: number
+  alerts: number
+  isPopular?: boolean
+  url: string
+  updatedAt: string
 }
 
 type LiveRtmsDeal = {
@@ -727,7 +761,35 @@ const navItems: Array<{
   { id: 'ai', label: 'AI추천', icon: Sparkles },
   { id: 'listing', label: '직거래', icon: ShieldCheck },
   { id: 'report', label: '리포트', icon: FileText },
-  { id: 'inheritance', label: '증여', icon: Calculator },
+  { id: 'subscription', label: '청약', icon: CalendarDays },
+]
+
+const seoulReportRegionOptions = [
+  '서울 종로구',
+  '서울 중구',
+  '서울 용산구',
+  '서울 성동구',
+  '서울 광진구',
+  '서울 동대문구',
+  '서울 중랑구',
+  '서울 성북구',
+  '서울 강북구',
+  '서울 도봉구',
+  '서울 노원구',
+  '서울 은평구',
+  '서울 서대문구',
+  '서울 마포구',
+  '서울 양천구',
+  '서울 강서구',
+  '서울 구로구',
+  '서울 금천구',
+  '서울 영등포구',
+  '서울 동작구',
+  '서울 관악구',
+  '서울 서초구',
+  '서울 강남구',
+  '서울 송파구',
+  '서울 강동구',
 ]
 
 const weeklyReportRegionOptions = [
@@ -735,14 +797,165 @@ const weeklyReportRegionOptions = [
   '안양시 만안구',
   '의왕시',
   '과천시',
+  ...seoulReportRegionOptions,
 ]
 
-const weeklyReportRegionKeywords: Record<string, string[]> = {
+const baseWeeklyReportRegionKeywords: Record<string, string[]> = {
   '안양시 동안구': ['안양시동안구', '동안구', '평촌', '범계', '호계', '신촌', '귀인', '달안', '부림', '갈산', '비산', '관양', '인덕원'],
   '안양시 만안구': ['안양시만안구', '만안구', '안양동', '석수', '박달'],
   의왕시: ['의왕', '내손', '포일', '오전', '청계', '백운'],
   과천시: ['과천', '별양', '부림', '원문', '중앙', '갈현', '문원'],
 }
+
+const weeklyReportRegionKeywords: Record<string, string[]> = {
+  ...baseWeeklyReportRegionKeywords,
+  ...Object.fromEntries(
+    seoulReportRegionOptions.map((region) => {
+      const district = region.replace('서울 ', '')
+      return [region, [region, district, district.replace('구', '')]]
+    }),
+  ),
+}
+
+const subscriptionRegionOptions: Array<SubscriptionNotice['region']> = ['전국', '서울', '경기', '인천', '부산']
+const subscriptionTabOptions: Array<{
+  id: SubscriptionNotice['category']
+  label: string
+}> = [
+  { id: 'private', label: '민간분양' },
+  { id: 'public', label: '공공분양' },
+  { id: 'result', label: '분양결과' },
+]
+
+const fallbackSubscriptionNotices: SubscriptionNotice[] = [
+  {
+    id: 'applyhome-suwon-honors',
+    title: '수원역아너스빌플라츠',
+    address: '경기도 수원시 팔달구 고등동',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '청약접수',
+    deadlineLabel: 'D-2',
+    visitors: 44192,
+    alerts: 279,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-wonjong',
+    title: '중앙하이츠원종역',
+    address: '경기도 부천시 오정구 원종동',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '특별공급',
+    deadlineLabel: 'D-2',
+    visitors: 41273,
+    alerts: 285,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-onam',
+    title: '오남역서희스타힐스여의재3단지',
+    address: '경기도 남양주시 오남읍 양지리',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '특별공급',
+    deadlineLabel: 'D-10',
+    visitors: 198046,
+    alerts: 3157,
+    isPopular: true,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'sh-godeok-gangil',
+    title: '고덕강일 공공주택지구',
+    address: '서울특별시 강동구 고덕강일지구',
+    region: '서울',
+    category: 'public',
+    source: 'SH 서울주택도시공사',
+    status: '공급공고 확인',
+    deadlineLabel: '공고중',
+    visitors: 32810,
+    alerts: 612,
+    url: 'https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'sh-magok',
+    title: '마곡지구 공공주택',
+    address: '서울특별시 강서구 마곡동',
+    region: '서울',
+    category: 'public',
+    source: 'SH 서울주택도시공사',
+    status: '청약정보 확인',
+    deadlineLabel: '서울공급',
+    visitors: 28760,
+    alerts: 541,
+    url: 'https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-public-gyeonggi',
+    title: 'LH 경기권 공공분양',
+    address: '경기도권 신규 공공주택 공급',
+    region: '경기',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 62410,
+    alerts: 1430,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-incheon',
+    title: 'LH 인천권 공공분양',
+    address: '인천광역시 검단·계양권',
+    region: '인천',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 37500,
+    alerts: 720,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-result-seoul',
+    title: '서울 민간분양 당첨자 발표',
+    address: '서울 주요 분양 단지 결과',
+    region: '서울',
+    category: 'result',
+    source: '청약홈',
+    status: '당첨자 발표',
+    deadlineLabel: '결과확인',
+    visitors: 51220,
+    alerts: 860,
+    url: 'https://www.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-busan',
+    title: '부산권 공공분양 모집',
+    address: '부산광역시 공공주택 공급',
+    region: '부산',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 22480,
+    alerts: 390,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+]
 
 const developmentStageLabels = ['이슈화', '계획', '인허가', '착공·공사', '완공·반영']
 
@@ -1241,8 +1454,63 @@ const reportDevelopmentNewsByRegion: Record<string, DevelopmentIssue[]> = {
   과천시: gwacheonDevelopmentNews,
 }
 
+const buildSeoulDevelopmentNews = (region: string): DevelopmentIssue[] => {
+  const district = region.replace('서울 ', '')
+
+  return [
+    {
+      rank: 1,
+      title: `${district} 정비사업`,
+      area: district,
+      buzzScore: 82,
+      progress: 48,
+      activeStageIndex: 2,
+      expectedYear: '2027~2030 관찰',
+      plainBrief: `${district} 주요 정비구역의 인허가와 이주 일정이 핵심입니다.`,
+      phase: '정비사업 일정 확인',
+      nextMilestone: '다음 확인: 구역별 조합 일정, 이주·철거 계획, 일반분양 시점',
+      priceImpact: '정비사업 인접 단지는 신축 기대와 전세 이주 수요를 함께 확인해야 합니다.',
+      affectedDongs: [district],
+      relatedApartments: [`${district} 주요 구축 단지`, `${district} 역세권 단지`, `${district} 신축 단지`],
+      keywords: ['재건축', '재개발', '일반분양'],
+      body: `${district} 안에서 정비사업 속도가 빠른 생활권을 주간 리포트에서 우선 추적합니다.`,
+      timeline: [
+        { label: '구역 이슈화', status: 'done' },
+        { label: '인허가·조합 일정', status: 'active' },
+        { label: '이주·분양 반영', status: 'watch' },
+      ],
+    },
+    {
+      rank: 2,
+      title: `${district} 교통·상권 변화`,
+      area: district,
+      buzzScore: 74,
+      progress: 38,
+      activeStageIndex: 1,
+      expectedYear: '2026~2029 확인',
+      plainBrief: `${district} 역세권과 상권 변화가 거래 회복에 영향을 주는지 봅니다.`,
+      phase: '생활권 변화 관찰',
+      nextMilestone: '다음 확인: 역세권 개발, 상권 공실률, 신규 공급 일정',
+      priceImpact: '역세권·학군·상권이 겹치는 단지는 거래 회전율을 함께 봐야 합니다.',
+      affectedDongs: [district],
+      relatedApartments: [`${district} 역세권 단지`, `${district} 학군지 단지`, `${district} 대단지`],
+      keywords: ['역세권', '상권', '학군'],
+      body: `${district}의 교통과 상권 변화는 매수 선호도와 전세 수요에 직접 연결됩니다.`,
+      timeline: [
+        { label: '생활권 변화 감지', status: 'done' },
+        { label: '거래 반응 확인', status: 'active' },
+        { label: '가격 반영 관찰', status: 'watch' },
+      ],
+    },
+  ]
+}
+
 const getReportDevelopmentNews = (region: string) =>
-  reportDevelopmentNewsByRegion[region]?.length ? reportDevelopmentNewsByRegion[region] : anyangDevelopmentNews
+  reportDevelopmentNewsByRegion[region]?.length
+    ? reportDevelopmentNewsByRegion[region]
+    : region.startsWith('서울 ')
+      ? buildSeoulDevelopmentNews(region)
+      : anyangDevelopmentNews
 
 const sendTelegramLead = async (type: string, payload: LeadPayload) => {
   try {
@@ -2582,7 +2850,7 @@ function App() {
           </button>
         </header>
 
-        {mode !== 'report' && (
+        {mode !== 'report' && mode !== 'subscription' && (
           <section className="search-hero">
             <div className="search-box">
               <Search size={19} />
@@ -2666,6 +2934,8 @@ function App() {
               onOpenMap={() => setMode('prices')}
             />
           )}
+
+          {mode === 'subscription' && <SubscriptionView />}
 
           {mode === 'ai' && (
             <AiView
@@ -2858,7 +3128,8 @@ function PriceView({
         if (scrollContainer instanceof HTMLElement) {
           const containerRect = scrollContainer.getBoundingClientRect()
           const detailRect = detailNode.getBoundingClientRect()
-          const targetTop = scrollContainer.scrollTop + detailRect.top - containerRect.top - 6
+          const fixedHeaderOffset = window.matchMedia('(max-width: 860px)').matches ? 154 : 6
+          const targetTop = scrollContainer.scrollTop + detailRect.top - containerRect.top - fixedHeaderOffset
           scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' })
         } else {
           detailNode.scrollIntoView({ behavior: 'auto', block: 'start' })
@@ -3668,6 +3939,134 @@ function NotificationCenterView({
           </button>
         </section>
       )}
+    </div>
+  )
+}
+
+function SubscriptionView() {
+  const [selectedTab, setSelectedTab] = useState<SubscriptionNotice['category']>('private')
+  const [selectedRegion, setSelectedRegion] = useState<SubscriptionNotice['region']>('전국')
+  const [notices, setNotices] = useState<SubscriptionNotice[]>(fallbackSubscriptionNotices)
+  const [updatedAt, setUpdatedAt] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    void (async () => {
+      try {
+        const response = await fetch('/api/subscriptions', { signal: controller.signal })
+        const payload = (await response.json()) as {
+          items?: SubscriptionNotice[]
+          updatedAt?: string
+        }
+
+        if (!controller.signal.aborted && Array.isArray(payload.items) && payload.items.length > 0) {
+          setNotices(payload.items)
+          setUpdatedAt(payload.updatedAt ?? '')
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setNotices(fallbackSubscriptionNotices)
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  }, [])
+
+  const filteredNotices = notices
+    .filter((notice) => notice.category === selectedTab)
+    .filter((notice) => selectedRegion === '전국' || notice.region === selectedRegion)
+    .sort((a, b) => {
+      if (a.isPopular !== b.isPopular) return a.isPopular ? -1 : 1
+      return b.alerts - a.alerts || b.visitors - a.visitors
+    })
+
+  return (
+    <div className="view-stack subscription-view">
+      <section className="subscription-hero">
+        <div>
+          <span>청약/분양</span>
+          <h2>청약홈·LH·SH 공고를 한눈에</h2>
+          <p>민간분양, 공공분양, 분양결과를 지역별로 빠르게 확인하세요.</p>
+        </div>
+        <small>{updatedAt ? `${formatKoreanDateTime(updatedAt)} 갱신` : '공식 출처 연결'}</small>
+      </section>
+
+      <section className="subscription-tabs" aria-label="청약 유형">
+        {subscriptionTabOptions.map((tab) => (
+          <button
+            className={selectedTab === tab.id ? 'active' : ''}
+            key={tab.id}
+            onClick={() => setSelectedTab(tab.id)}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </section>
+
+      <section className="subscription-region-tabs" aria-label="청약 지역">
+        {subscriptionRegionOptions.map((region) => (
+          <button
+            className={selectedRegion === region ? 'active' : ''}
+            key={region}
+            onClick={() => setSelectedRegion(region)}
+            type="button"
+          >
+            {region}
+          </button>
+        ))}
+      </section>
+
+      <section className="subscription-source-strip" aria-label="청약 공식 출처">
+        <a href="https://www.applyhome.co.kr/co/coa/selectMainView.do" target="_blank" rel="noreferrer">
+          청약홈
+          <ExternalLink size={13} />
+        </a>
+        <a href="https://apply.lh.or.kr/lhapply/main.do" target="_blank" rel="noreferrer">
+          LH 청약플러스
+          <ExternalLink size={13} />
+        </a>
+        <a href="https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do" target="_blank" rel="noreferrer">
+          SH 청약정보
+          <ExternalLink size={13} />
+        </a>
+      </section>
+
+      <section className="subscription-list" aria-label="청약 공고 목록">
+        {filteredNotices.length > 0 ? (
+          filteredNotices.map((notice) => (
+            <article className="subscription-card" key={notice.id}>
+              <div className="subscription-card-main">
+                <span>
+                  {notice.source}
+                  {notice.isPopular && <em>인기</em>}
+                </span>
+                <strong>{notice.title}</strong>
+                <p>{notice.address}</p>
+                <b>
+                  {notice.status} {notice.deadlineLabel}
+                </b>
+                <small>
+                  {notice.visitors.toLocaleString('ko-KR')}회 방문
+                  <i />
+                  {notice.alerts.toLocaleString('ko-KR')} 알림받는 중
+                </small>
+              </div>
+              <a className="subscription-alert-button" href={notice.url} target="_blank" rel="noreferrer" aria-label={`${notice.title} 공식 공고 확인`}>
+                <Bell size={18} />
+              </a>
+            </article>
+          ))
+        ) : (
+          <div className="subscription-empty">
+            <CalendarDays size={26} />
+            <strong>선택한 지역의 공고를 확인 중입니다</strong>
+            <p>공식 사이트에 신규 공고가 올라오면 이 화면에 맞춰 연결해둘게요.</p>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

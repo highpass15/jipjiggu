@@ -4529,6 +4529,271 @@ h1 {
   font-weight: 800;
 }
 
+.subscription-view {
+  gap: 12px;
+}
+
+.subscription-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 18px;
+  border: 1px solid rgba(12, 181, 155, 0.16);
+  background:
+    radial-gradient(circle at 92% -20%, rgba(91, 77, 243, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(12, 181, 155, 0.14), rgba(255, 255, 255, 0.96)),
+    #ffffff;
+}
+
+.subscription-hero span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.subscription-hero h2 {
+  max-width: 310px;
+  margin-top: 6px;
+  color: var(--text-strong);
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 950;
+  word-break: keep-all;
+}
+
+.subscription-hero p {
+  max-width: 320px;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 800;
+  word-break: keep-all;
+}
+
+.subscription-hero small {
+  flex: 0 0 auto;
+  padding: 8px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.subscription-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+.subscription-tabs button {
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 5px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: #ffffff;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.subscription-tabs button.active {
+  border-color: var(--text-strong);
+  color: var(--text-strong);
+}
+
+.subscription-region-tabs,
+.subscription-source-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.subscription-region-tabs::-webkit-scrollbar,
+.subscription-source-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.subscription-region-tabs {
+  padding: 2px 2px 0;
+}
+
+.subscription-region-tabs button {
+  flex: 0 0 auto;
+  min-width: 68px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: #ffffff;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 950;
+  box-shadow: var(--shadow-sm);
+}
+
+.subscription-region-tabs button.active {
+  border-color: #5b4df3;
+  color: #4f46e5;
+  box-shadow:
+    inset 0 0 0 1px #5b4df3,
+    var(--shadow-sm);
+}
+
+.subscription-source-strip a {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(12, 181, 155, 0.2);
+  border-radius: 999px;
+  background: #f5fbf9;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.subscription-list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.subscription-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+}
+
+.subscription-card:last-child {
+  border-bottom: 0;
+}
+
+.subscription-card-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.subscription-card-main span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #5b4df3;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.subscription-card-main span em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.subscription-card-main strong {
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1.24;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.subscription-card-main p {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 750;
+  word-break: keep-all;
+}
+
+.subscription-card-main b {
+  color: #5b4df3;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.subscription-card-main small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.subscription-card-main small i {
+  width: 1px;
+  height: 12px;
+  background: var(--border-soft);
+}
+
+.subscription-alert-button {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8eef5;
+  color: #64748b;
+  text-decoration: none;
+}
+
+.subscription-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px 18px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.subscription-empty svg {
+  color: var(--accent);
+}
+
+.subscription-empty strong {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.subscription-empty p {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 800;
+  word-break: keep-all;
+}
+
 .bottom-nav {
   position: relative;
   z-index: 50;
@@ -4708,12 +4973,13 @@ h1 {
   }
 
   .mode-prices .topbar {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 18;
-    height: 78px;
+    z-index: 80;
+    height: 84px;
+    padding-top: max(6px, env(safe-area-inset-top));
     border-bottom: 0;
     background:
       radial-gradient(circle at 18% -22%, rgba(63, 255, 218, 0.18), transparent 38%),
@@ -4723,11 +4989,11 @@ h1 {
   }
 
   .mode-prices .search-hero {
-    position: absolute;
-    top: 78px;
+    position: fixed;
+    top: 84px;
     left: 0;
     right: 0;
-    z-index: 18;
+    z-index: 79;
     gap: 0;
     padding-block: 8px;
     background: transparent;
@@ -4735,9 +5001,9 @@ h1 {
 
   .mode-prices.map-header-minimized:has(#trade-detail-panel) .topbar,
   .mode-prices.map-header-minimized:has(#trade-detail-panel) .search-hero {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-110%);
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
   }
 
   .mode-prices .search-box {
@@ -4789,13 +5055,13 @@ h1 {
   }
 
   .mode-prices .map-filter-overlay {
-    top: 144px;
+    top: 150px;
     left: 14px;
     right: 14px;
   }
 
   .mode-prices .map-side-tools {
-    top: 196px;
+    top: 202px;
     left: 14px;
   }
 
@@ -4804,7 +5070,7 @@ h1 {
   }
 
   .mode-prices .trade-detail {
-    scroll-margin-top: 0;
+    scroll-margin-top: 154px;
     border-top: 0;
     border-radius: 22px 22px 0 0;
   }
@@ -4857,6 +5123,9 @@ h1 {
   .search-hero,
   .content-panel {
     padding-inline: 16px;
+  }
+
+  .content-panel {
     padding-bottom: 96px;
   }
 

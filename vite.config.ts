@@ -49,6 +49,21 @@ type ReportNewsCache = {
     items: ReportNewsItem[]
   }
 }
+type SubscriptionNotice = {
+  id: string
+  title: string
+  address: string
+  region: '전국' | '서울' | '경기' | '인천' | '부산'
+  category: 'private' | 'public' | 'result'
+  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사'
+  status: string
+  deadlineLabel: string
+  visitors: number
+  alerts: number
+  isPopular?: boolean
+  url: string
+  updatedAt: string
+}
 
 const seoulDistricts: TargetDistrict[] = [
   ['11110', '서울 종로구'],
@@ -139,6 +154,7 @@ const gyeonggiDistricts: TargetDistrict[] = [
 ].map(([code, name]) => ({ code, name, metro: 'gyeonggi' }))
 
 const capitalAreaDistricts = [...seoulDistricts, ...gyeonggiDistricts, ...incheonDistricts]
+const seoulReportRegionNames = seoulDistricts.map((district) => district.name)
 const rtmsDailyRefreshHour = 1
 const rtmsDefaultCapitalMonthsBack = 3
 const rtmsMapMarkerMonthsBack = 60
@@ -283,6 +299,19 @@ const reportNewsQueriesByRegion: Record<string, string[]> = {
   과천시: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트', '과천 원도심 재건축'],
 }
 
+const buildGenericReportNewsQueries = (region: string) => [
+  `${region} 아파트 정비사업 재건축 재개발`,
+  `${region} 교통 개발 분양 부동산`,
+  `${region} 역세권 주택 공급 아파트`,
+]
+
+const buildGenericReportNewsKeywords = (region: string) => {
+  const compactRegion = region.replace(/\s+/g, '')
+  const withoutMetro = region.replace(/^서울\s+/, '')
+  const withoutGu = withoutMetro.replace(/구$/, '')
+  return Array.from(new Set([region, compactRegion, withoutMetro, withoutGu].filter(Boolean)))
+}
+
 const reportRegionAliases: Record<string, string> = {
   '안양 전체': '안양시 동안구',
   '평촌·범계': '안양시 동안구',
@@ -324,7 +353,11 @@ const reportNewsTopicKeywords = [
 
 const normalizeReportRegion = (region: string) => {
   const trimmedRegion = region.trim()
-  return reportNewsQueriesByRegion[trimmedRegion] ? trimmedRegion : reportRegionAliases[trimmedRegion] ?? '안양시 동안구'
+  if (reportNewsQueriesByRegion[trimmedRegion] || seoulReportRegionNames.includes(trimmedRegion)) {
+    return trimmedRegion
+  }
+
+  return reportRegionAliases[trimmedRegion] ?? '안양시 동안구'
 }
 
 const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
@@ -394,8 +427,153 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
   ],
 }
 
+const subscriptionFallbackItems: SubscriptionNotice[] = [
+  {
+    id: 'applyhome-suwon-honors',
+    title: '수원역아너스빌플라츠',
+    address: '경기도 수원시 팔달구 고등동',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '청약접수',
+    deadlineLabel: 'D-2',
+    visitors: 44192,
+    alerts: 279,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-wonjong',
+    title: '중앙하이츠원종역',
+    address: '경기도 부천시 오정구 원종동',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '특별공급',
+    deadlineLabel: 'D-2',
+    visitors: 41273,
+    alerts: 285,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-onam',
+    title: '오남역서희스타힐스여의재3단지',
+    address: '경기도 남양주시 오남읍 양지리',
+    region: '경기',
+    category: 'private',
+    source: '청약홈',
+    status: '특별공급',
+    deadlineLabel: 'D-10',
+    visitors: 198046,
+    alerts: 3157,
+    isPopular: true,
+    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'sh-godeok-gangil',
+    title: '고덕강일 공공주택지구',
+    address: '서울특별시 강동구 고덕강일지구',
+    region: '서울',
+    category: 'public',
+    source: 'SH 서울주택도시공사',
+    status: '공급공고 확인',
+    deadlineLabel: '공고중',
+    visitors: 32810,
+    alerts: 612,
+    url: 'https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'sh-magok',
+    title: '마곡지구 공공주택',
+    address: '서울특별시 강서구 마곡동',
+    region: '서울',
+    category: 'public',
+    source: 'SH 서울주택도시공사',
+    status: '청약정보 확인',
+    deadlineLabel: '서울공급',
+    visitors: 28760,
+    alerts: 541,
+    url: 'https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-public-gyeonggi',
+    title: 'LH 경기권 공공분양',
+    address: '경기도권 신규 공공주택 공급',
+    region: '경기',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 62410,
+    alerts: 1430,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-incheon',
+    title: 'LH 인천권 공공분양',
+    address: '인천광역시 검단·계양권',
+    region: '인천',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 37500,
+    alerts: 720,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'applyhome-result-seoul',
+    title: '서울 민간분양 당첨자 발표',
+    address: '서울 주요 분양 단지 결과',
+    region: '서울',
+    category: 'result',
+    source: '청약홈',
+    status: '당첨자 발표',
+    deadlineLabel: '결과확인',
+    visitors: 51220,
+    alerts: 860,
+    url: 'https://www.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
+    updatedAt: '2026-05-16',
+  },
+  {
+    id: 'lh-busan',
+    title: '부산권 공공분양 모집',
+    address: '부산광역시 공공주택 공급',
+    region: '부산',
+    category: 'public',
+    source: 'LH 청약플러스',
+    status: '모집공고 확인',
+    deadlineLabel: '공공분양',
+    visitors: 22480,
+    alerts: 390,
+    url: 'https://apply.lh.or.kr/lhapply/main.do',
+    updatedAt: '2026-05-16',
+  },
+]
+
 const getFallbackReportNews = (region: string) =>
-  fallbackReportNewsByRegion[normalizeReportRegion(region)] ?? fallbackReportNewsByRegion['안양시 동안구']
+  fallbackReportNewsByRegion[normalizeReportRegion(region)] ?? [
+    {
+      title: `${normalizeReportRegion(region)} 정비사업과 분양 이슈를 주간 단위로 확인`,
+      link: 'https://www.applyhome.co.kr/co/coa/selectMainView.do',
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: normalizeReportRegion(region),
+    },
+    {
+      title: `${normalizeReportRegion(region)} 교통·개발 뉴스가 거래에 미치는 영향 점검`,
+      link: `https://news.google.com/search?q=${encodeURIComponent(`${normalizeReportRegion(region)} 아파트 개발`)}`,
+      source: '집직구 브리핑',
+      publishedAt: new Date().toISOString(),
+      keyword: normalizeReportRegion(region),
+    },
+  ]
 
 const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> => {
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:14d`)}&hl=ko&gl=KR&ceid=KR:ko`
@@ -432,7 +610,7 @@ const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> =>
 }
 
 const filterReportNewsByRegion = (items: ReportNewsItem[], region: string) => {
-  const keywords = reportNewsKeywordsByRegion[region] ?? []
+  const keywords = reportNewsKeywordsByRegion[region] ?? buildGenericReportNewsKeywords(region)
   if (keywords.length === 0) return items
 
   return items.filter((item) => {
@@ -457,7 +635,7 @@ const buildReportNewsPayload = async (region: string) => {
     return cached.payload
   }
 
-  const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양시 동안구']
+  const queries = reportNewsQueriesByRegion[normalizedRegion] ?? buildGenericReportNewsQueries(normalizedRegion)
   const fallbackReportNews = getFallbackReportNews(normalizedRegion)
   const results = await runInBatches(queries, 2, fetchGoogleNewsItems, 250)
   const regionMatchedItems = filterReportNewsByRegion(results.flat(), normalizedRegion)
@@ -1679,6 +1857,74 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
             source: '집직구 기본 브리핑',
             updatedAt: new Date().toISOString(),
             items: getFallbackReportNews(region),
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        )
+      }
+    })
+
+    server.middlewares.use('/api/subscriptions', async (_request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'public, max-age=900')
+
+      const sources = [
+        {
+          name: '청약홈',
+          url: 'https://www.applyhome.co.kr/co/coa/selectMainView.do',
+        },
+        {
+          name: 'LH 청약플러스',
+          url: 'https://apply.lh.or.kr/lhapply/main.do',
+        },
+        {
+          name: 'SH 서울주택도시공사',
+          url: 'https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do',
+        },
+      ]
+
+      try {
+        const sourceStatuses = await Promise.all(
+          sources.map(async (source) => {
+            try {
+              const sourceResponse = await fetchWithTimeout(source.url, 6000, {
+                headers: {
+                  'user-agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
+                },
+              })
+              return {
+                ...source,
+                ok: sourceResponse.ok,
+                status: sourceResponse.status,
+              }
+            } catch {
+              return {
+                ...source,
+                ok: false,
+                status: 0,
+              }
+            }
+          }),
+        )
+
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: true,
+            source: '청약홈·LH 청약플러스·SH 서울주택도시공사',
+            updatedAt: new Date().toISOString(),
+            sourceStatuses,
+            items: subscriptionFallbackItems,
+          }),
+        )
+      } catch (error) {
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: false,
+            source: '집직구 청약 기본 브리핑',
+            updatedAt: new Date().toISOString(),
+            items: subscriptionFallbackItems,
             error: error instanceof Error ? error.message : 'Unknown error',
           }),
         )
