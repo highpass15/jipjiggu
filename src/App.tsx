@@ -1179,6 +1179,19 @@ const getLatestSaturdayMorning = (baseDate = new Date()) => {
 const getLocalDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
+const getReportPopupDismissKey = () => `jipjiggu-report-popup-dismissed-${getLocalDateKey(new Date())}`
+
+const shouldShowInitialReportPopup = () => {
+  if (typeof window === 'undefined') return false
+
+  try {
+    const isMobileViewport = window.matchMedia('(max-width: 860px)').matches
+    return isMobileViewport && window.localStorage.getItem(getReportPopupDismissKey()) !== '1'
+  } catch {
+    return false
+  }
+}
+
 const withCurrentWeeklyReportNotification = (notifications: AppNotification[]): AppNotification[] => {
   const latestSaturdayMorning = getLatestSaturdayMorning()
   const notificationId = `weekly-report-${getLocalDateKey(latestSaturdayMorning)}`
@@ -1954,6 +1967,8 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
 function App() {
   const [mode, setMode] = useState<Mode>('prices')
   const [activeReportRegion, setActiveReportRegion] = useState(weeklyReportRegionOptions[0])
+  const [reportPopupOpen, setReportPopupOpen] = useState(() => shouldShowInitialReportPopup())
+  const [reportPopupRegion, setReportPopupRegion] = useState(weeklyReportRegionOptions[0])
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
@@ -2212,9 +2227,31 @@ function App() {
     setFocusApartment(null)
   }
 
-  const handleOpenReport = (region = activeReportRegion) => {
-    setActiveReportRegion(region)
+  const handleOpenReport = (region?: unknown) => {
+    const nextRegion =
+      typeof region === 'string' && weeklyReportRegionOptions.includes(region) ? region : activeReportRegion
+
+    setActiveReportRegion(nextRegion)
     setMode('report')
+    setReportPopupOpen(false)
+
+    window.requestAnimationFrame(() => {
+      contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    })
+  }
+
+  const handleConfirmReportPopup = () => {
+    handleOpenReport(reportPopupRegion)
+  }
+
+  const handleDismissReportPopupToday = () => {
+    try {
+      window.localStorage.setItem(getReportPopupDismissKey(), '1')
+    } catch {
+      // localStorage can be blocked in some in-app browsers; closing still keeps the flow usable.
+    }
+    setReportPopupOpen(false)
   }
 
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
@@ -2410,6 +2447,41 @@ function App() {
             </div>
           )}
         </section>
+
+        {reportPopupOpen && (
+          <section className="report-entry-modal" role="dialog" aria-modal="true" aria-label="우리동네 리포트 보기">
+            <button
+              className="report-entry-backdrop"
+              type="button"
+              aria-label="우리동네 리포트 팝업 닫기"
+              onClick={() => setReportPopupOpen(false)}
+            />
+            <div className="report-entry-card">
+              <span>집직구 주간 리포트</span>
+              <h2>우리동네 리포트 보기</h2>
+              <p>지역을 고르면 실거래 흐름과 개발 소식을 바로 볼 수 있어요.</p>
+              <div className="report-entry-region-grid" aria-label="리포트 지역 선택">
+                {weeklyReportRegionOptions.map((region) => (
+                  <button
+                    className={reportPopupRegion === region ? 'active' : ''}
+                    key={`report-popup-${region}`}
+                    type="button"
+                    onClick={() => setReportPopupRegion(region)}
+                  >
+                    {region}
+                  </button>
+                ))}
+              </div>
+              <button className="report-entry-primary" type="button" onClick={handleConfirmReportPopup}>
+                확인
+                <ChevronRight size={16} />
+              </button>
+              <button className="report-entry-muted" type="button" onClick={handleDismissReportPopupToday}>
+                오늘 하루 보지 않기
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="content-panel" ref={contentPanelRef}>
           {mode === 'prices' && (
@@ -3013,7 +3085,7 @@ function NeighborhoodReportView({
   initialRegion: string
   onRegionChange: (region: string) => void
 }) {
-  const [region, setRegion] = useState(initialRegion)
+  const region = initialRegion
   const [reportExpanded, setReportExpanded] = useState(true)
   const [reportSubscribed, setReportSubscribed] = useState(false)
   const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
@@ -3022,7 +3094,6 @@ function NeighborhoodReportView({
   const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
 
   const handleRegionSelect = (nextRegion: string) => {
-    setRegion(nextRegion)
     onRegionChange(nextRegion)
     setReportExpanded(true)
   }
@@ -4159,7 +4230,7 @@ function ApartmentMap({
           <button type="button">거리</button>
           <button type="button">면적</button>
         </div>
-        <button className="map-report-cta" type="button" onClick={onReportClick}>
+        <button className="map-report-cta" type="button" onClick={() => onReportClick()}>
           우리동네 리포트 보기
           <FileText size={15} />
         </button>
