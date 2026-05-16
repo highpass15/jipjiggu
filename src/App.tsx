@@ -114,6 +114,8 @@ type DevelopmentIssue = {
   buzzScore: number
   progress: number
   activeStageIndex: number
+  expectedYear: string
+  plainBrief: string
   phase: string
   nextMilestone: string
   priceImpact: string
@@ -991,8 +993,10 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     buzzScore: 96,
     progress: 62,
     activeStageIndex: 3,
+    expectedYear: '2028~2030 예상',
+    plainBrief: '인덕원역 환승·공사 일정이 구체화되는지 확인 중입니다.',
     phase: '철도 3축 동시 체크',
-    nextMilestone: 'GTX-C 정거장·환승 동선 구체화, 월곶판교선 공정 공개',
+    nextMilestone: '다음 확인: 역 위치, 환승 동선, 공사 일정',
     priceImpact: '인덕원역 반경 1km 단지는 매물 회전과 호가 반응을 주간 체크',
     affectedDongs: ['관양동', '평촌동', '내손동', '포일동'],
     relatedApartments: ['인덕원센트럴자이', '평촌더샵아이파크', '의왕내손e편한세상'],
@@ -1011,8 +1015,10 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     buzzScore: 92,
     progress: 55,
     activeStageIndex: 1,
+    expectedYear: '2026~2028 구역 윤곽',
+    plainBrief: '평촌 주요 단지가 정비구역으로 얼마나 빨리 묶이는지 보는 단계입니다.',
     phase: '1기 신도시 정비구역 선별',
-    nextMilestone: '특별정비구역·선도지구별 주민 동의율과 추진위 속도 확인',
+    nextMilestone: '다음 확인: 선도구역 선정과 주민 동의율',
     priceImpact: '학군·역세권 대단지는 평형별 신고가 회복 여부가 핵심',
     affectedDongs: ['평촌동', '귀인동', '범계동', '부림동', '달안동'],
     relatedApartments: ['꿈마을', '향촌마을', '초원마을', '목련마을'],
@@ -1031,8 +1037,10 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     buzzScore: 87,
     progress: 48,
     activeStageIndex: 1,
+    expectedYear: '2027년 이후 순차 진행',
+    plainBrief: '안양역 주변 정비와 교통 개선 논의가 실제 사업으로 넘어가는지 확인 중입니다.',
     phase: '원도심 정비·교통망 관찰',
-    nextMilestone: '안양역 생활권 정비사업 인허가와 철도 지하화 논의 추적',
+    nextMilestone: '다음 확인: 안양역 주변 정비 인허가',
     priceImpact: '상대적으로 낮은 진입가 단지의 거래량 회복 여부가 관건',
     affectedDongs: ['안양동', '석수동', '박달동'],
     relatedApartments: ['래미안안양메가트리아', '안양역푸르지오더샵', '석수두산위브'],
@@ -1051,8 +1059,10 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     buzzScore: 84,
     progress: 43,
     activeStageIndex: 1,
+    expectedYear: '2027~2030 협의 관찰',
+    plainBrief: '박달 일대 개발 구상이 실제 이전 협의로 이어지는지 지켜보는 단계입니다.',
     phase: '부지 이전·복합개발 협의',
-    nextMilestone: '군용지 이전 협의, 사업시행 구조, 산업·주거 배치안 확인',
+    nextMilestone: '다음 확인: 이전 협의와 개발 배치안',
     priceImpact: '확정 전 기대감이 큰 테마라 실거래 반응은 보수적으로 해석',
     affectedDongs: ['박달동', '석수동', '안양동'],
     relatedApartments: ['한양수자인에듀파크', '박달금호타운', '석수LG빌리지'],
@@ -1071,8 +1081,10 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     buzzScore: 78,
     progress: 36,
     activeStageIndex: 0,
+    expectedYear: '2026~2029 방향성 확인',
+    plainBrief: '부지 이전과 활용 방향이 구체화되는지 먼저 확인해야 합니다.',
     phase: '정책 이슈·부지 활용 검토',
-    nextMilestone: '이전 후보지, 법무부·지자체 협의, 부지 활용 방향 확인',
+    nextMilestone: '다음 확인: 이전 후보지와 부지 활용안',
     priceImpact: '확정 전에는 호가보다 실제 신고가와 거래량 변화를 우선 관찰',
     affectedDongs: ['호계동', '범계동', '평촌동'],
     relatedApartments: ['호계럭키', '목련두산', '범계역인근 구축단지'],
@@ -1170,22 +1182,50 @@ const getLocalDateKey = (date: Date) =>
 const withCurrentWeeklyReportNotification = (notifications: AppNotification[]): AppNotification[] => {
   const latestSaturdayMorning = getLatestSaturdayMorning()
   const notificationId = `weekly-report-${getLocalDateKey(latestSaturdayMorning)}`
+  const normalizedNotifications = notifications
+    .map((notification) =>
+      notification.kind === 'weekly-report'
+        ? {
+            ...notification,
+            title: '이번 주 우리동네 리포트 도착',
+            body: '토요일 아침 갱신 · 우리동네 실거래, 개발 소식, 화제 단지를 확인하세요.',
+            region: notification.region ?? weeklyReportRegionOptions[0],
+          }
+        : notification,
+    )
+    .filter((notification, index, source) => {
+      if (notification.kind !== 'weekly-report') return true
 
-  if (notifications.some((notification) => notification.id === notificationId)) {
-    return notifications
+      const notificationDateKey = notification.createdAt
+        ? getLocalDateKey(new Date(notification.createdAt))
+        : notification.id
+
+      return (
+        source.findIndex((candidate) => {
+          if (candidate.kind !== 'weekly-report') return false
+          const candidateDateKey = candidate.createdAt
+            ? getLocalDateKey(new Date(candidate.createdAt))
+            : candidate.id
+          return candidateDateKey === notificationDateKey
+        }) === index
+      )
+    })
+
+  if (normalizedNotifications.some((notification) => notification.id === notificationId)) {
+    return normalizedNotifications
   }
 
   const weeklyReportNotification: AppNotification = {
     id: notificationId,
     kind: 'weekly-report',
     title: '이번 주 우리동네 리포트 도착',
-    body: '토요일 아침 갱신 · 안양권 실거래, 개발 진척, 화제 단지를 확인하세요.',
+    body: '토요일 아침 갱신 · 우리동네 실거래, 개발 소식, 화제 단지를 확인하세요.',
     region: weeklyReportRegionOptions[0],
     createdAt: latestSaturdayMorning.toISOString(),
     read: false,
   }
 
-  return [weeklyReportNotification, ...notifications].slice(0, 30)
+  return [weeklyReportNotification, ...normalizedNotifications].slice(0, 30)
 }
 
 const buildReviewNotes = (marker: MapValueMarker) => {
@@ -2794,8 +2834,8 @@ function PriceView({
       <section className="local-report-entry" aria-label="우리동네 리포트 바로가기">
         <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
           <span>우리동네 리포트</span>
-          <strong>평촌·인덕원 개발 진척과 실거래를 한 번에</strong>
-          <em>지역을 고르면 해당 리포트가 바로 열립니다</em>
+          <strong>우리동네 리포트</strong>
+          <em>지역별 실거래와 개발 소식을 바로 확인하세요</em>
         </button>
         <div className="local-report-region-row">
           {weeklyReportRegionOptions.slice(0, 5).map((region) => (
@@ -3111,11 +3151,11 @@ function NeighborhoodReportView({
   return (
     <div className="view-stack report-view">
       <section className="report-hero">
-        <span>집직구 안양 레이더</span>
-        <h2>안양 실거래·개발 레이더</h2>
-        <p>평촌·인덕원·만안권의 신고 거래, 뉴스 언급량, GTX·정비사업 체크포인트를 주간 브리핑처럼 정리합니다.</p>
+        <span>매주 토요일 아침 갱신</span>
+        <h2>우리동네 리포트</h2>
+        <p>지역을 고르면 실거래와 개발 소식이 바로 열립니다.</p>
         <button className="report-hero-action" type="button" onClick={openPublishedReport}>
-          보고서 바로 보기
+          리포트 바로 보기
           <ChevronRight size={15} />
         </button>
       </section>
@@ -3197,27 +3237,27 @@ function NeighborhoodReportView({
           )}
         </div>
         <button className="secondary-action" type="button" onClick={openPublishedReport}>
-          이번 주 보고서 바로 열기
+          이번 주 리포트 바로 열기
           <ChevronRight size={16} />
         </button>
       </section>
 
       {reportExpanded && (
-        <section className="report-detail-card" ref={reportDetailRef} aria-label="집직구 주간 보고서 본문">
+        <section className="report-detail-card" ref={reportDetailRef} aria-label="집직구 주간 리포트 본문">
           <div className="report-detail-title">
             <span>{formatShortDate(new Date(referenceTime).toISOString().slice(0, 10))} 발간</span>
-            <h3>{region} 아파트 주간 보고서</h3>
-            <p>국토부 실거래 캐시, 최신 뉴스 스캔, 개발사업 단계표를 묶어 이번 주 의사결정에 필요한 변화만 압축했습니다.</p>
+            <h3>{region} 우리동네 리포트</h3>
+            <p>이번 주 실거래, 개발 소식, 관심 단지만 짧게 정리했습니다.</p>
           </div>
 
           <div className="report-live-brief">
             <div>
-              <span>LIVE UPDATE</span>
+              <span>이번 주 핵심</span>
               <strong>{reportGeneratedLabel}</strong>
             </div>
             <p>
               {topIssue
-                ? `${topIssue.title}은 현재 ${topIssue.phase} 단계입니다. 다음 체크포인트는 ${topIssue.nextMilestone}입니다.`
+                ? topIssue.plainBrief
                 : '이번 주 핵심 개발 이슈를 수집중입니다.'}
             </p>
           </div>
@@ -3258,7 +3298,11 @@ function NeighborhoodReportView({
                     <div className="development-head">
                       <span>{item.area}</span>
                       <strong>{item.title}</strong>
-                      <em>{item.progress}%</em>
+                      <em>{item.expectedYear}</em>
+                    </div>
+                    <div className="development-score-row">
+                      <span>진척도 {item.progress}%</span>
+                      <b>{item.plainBrief}</b>
                     </div>
                     <div className="development-progress" aria-label={`${item.title} 진척도 ${item.progress}%`}>
                       <span style={{ width: `${item.progress}%` }} />
@@ -3325,7 +3369,7 @@ function NeighborhoodReportView({
               ) : (
                 <article>
                   <span>수집중</span>
-                  <strong>안양권 개발·교통 뉴스 스캔 대기</strong>
+                  <strong>우리동네 개발·교통 뉴스 스캔 대기</strong>
                   <em>서버가 최신 뉴스 목록을 가져오면 이 영역에 자동 반영됩니다.</em>
                 </article>
               )}
@@ -3365,7 +3409,7 @@ function NeighborhoodReportView({
             <div className="detail-section-head">
               <span>
                 <Sparkles size={15} />
-                안양 화제 지역 TOP 5
+                우리동네 화제 지역 TOP 5
               </span>
               <em>뉴스·공시 언급 기준</em>
             </div>
@@ -3392,11 +3436,11 @@ function NeighborhoodReportView({
         </section>
       )}
 
-      <section className="report-subscribe-card" aria-label="주간 보고서 보기">
+      <section className="report-subscribe-card" aria-label="주간 리포트 보기">
         <div>
           <span>매주 토요일 아침 갱신</span>
           <strong>전화번호 없이 바로 열람</strong>
-          <p>새 주간 리포트가 준비되면 앱 알림함에 카드로 남겨둡니다. 평촌·안양권 거래와 개발 진척만 골라서 확인하세요.</p>
+          <p>새 주간 리포트가 준비되면 앱 알림함에 카드로 남겨둡니다. 우리동네 거래와 개발 소식만 골라서 확인하세요.</p>
         </div>
         <button className="primary-action" type="button" onClick={openPublishedReport}>
           리포트 보기
@@ -3406,7 +3450,7 @@ function NeighborhoodReportView({
 
       <section className="report-message-preview" aria-label="앱 알림 예시">
         <span>토요일 아침 리포트</span>
-        <strong>[집직구] {region} 주간 보고서</strong>
+        <strong>[집직구] {region} 우리동네 리포트</strong>
         <p>{inAppReportBody}</p>
         <button className="text-button" type="button" onClick={openPublishedReport}>
           전체 보고서 보기
@@ -3466,14 +3510,12 @@ function NotificationCenterView({
   onOpenReport: (region?: string) => void
   onOpenMap: () => void
 }) {
-  const latestReport = notifications.find((notification) => notification.kind === 'weekly-report')
-
   return (
     <div className="view-stack notification-view">
       <section className="notification-hero">
         <span>집직구 앱 알림</span>
-        <h2>리포트와 매물 소식을 앱 안에서 확인하세요</h2>
-        <p>개별 휴대폰 알림 없이도 앱 안에서 동네 리포트와 매물 소식을 확인할 수 있습니다.</p>
+        <h2>우리동네 리포트</h2>
+        <p>매주 토요일 아침, 동네 실거래와 개발 소식을 한 번에 확인하세요.</p>
       </section>
 
       {notifications.length > 0 ? (
@@ -3507,22 +3549,10 @@ function NotificationCenterView({
         <section className="notification-empty">
           <Bell size={25} />
           <strong>아직 도착한 앱 알림이 없습니다</strong>
-          <p>현재는 별도 알림 신청 없이 앱에서 안양권 리포트를 바로 볼 수 있습니다.</p>
+          <p>현재는 별도 알림 신청 없이 앱에서 우리동네 리포트를 바로 볼 수 있습니다.</p>
           <button className="primary-action" type="button" onClick={() => onOpenReport()}>
             리포트 보기
             <ChevronRight size={16} />
-          </button>
-        </section>
-      )}
-
-      {latestReport && (
-        <section className="report-message-preview" aria-label="최근 리포트 바로가기">
-          <span>최근 리포트</span>
-          <strong>{latestReport.title}</strong>
-          <p>{latestReport.body}</p>
-          <button className="text-button" type="button" onClick={() => onOpenReport()}>
-            앱에서 전체 리포트 보기
-            <ChevronRight size={14} />
           </button>
         </section>
       )}

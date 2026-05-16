@@ -439,7 +439,7 @@ h1 {
 
 .local-report-main strong {
   color: #ffffff;
-  font-size: 18px;
+  font-size: 25px;
   line-height: 1.18;
   font-weight: 950;
 }
@@ -3202,7 +3202,7 @@ h1 {
 .notification-hero h2 {
   margin-top: 6px;
   color: #ffffff;
-  font-size: 28px;
+  font-size: 36px;
   line-height: 1.1;
   font-weight: 950;
 }
@@ -3727,10 +3727,36 @@ h1 {
 }
 
 .development-head em {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
   color: var(--accent);
-  font-size: 16px;
+  font-size: 11px;
   font-style: normal;
   font-weight: 950;
+  white-space: nowrap;
+}
+
+.development-score-row {
+  display: grid;
+  gap: 5px;
+}
+
+.development-score-row span {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #102335;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.development-score-row b {
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.42;
+  font-weight: 900;
 }
 
 .development-progress {
