@@ -106,6 +106,33 @@ type RecommendedApartment = {
   dealCount: number
 }
 
+type DevelopmentIssue = {
+  rank: number
+  title: string
+  area: string
+  buzzScore: number
+  progress: number
+  phase: string
+  nextMilestone: string
+  priceImpact: string
+  affectedDongs: string[]
+  relatedApartments: string[]
+  keywords: string[]
+  body: string
+  timeline: Array<{
+    label: string
+    status: 'done' | 'active' | 'watch'
+  }>
+}
+
+type ReportNewsItem = {
+  title: string
+  link: string
+  source: string
+  publishedAt: string
+  keyword: string
+}
+
 type LiveRtmsDeal = {
   id: string
   aptSeq: string
@@ -921,6 +948,13 @@ const getDefaultRtmsDealYmd = () => {
 }
 const getMapRtmsDealYmd = () => 'auto'
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
+const formatKoreanDateTime = (date: string | number) =>
+  new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(typeof date === 'number' ? new Date(date) : new Date(date))
 const matchesWeeklyReportRegion = (
   region: string,
   source: { aptName?: string; district?: string; legalDong?: string; address?: string },
@@ -945,46 +979,101 @@ const parseDealTime = (date?: string) => {
   return Number.isNaN(time) ? 0 : time
 }
 const formatSignedRate = (rate: number) => `${rate >= 0 ? '+' : ''}${rate.toFixed(1)}%`
-const anyangDevelopmentNews = [
+const anyangDevelopmentNews: DevelopmentIssue[] = [
   {
     rank: 1,
     title: '인덕원 교통축',
     area: '관양·평촌·내손',
     buzzScore: 96,
+    progress: 62,
+    phase: '철도 3축 동시 체크',
+    nextMilestone: 'GTX-C 정거장·환승 동선 구체화, 월곶판교선 공정 공개',
+    priceImpact: '인덕원역 반경 1km 단지는 매물 회전과 호가 반응을 주간 체크',
+    affectedDongs: ['관양동', '평촌동', '내손동', '포일동'],
+    relatedApartments: ['인덕원센트럴자이', '평촌더샵아이파크', '의왕내손e편한세상'],
     keywords: ['GTX-C', '월곶판교선', '동탄인덕원선'],
     body: '인덕원역 GTX-C, 월곶판교선, 동탄인덕원선 이슈는 관양·평촌·내손권 접근성 프리미엄을 볼 때 계속 체크합니다.',
+    timeline: [
+      { label: '노선 확정', status: 'done' },
+      { label: '공사·환승 설계', status: 'active' },
+      { label: '역세권 상권 재평가', status: 'watch' },
+    ],
   },
   {
     rank: 2,
     title: '평촌 정비사업',
     area: '평촌·범계·귀인',
     buzzScore: 92,
+    progress: 55,
+    phase: '1기 신도시 정비구역 선별',
+    nextMilestone: '특별정비구역·선도지구별 주민 동의율과 추진위 속도 확인',
+    priceImpact: '학군·역세권 대단지는 평형별 신고가 회복 여부가 핵심',
+    affectedDongs: ['평촌동', '귀인동', '범계동', '부림동', '달안동'],
+    relatedApartments: ['꿈마을', '향촌마을', '초원마을', '목련마을'],
     keywords: ['1기 신도시', '특별정비구역', '7,200호'],
     body: '1기 신도시 정비와 단지별 리모델링·재건축 추진 속도는 평형별 가격 탄력에 영향을 줄 수 있어 주간 리포트에 반영합니다.',
+    timeline: [
+      { label: '정비 기본계획', status: 'done' },
+      { label: '선도·특별구역 경쟁', status: 'active' },
+      { label: '이주·분담금 가시화', status: 'watch' },
+    ],
   },
   {
     rank: 3,
     title: '만안 생활권 정비',
     area: '안양동·석수·박달',
     buzzScore: 87,
+    progress: 48,
+    phase: '원도심 정비·교통망 관찰',
+    nextMilestone: '안양역 생활권 정비사업 인허가와 철도 지하화 논의 추적',
+    priceImpact: '상대적으로 낮은 진입가 단지의 거래량 회복 여부가 관건',
+    affectedDongs: ['안양동', '석수동', '박달동'],
+    relatedApartments: ['래미안안양메가트리아', '안양역푸르지오더샵', '석수두산위브'],
     keywords: ['경부선 지하화', '서부선 연장', '안양역 생활권'],
     body: '안양역·명학역·석수역 생활권 정비사업과 신축 공급 흐름은 만안구 저평가 단지 비교에 함께 반영합니다.',
+    timeline: [
+      { label: '생활권 정비 후보', status: 'done' },
+      { label: '사업성·교통망 검토', status: 'active' },
+      { label: '신축 공급 반응', status: 'watch' },
+    ],
   },
   {
     rank: 4,
     title: '박달스마트시티',
     area: '박달·만안',
     buzzScore: 84,
+    progress: 43,
+    phase: '부지 이전·복합개발 협의',
+    nextMilestone: '군용지 이전 협의, 사업시행 구조, 산업·주거 배치안 확인',
+    priceImpact: '확정 전 기대감이 큰 테마라 실거래 반응은 보수적으로 해석',
+    affectedDongs: ['박달동', '석수동', '안양동'],
+    relatedApartments: ['한양수자인에듀파크', '박달금호타운', '석수LG빌리지'],
     keywords: ['스마트시티', '군용지 이전', '첨단산업'],
     body: '박달동 일대 군사시설 이전과 스마트 복합도시 조성 이슈는 만안구 장기 성장성 측면에서 별도 추적합니다.',
+    timeline: [
+      { label: '구상 발표', status: 'done' },
+      { label: '이전 협의', status: 'active' },
+      { label: '민간 참여 구조', status: 'watch' },
+    ],
   },
   {
     rank: 5,
     title: '안양교도소 이전·부지 개발',
     area: '호계·평촌 인접권',
     buzzScore: 78,
+    progress: 36,
+    phase: '정책 이슈·부지 활용 검토',
+    nextMilestone: '이전 후보지, 법무부·지자체 협의, 부지 활용 방향 확인',
+    priceImpact: '확정 전에는 호가보다 실제 신고가와 거래량 변화를 우선 관찰',
+    affectedDongs: ['호계동', '범계동', '평촌동'],
+    relatedApartments: ['호계럭키', '목련두산', '범계역인근 구축단지'],
     keywords: ['공공부지', '이전', '복합개발'],
     body: '안양교도소 이전과 부지 활용은 확정성보다 정책 이슈 성격이 강해, 실제 일정이 구체화되는지 중심으로 봅니다.',
+    timeline: [
+      { label: '이전 필요성 재점화', status: 'done' },
+      { label: '관계기관 협의', status: 'active' },
+      { label: '부지 개발안', status: 'watch' },
+    ],
   },
 ]
 const sendTelegramLead = async (type: string, payload: LeadPayload) => {
@@ -2812,8 +2901,38 @@ function NeighborhoodReportView({
 }) {
   const [region, setRegion] = useState(weeklyReportRegionOptions[0])
   const [reportExpanded, setReportExpanded] = useState(true)
+  const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
+  const [reportNewsUpdatedAt, setReportNewsUpdatedAt] = useState('')
   const reportDetailRef = useRef<HTMLElement | null>(null)
   const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/report/anyang-news?region=${encodeURIComponent(region)}`, {
+          signal: controller.signal,
+        })
+        const payload = (await response.json()) as {
+          items?: ReportNewsItem[]
+          updatedAt?: string
+        }
+
+        if (!controller.signal.aborted) {
+          setReportNewsItems(Array.isArray(payload.items) ? payload.items.slice(0, 6) : [])
+          setReportNewsUpdatedAt(payload.updatedAt ?? '')
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setReportNewsItems([])
+          setReportNewsUpdatedAt('')
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  }, [region])
 
   const regionDeals = useMemo(
     () =>
@@ -2893,6 +3012,14 @@ function NeighborhoodReportView({
   const inAppReportBody = `최신 거래 ${
     previewDeals[0] ? `${previewDeals[0].aptName} ${formatEok(previewDeals[0].priceEok)}` : '수집중'
   } · 직거래 ${directCount}건 · 추천 단지 ${topRecommendation?.name ?? '분석중'}`
+  const developmentProgressAverage = Math.round(
+    anyangDevelopmentNews.reduce((sum, item) => sum + item.progress, 0) / anyangDevelopmentNews.length,
+  )
+  const topIssue = anyangDevelopmentNews
+    .slice()
+    .sort((a, b) => b.buzzScore - a.buzzScore)
+    .at(0)
+  const reportGeneratedLabel = formatKoreanDateTime(reportNewsUpdatedAt || referenceTime)
 
   const openPublishedReport = () => {
     setReportExpanded(true)
@@ -2902,9 +3029,9 @@ function NeighborhoodReportView({
   return (
     <div className="view-stack report-view">
       <section className="report-hero">
-        <span>집직구 주간 보고서</span>
-        <h2>동네 아파트 관심은 이거 하나로 클리어</h2>
-        <p>더 이상 매일 들여다보지 마세요. 집직구가 안양권 실거래, 상승 단지, 개발호재를 주 1회 보고서로 정리합니다.</p>
+        <span>집직구 안양 레이더</span>
+        <h2>안양 실거래·개발 레이더</h2>
+        <p>평촌·인덕원·만안권의 신고 거래, 뉴스 언급량, GTX·정비사업 체크포인트를 주간 브리핑처럼 정리합니다.</p>
         <button className="report-hero-action" type="button" onClick={openPublishedReport}>
           보고서 바로 보기
           <ChevronRight size={15} />
@@ -2945,6 +3072,10 @@ function NeighborhoodReportView({
             <span>최근 30일 평균</span>
             <strong>{monthlyDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
           </div>
+          <div>
+            <span>개발 진척</span>
+            <strong>{developmentProgressAverage}%</strong>
+          </div>
         </div>
         <div className="report-preview-list">
           {previewDeals.length > 0 ? (
@@ -2970,6 +3101,14 @@ function NeighborhoodReportView({
               </span>
             </div>
           )}
+          {topIssue && (
+            <div>
+              <strong>이번 주 화제축 {topIssue.title}</strong>
+              <span>
+                {topIssue.phase} · 진척 {topIssue.progress}%
+              </span>
+            </div>
+          )}
         </div>
         <button className="secondary-action" type="button" onClick={openPublishedReport}>
           이번 주 보고서 바로 열기
@@ -2982,7 +3121,19 @@ function NeighborhoodReportView({
           <div className="report-detail-title">
             <span>{formatShortDate(new Date(referenceTime).toISOString().slice(0, 10))} 발간</span>
             <h3>{region} 아파트 주간 보고서</h3>
-            <p>국토부 실거래 캐시와 집직구 추천 로직을 기준으로 이번 주 볼 만한 변화만 압축했습니다.</p>
+            <p>국토부 실거래 캐시, 최신 뉴스 스캔, 개발사업 단계표를 묶어 이번 주 의사결정에 필요한 변화만 압축했습니다.</p>
+          </div>
+
+          <div className="report-live-brief">
+            <div>
+              <span>LIVE UPDATE</span>
+              <strong>{reportGeneratedLabel}</strong>
+            </div>
+            <p>
+              {topIssue
+                ? `${topIssue.title}은 현재 ${topIssue.phase} 단계입니다. 다음 체크포인트는 ${topIssue.nextMilestone}입니다.`
+                : '이번 주 핵심 개발 이슈를 수집중입니다.'}
+            </p>
           </div>
 
           <div className="report-metric-row">
@@ -2997,6 +3148,84 @@ function NeighborhoodReportView({
             <div>
               <span>상승률 TOP</span>
               <strong>{growthLeaders[0] ? formatSignedRate(growthLeaders[0].growthRate) : '집계중'}</strong>
+            </div>
+            <div>
+              <span>뉴스 스캔</span>
+              <strong>{reportNewsItems.length || '대기'}</strong>
+            </div>
+          </div>
+
+          <div className="report-section">
+            <div className="detail-section-head">
+              <span>
+                <LineChart size={15} />
+                개발 진척도 레이더
+              </span>
+              <em>공정·일정·가격 영향</em>
+            </div>
+            <div className="development-tracker">
+              {anyangDevelopmentNews
+                .slice()
+                .sort((a, b) => b.buzzScore - a.buzzScore)
+                .map((item) => (
+                  <article key={`development-${item.title}`}>
+                    <div className="development-head">
+                      <span>{item.area}</span>
+                      <strong>{item.title}</strong>
+                      <em>{item.progress}%</em>
+                    </div>
+                    <div className="development-progress" aria-label={`${item.title} 진척도 ${item.progress}%`}>
+                      <span style={{ width: `${item.progress}%` }} />
+                    </div>
+                    <div className="development-timeline">
+                      {item.timeline.map((step) => (
+                        <span className={step.status} key={`${item.title}-${step.label}`}>
+                          {step.label}
+                        </span>
+                      ))}
+                    </div>
+                    <p>{item.nextMilestone}</p>
+                    <dl>
+                      <div>
+                        <dt>관찰 동네</dt>
+                        <dd>{item.affectedDongs.join(' · ')}</dd>
+                      </div>
+                      <div>
+                        <dt>관련 단지</dt>
+                        <dd>{item.relatedApartments.slice(0, 3).join(' · ')}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+            </div>
+          </div>
+
+          <div className="report-section">
+            <div className="detail-section-head">
+              <span>
+                <ExternalLink size={15} />
+                최신 뉴스 스캔
+              </span>
+              <em>{reportNewsUpdatedAt ? `${formatKoreanDateTime(reportNewsUpdatedAt)} 갱신` : '자동 수집'}</em>
+            </div>
+            <div className="report-news-scan">
+              {reportNewsItems.length > 0 ? (
+                reportNewsItems.map((item) => (
+                  <a href={item.link} target="_blank" rel="noreferrer" key={`${item.link}-${item.title}`}>
+                    <span>{item.keyword}</span>
+                    <strong>{item.title}</strong>
+                    <em>
+                      {item.source || '뉴스'} · {formatKoreanDateTime(item.publishedAt)}
+                    </em>
+                  </a>
+                ))
+              ) : (
+                <article>
+                  <span>수집중</span>
+                  <strong>안양권 개발·교통 뉴스 스캔 대기</strong>
+                  <em>서버가 최신 뉴스 목록을 가져오면 이 영역에 자동 반영됩니다.</em>
+                </article>
+              )}
             </div>
           </div>
 
@@ -3049,7 +3278,7 @@ function NeighborhoodReportView({
                   </div>
                   <section>
                     <h4>{item.title}</h4>
-                    <p>{item.body}</p>
+                    <p>{item.priceImpact}</p>
                     <em>{item.keywords.join(' · ')}</em>
                   </section>
                   <b>{item.buzzScore}</b>
@@ -3168,9 +3397,9 @@ function NotificationCenterView({
         <section className="notification-empty">
           <Bell size={25} />
           <strong>아직 도착한 앱 알림이 없습니다</strong>
-          <p>우리동네 리포트를 신청하면 매주 1회 이곳에 실거래 요약과 추천 단지가 도착합니다.</p>
+          <p>현재는 별도 알림 신청 없이 앱에서 안양권 리포트를 바로 볼 수 있습니다.</p>
           <button className="primary-action" type="button" onClick={onOpenReport}>
-            리포트 신청하기
+            리포트 보기
             <ChevronRight size={16} />
           </button>
         </section>

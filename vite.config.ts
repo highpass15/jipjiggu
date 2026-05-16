@@ -33,6 +33,22 @@ type RtmsParsedResponse = {
   }
 }
 type BuildingParsedResponse = RtmsParsedResponse
+type ReportNewsItem = {
+  title: string
+  link: string
+  source: string
+  publishedAt: string
+  keyword: string
+}
+type ReportNewsCache = {
+  updatedAt: number
+  payload: {
+    ok: boolean
+    source: string
+    updatedAt: string
+    items: ReportNewsItem[]
+  }
+}
 
 const seoulDistricts: TargetDistrict[] = [
   ['11110', '서울 종로구'],
@@ -133,6 +149,8 @@ const rtmsMapMarkerBatchSize = 2
 const rtmsMapMarkerGeocodeBatchLimit = 180
 const rtmsMapMarkerMonthBatchSize = 12
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
+const reportNewsCache = new Map<string, ReportNewsCache>()
+const reportNewsCacheMs = 30 * 60 * 1000
 const districtNameByLawdCd = Object.fromEntries(
   capitalAreaDistricts.map((district) => [district.code, district.name]),
 )
@@ -242,6 +260,120 @@ const fetchTextWithRetry = async (url: string, attempts = 3) => {
     apiResponse: lastResponse as Response,
     raw: lastRaw,
   }
+}
+
+const normalizeNewsTitle = (value: string) =>
+  value
+    .replace(/\s+-\s+[^-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const reportNewsQueriesByRegion: Record<string, string[]> = {
+  '안양 전체': [
+    '안양 평촌신도시 정비사업',
+    '안양 인덕원 GTX-C 월곶판교선 동탄인덕원선',
+    '안양 박달스마트시티',
+    '안양교도소 이전 부지 개발',
+  ],
+  평촌권: ['평촌신도시 정비사업 선도지구', '평촌 범계 귀인동 재건축 리모델링'],
+  인덕원권: ['인덕원 GTX-C 월곶판교선 동탄인덕원선', '관양동 인덕원역 개발'],
+  만안권: ['안양 만안구 정비사업', '박달스마트시티 안양', '안양역 생활권 개발'],
+  과천권: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트'],
+  의왕내손권: ['의왕 내손 포일 인덕원 개발', '의왕 백운밸리 인덕원 교통'],
+}
+
+const fallbackReportNews: ReportNewsItem[] = [
+  {
+    title: '평촌신도시 특별정비구역과 선도지구 추진 속도 점검',
+    link: 'https://www.anyang.go.kr/',
+    source: '집직구 브리핑',
+    publishedAt: new Date().toISOString(),
+    keyword: '평촌 정비사업',
+  },
+  {
+    title: '인덕원역 GTX-C·월곶판교선·동탄인덕원선 교통축 체크',
+    link: 'https://www.anyang.go.kr/',
+    source: '집직구 브리핑',
+    publishedAt: new Date().toISOString(),
+    keyword: '인덕원 교통축',
+  },
+  {
+    title: '박달스마트시티와 만안구 장기 개발 기대감 추적',
+    link: 'https://www.anyang.go.kr/',
+    source: '집직구 브리핑',
+    publishedAt: new Date().toISOString(),
+    keyword: '박달스마트시티',
+  },
+]
+
+const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> => {
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:14d`)}&hl=ko&gl=KR&ceid=KR:ko`
+  const { apiResponse, raw } = await fetchTextWithRetry(rssUrl, 2)
+
+  if (!apiResponse.ok || !raw) return []
+
+  const parsed = parser.parse(raw) as {
+    rss?: {
+      channel?: {
+        item?: Array<{
+          title?: string
+          link?: string
+          pubDate?: string
+          source?: string | { '#text'?: string }
+        }> | {
+          title?: string
+          link?: string
+          pubDate?: string
+          source?: string | { '#text'?: string }
+        }
+      }
+    }
+  }
+  const items = asArray(parsed.rss?.channel?.item)
+
+  return items.slice(0, 4).map((item) => ({
+    title: normalizeNewsTitle(textValue(item.title)),
+    link: textValue(item.link),
+    source: typeof item.source === 'string' ? item.source : textValue(item.source?.['#text']),
+    publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+    keyword: query.replace('안양 ', ''),
+  }))
+}
+
+const buildReportNewsPayload = async (region: string) => {
+  const normalizedRegion = region || '안양 전체'
+  const cached = reportNewsCache.get(normalizedRegion)
+
+  if (cached && Date.now() - cached.updatedAt < reportNewsCacheMs) {
+    return cached.payload
+  }
+
+  const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양 전체']
+  const results = await runInBatches(queries, 2, fetchGoogleNewsItems, 250)
+  const dedupedItems = Array.from(
+    new Map(
+      results
+        .flat()
+        .filter((item) => item.title && item.link)
+        .map((item) => [normalizeComparableName(item.title), item]),
+    ).values(),
+  )
+    .sort((left, right) => new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime())
+    .slice(0, 8)
+
+  const payload = {
+    ok: true,
+    source: dedupedItems.length > 0 ? 'Google News RSS' : '집직구 기본 브리핑',
+    updatedAt: new Date().toISOString(),
+    items: dedupedItems.length > 0 ? dedupedItems : fallbackReportNews,
+  }
+
+  reportNewsCache.set(normalizedRegion, {
+    updatedAt: Date.now(),
+    payload,
+  })
+
+  return payload
 }
 
 const runInBatches = async <T, R>(
@@ -1415,6 +1547,31 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
     server.httpServer?.once('close', () => {
       if (dailyRefreshTimer) clearTimeout(dailyRefreshTimer)
       if (keepAliveTimer) clearInterval(keepAliveTimer)
+    })
+
+    server.middlewares.use('/api/report/anyang-news', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'public, max-age=600')
+
+      try {
+        const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+        const region = incomingUrl.searchParams.get('region') || '안양 전체'
+        const payload = await buildReportNewsPayload(region)
+
+        response.statusCode = 200
+        response.end(JSON.stringify(payload))
+      } catch (error) {
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: false,
+            source: '집직구 기본 브리핑',
+            updatedAt: new Date().toISOString(),
+            items: fallbackReportNews,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        )
+      }
     })
 
     server.middlewares.use('/api/health', async (_request, response) => {
