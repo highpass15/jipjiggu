@@ -4797,7 +4797,7 @@ h1 {
     top: 0;
     left: 0;
     right: 0;
-    z-index: 8;
+    z-index: 18;
     height: 78px;
     border-bottom: 0;
     background:
@@ -4812,14 +4812,14 @@ h1 {
     top: 78px;
     left: 0;
     right: 0;
-    z-index: 8;
+    z-index: 18;
     gap: 0;
     padding-block: 8px;
     background: transparent;
   }
 
-  .mode-prices:has(#trade-detail-panel) .topbar,
-  .mode-prices:has(#trade-detail-panel) .search-hero {
+  .mode-prices.map-header-minimized:has(#trade-detail-panel) .topbar,
+  .mode-prices.map-header-minimized:has(#trade-detail-panel) .search-hero {
     opacity: 0;
     pointer-events: none;
     transform: translateY(-110%);

@@ -1966,6 +1966,7 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
 
 function App() {
   const [mode, setMode] = useState<Mode>('prices')
+  const [priceHeaderMinimized, setPriceHeaderMinimized] = useState(false)
   const [activeReportRegion, setActiveReportRegion] = useState(weeklyReportRegionOptions[0])
   const [reportPopupOpen, setReportPopupOpen] = useState(() => shouldShowInitialReportPopup())
   const [reportPopupRegion, setReportPopupRegion] = useState(weeklyReportRegionOptions[0])
@@ -2003,6 +2004,8 @@ function App() {
   const unreadNotificationCount = appNotifications.filter((notification) => !notification.read).length
 
   const handleHomeClick = useCallback(() => {
+    setPriceHeaderMinimized(false)
+
     if (mode !== 'prices') {
       setMode('prices')
     }
@@ -2011,6 +2014,19 @@ function App() {
       contentPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }, 30)
+  }, [mode])
+
+  useEffect(() => {
+    const panel = contentPanelRef.current
+    if (!panel || mode !== 'prices') return
+
+    const handlePanelScroll = () => {
+      const shouldMinimizeHeader = panel.scrollTop > 180
+      setPriceHeaderMinimized((current) => (current === shouldMinimizeHeader ? current : shouldMinimizeHeader))
+    }
+
+    panel.addEventListener('scroll', handlePanelScroll, { passive: true })
+    return () => panel.removeEventListener('scroll', handlePanelScroll)
   }, [mode])
 
   const mergeCapitalLiveDeals = useCallback((deals: LiveRtmsDeal[]) => {
@@ -2234,6 +2250,7 @@ function App() {
     setActiveReportRegion(nextRegion)
     setMode('report')
     setReportPopupOpen(false)
+    setPriceHeaderMinimized(false)
 
     window.requestAnimationFrame(() => {
       contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
@@ -2363,7 +2380,10 @@ function App() {
 
   return (
     <main className="app">
-      <section className={`mobile-stage mode-${mode}`} aria-label="집직구 모바일 앱 미리보기">
+      <section
+        className={`mobile-stage mode-${mode}${priceHeaderMinimized ? ' map-header-minimized' : ''}`}
+        aria-label="집직구 모바일 앱 미리보기"
+      >
         <header className="topbar">
           <button
             className="icon-button"
@@ -2587,7 +2607,12 @@ function App() {
               <button
                 key={item.id}
                 className={isActive ? 'active' : ''}
-                onClick={() => setMode(item.id)}
+                onClick={() => {
+                  setMode(item.id)
+                  if (item.id === 'prices') {
+                    setPriceHeaderMinimized(false)
+                  }
+                }}
                 type="button"
               >
                 <Icon size={20} />
@@ -3914,7 +3939,7 @@ const placeMarkerSearchCache = new Map<string, Promise<MapValueMarker[]>>()
 
 const getKakaoLatLngNumber = (position: KakaoLatLng, method: 'getLat' | 'getLng') => {
   const getter = (position as { [key in 'getLat' | 'getLng']?: () => number })[method]
-  const value = typeof getter === 'function' ? getter() : 0
+  const value = typeof getter === 'function' ? getter.call(position) : 0
   return Number.isFinite(value) ? value : 0
 }
 
