@@ -4530,6 +4530,8 @@ h1 {
 }
 
 .bottom-nav {
+  position: relative;
+  z-index: 50;
   height: 76px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -4540,6 +4542,7 @@ h1 {
   border-top: 1px solid var(--border-soft);
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(18px);
+  box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.08);
   scrollbar-width: none;
 }
 
@@ -4751,7 +4754,7 @@ h1 {
   .mode-prices .content-panel {
     position: absolute;
     inset: 0;
-    padding: 0;
+    padding: 0 0 90px;
     overflow: auto;
   }
 
@@ -4833,19 +4836,28 @@ h1 {
   }
 
   .mode-prices .bottom-nav {
-    position: absolute;
+    position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 8;
+    z-index: 50;
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.12);
+  }
+
+  .mobile-stage:not(.mode-prices) .bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
   }
 
   .topbar,
   .search-hero,
   .content-panel {
     padding-inline: 16px;
+    padding-bottom: 96px;
   }
 
   .bottom-nav {
