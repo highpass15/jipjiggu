@@ -3223,15 +3223,20 @@ function NeighborhoodReportView({
   const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
   const [reportNewsUpdatedAt, setReportNewsUpdatedAt] = useState('')
   const reportDetailRef = useRef<HTMLElement | null>(null)
+  const reportNewsRequestRef = useRef(0)
   const fallbackReferenceTime = useMemo(() => new Date().getTime(), [])
 
   const handleRegionSelect = (nextRegion: string) => {
+    setReportNewsItems([])
+    setReportNewsUpdatedAt('')
     onRegionChange(nextRegion)
     setReportExpanded(true)
   }
 
   useEffect(() => {
     const controller = new AbortController()
+    const requestId = reportNewsRequestRef.current + 1
+    reportNewsRequestRef.current = requestId
 
     void (async () => {
       try {
@@ -3239,16 +3244,17 @@ function NeighborhoodReportView({
           signal: controller.signal,
         })
         const payload = (await response.json()) as {
+          region?: string
           items?: ReportNewsItem[]
           updatedAt?: string
         }
 
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && requestId === reportNewsRequestRef.current) {
           setReportNewsItems(Array.isArray(payload.items) ? payload.items.slice(0, 6) : [])
           setReportNewsUpdatedAt(payload.updatedAt ?? '')
         }
       } catch {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && requestId === reportNewsRequestRef.current) {
           setReportNewsItems([])
           setReportNewsUpdatedAt('')
         }

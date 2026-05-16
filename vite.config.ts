@@ -283,6 +283,50 @@ const reportNewsQueriesByRegion: Record<string, string[]> = {
   과천시: ['과천 재건축 정부과천청사 GTX-C', '과천 지식정보타운 아파트', '과천 원도심 재건축'],
 }
 
+const reportRegionAliases: Record<string, string> = {
+  '안양 전체': '안양시 동안구',
+  '평촌·범계': '안양시 동안구',
+  '호계·신촌·귀인': '안양시 동안구',
+  '관양·인덕원': '안양시 동안구',
+  '비산·만안': '안양시 만안구',
+  과천: '과천시',
+  '의왕 내손·포일': '의왕시',
+}
+
+const reportNewsKeywordsByRegion: Record<string, string[]> = {
+  '안양시 동안구': ['안양', '동안구', '평촌', '범계', '호계', '관양', '인덕원', '귀인', '달안', '부림'],
+  '안양시 만안구': ['안양', '만안구', '안양역', '박달', '석수', '안양동', '박달스마트시티'],
+  의왕시: ['의왕', '내손', '포일', '백운', '청계', '오전', '인덕원'],
+  과천시: ['과천', '별양', '부림', '중앙', '갈현', '문원', '정부과천청사', '지식정보타운'],
+}
+
+const reportNewsTopicKeywords = [
+  '아파트',
+  '부동산',
+  '재건축',
+  '재개발',
+  '리모델링',
+  '정비',
+  '개발',
+  '교통',
+  'gtx',
+  '월곶판교',
+  '동탄인덕원',
+  '인덕원',
+  '지식정보타운',
+  '스마트시티',
+  '분양',
+  '공급',
+  '주택',
+  '역세권',
+  '신축',
+]
+
+const normalizeReportRegion = (region: string) => {
+  const trimmedRegion = region.trim()
+  return reportNewsQueriesByRegion[trimmedRegion] ? trimmedRegion : reportRegionAliases[trimmedRegion] ?? '안양시 동안구'
+}
+
 const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
   '안양시 동안구': [
     {
@@ -351,7 +395,7 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
 }
 
 const getFallbackReportNews = (region: string) =>
-  fallbackReportNewsByRegion[region] ?? fallbackReportNewsByRegion['안양시 동안구']
+  fallbackReportNewsByRegion[normalizeReportRegion(region)] ?? fallbackReportNewsByRegion['안양시 동안구']
 
 const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> => {
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:14d`)}&hl=ko&gl=KR&ceid=KR:ko`
@@ -387,8 +431,26 @@ const fetchGoogleNewsItems = async (query: string): Promise<ReportNewsItem[]> =>
   }))
 }
 
+const filterReportNewsByRegion = (items: ReportNewsItem[], region: string) => {
+  const keywords = reportNewsKeywordsByRegion[region] ?? []
+  if (keywords.length === 0) return items
+
+  return items.filter((item) => {
+    const contentTarget = normalizeComparableName(`${item.title} ${item.source}`)
+    const queryTarget = normalizeComparableName(item.keyword)
+    const matchesRegion = keywords.some((keyword) => {
+      const normalizedKeyword = normalizeComparableName(keyword)
+      return contentTarget.includes(normalizedKeyword) || queryTarget.includes(normalizedKeyword)
+    })
+    const matchesTopic = reportNewsTopicKeywords.some((keyword) =>
+      contentTarget.includes(normalizeComparableName(keyword)),
+    )
+    return matchesRegion && matchesTopic
+  })
+}
+
 const buildReportNewsPayload = async (region: string) => {
-  const normalizedRegion = region || '안양시 동안구'
+  const normalizedRegion = normalizeReportRegion(region || '안양시 동안구')
   const cached = reportNewsCache.get(normalizedRegion)
 
   if (cached && Date.now() - cached.updatedAt < reportNewsCacheMs) {
@@ -398,10 +460,10 @@ const buildReportNewsPayload = async (region: string) => {
   const queries = reportNewsQueriesByRegion[normalizedRegion] ?? reportNewsQueriesByRegion['안양시 동안구']
   const fallbackReportNews = getFallbackReportNews(normalizedRegion)
   const results = await runInBatches(queries, 2, fetchGoogleNewsItems, 250)
+  const regionMatchedItems = filterReportNewsByRegion(results.flat(), normalizedRegion)
   const dedupedItems = Array.from(
     new Map(
-      results
-        .flat()
+      regionMatchedItems
         .filter((item) => item.title && item.link)
         .map((item) => [normalizeComparableName(item.title), item]),
     ).values(),
@@ -411,6 +473,7 @@ const buildReportNewsPayload = async (region: string) => {
 
   const payload = {
     ok: true,
+    region: normalizedRegion,
     source: dedupedItems.length > 0 ? 'Google News RSS' : '집직구 기본 브리핑',
     updatedAt: new Date().toISOString(),
     items: dedupedItems.length > 0 ? dedupedItems : fallbackReportNews,
@@ -1601,7 +1664,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
       response.setHeader('Cache-Control', 'public, max-age=600')
       const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
-      const region = incomingUrl.searchParams.get('region') || '안양 전체'
+      const region = normalizeReportRegion(incomingUrl.searchParams.get('region') || '안양시 동안구')
 
       try {
         const payload = await buildReportNewsPayload(region)
