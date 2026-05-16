@@ -261,113 +261,6 @@ button {
   line-height: 1.38;
 }
 
-.report-entry-modal {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: grid;
-  place-items: center;
-  padding: 22px;
-}
-
-.report-entry-backdrop {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: inherit;
-  background: rgba(10, 22, 31, 0.44);
-  backdrop-filter: blur(7px);
-}
-
-.report-entry-card {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 370px);
-  display: grid;
-  gap: 12px;
-  padding: 22px;
-  border: 1px solid rgba(12, 181, 155, 0.2);
-  border-radius: 26px;
-  background:
-    linear-gradient(145deg, rgba(12, 181, 155, 0.1), transparent 46%),
-    #ffffff;
-  box-shadow: 0 26px 70px rgba(5, 24, 33, 0.3);
-}
-
-.report-entry-card > span {
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 950;
-}
-
-.report-entry-card h2 {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: 31px;
-  line-height: 1.08;
-  font-weight: 950;
-}
-
-.report-entry-card p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.45;
-  font-weight: 850;
-}
-
-.report-entry-region-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.report-entry-region-grid button {
-  flex: 1 1 calc(50% - 8px);
-  min-width: 118px;
-  min-height: 38px;
-  border: 1px solid rgba(17, 24, 39, 0.08);
-  border-radius: 999px;
-  background: #f7fbfa;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 950;
-}
-
-.report-entry-region-grid button.active {
-  border-color: rgba(12, 181, 155, 0.42);
-  background: var(--accent-soft);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(12, 181, 155, 0.12);
-}
-
-.report-entry-primary,
-.report-entry-muted {
-  width: 100%;
-  min-height: 46px;
-  border-radius: 16px;
-  justify-content: center;
-  gap: 6px;
-  font-weight: 950;
-}
-
-.report-entry-primary {
-  margin-top: 3px;
-  background: var(--text-strong);
-  color: #ffffff;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
-}
-
-.report-entry-muted {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .app-toast {
   position: absolute;
   left: 18px;
@@ -3446,26 +3339,34 @@ h1 {
 }
 
 .report-preview-list div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  align-items: start;
+  gap: 5px;
   padding: 12px;
 }
 
 .report-preview-list strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-strong);
   font-size: 14px;
+  line-height: 1.28;
   font-weight: 950;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .report-preview-list span {
-  flex: 0 0 auto;
-  text-align: right;
+  min-width: 0;
+  text-align: left;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+
+.report-preview-list .report-preview-window {
+  border: 1px solid rgba(12, 181, 155, 0.12);
+  background:
+    linear-gradient(135deg, rgba(12, 181, 155, 0.1), rgba(255, 255, 255, 0.84)),
+    #f8fffd;
 }
 
 .report-subscribe-card > div span,
@@ -3811,7 +3712,7 @@ h1 {
 
 .development-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 4px 10px;
 }
@@ -3825,15 +3726,17 @@ h1 {
 
 .development-head strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-strong);
   font-size: 16px;
+  line-height: 1.24;
   font-weight: 950;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .development-head em {
+  width: fit-content;
+  max-width: 100%;
   padding: 5px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
@@ -3841,7 +3744,7 @@ h1 {
   font-size: 11px;
   font-style: normal;
   font-weight: 950;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .development-score-row {
@@ -3906,8 +3809,10 @@ h1 {
   gap: 4px;
   color: var(--text-muted);
   font-size: 9px;
+  line-height: 1.15;
   font-weight: 900;
   text-align: center;
+  word-break: keep-all;
 }
 
 .development-stage-map i {
@@ -3952,11 +3857,14 @@ h1 {
   border-radius: 10px;
   display: grid;
   place-items: center;
+  padding: 3px 6px;
   background: #ffffff;
   color: var(--text-muted);
   font-size: 10px;
+  line-height: 1.18;
   font-weight: 900;
   text-align: center;
+  word-break: keep-all;
 }
 
 .development-timeline span.done {

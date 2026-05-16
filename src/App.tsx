@@ -944,6 +944,7 @@ const matchesApartmentQuery = (apartment: Apartment, query: string) => {
 const formatEok = (amount: number) => `${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(1)}억`
 const formatMarkerPrice = (marker: MapValueMarker) =>
   marker.hasPrice === false || marker.priceEok <= 0 ? '' : formatEok(marker.priceEok)
+const hasDisplayableMarkerPrice = (marker: MapValueMarker) => formatMarkerPrice(marker).length > 0
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
 const formatListingStatus = (status: UserListing['verificationStatus']) =>
   status === 'verified' ? '실소유자 확인 완료' : '실소유자 확인중'
@@ -961,6 +962,13 @@ const formatKoreanDateTime = (date: string | number) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(typeof date === 'number' ? new Date(date) : new Date(date))
+const formatReportDateRange = (startTime: number, endTime: number) => {
+  const formatter = new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+  })
+  return `${formatter.format(new Date(startTime))}~${formatter.format(new Date(endTime))}`
+}
 const matchesWeeklyReportRegion = (
   region: string,
   source: { aptName?: string; district?: string; legalDong?: string; address?: string },
@@ -1178,19 +1186,6 @@ const getLatestSaturdayMorning = (baseDate = new Date()) => {
 
 const getLocalDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-
-const getReportPopupDismissKey = () => `jipjiggu-report-popup-dismissed-${getLocalDateKey(new Date())}`
-
-const shouldShowInitialReportPopup = () => {
-  if (typeof window === 'undefined') return false
-
-  try {
-    const isMobileViewport = window.matchMedia('(max-width: 860px)').matches
-    return isMobileViewport && window.localStorage.getItem(getReportPopupDismissKey()) !== '1'
-  } catch {
-    return false
-  }
-}
 
 const withCurrentWeeklyReportNotification = (notifications: AppNotification[]): AppNotification[] => {
   const latestSaturdayMorning = getLatestSaturdayMorning()
@@ -1968,8 +1963,6 @@ function App() {
   const [mode, setMode] = useState<Mode>('prices')
   const [priceHeaderMinimized, setPriceHeaderMinimized] = useState(false)
   const [activeReportRegion, setActiveReportRegion] = useState(weeklyReportRegionOptions[0])
-  const [reportPopupOpen, setReportPopupOpen] = useState(() => shouldShowInitialReportPopup())
-  const [reportPopupRegion, setReportPopupRegion] = useState(weeklyReportRegionOptions[0])
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
@@ -2249,26 +2242,12 @@ function App() {
 
     setActiveReportRegion(nextRegion)
     setMode('report')
-    setReportPopupOpen(false)
     setPriceHeaderMinimized(false)
 
     window.requestAnimationFrame(() => {
       contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
       window.scrollTo({ top: 0, behavior: 'auto' })
     })
-  }
-
-  const handleConfirmReportPopup = () => {
-    handleOpenReport(reportPopupRegion)
-  }
-
-  const handleDismissReportPopupToday = () => {
-    try {
-      window.localStorage.setItem(getReportPopupDismissKey(), '1')
-    } catch {
-      // localStorage can be blocked in some in-app browsers; closing still keeps the flow usable.
-    }
-    setReportPopupOpen(false)
   }
 
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
@@ -2467,41 +2446,6 @@ function App() {
             </div>
           )}
         </section>
-
-        {reportPopupOpen && (
-          <section className="report-entry-modal" role="dialog" aria-modal="true" aria-label="우리동네 리포트 보기">
-            <button
-              className="report-entry-backdrop"
-              type="button"
-              aria-label="우리동네 리포트 팝업 닫기"
-              onClick={() => setReportPopupOpen(false)}
-            />
-            <div className="report-entry-card">
-              <span>집직구 주간 리포트</span>
-              <h2>우리동네 리포트 보기</h2>
-              <p>지역을 고르면 실거래 흐름과 개발 소식을 바로 볼 수 있어요.</p>
-              <div className="report-entry-region-grid" aria-label="리포트 지역 선택">
-                {weeklyReportRegionOptions.map((region) => (
-                  <button
-                    className={reportPopupRegion === region ? 'active' : ''}
-                    key={`report-popup-${region}`}
-                    type="button"
-                    onClick={() => setReportPopupRegion(region)}
-                  >
-                    {region}
-                  </button>
-                ))}
-              </div>
-              <button className="report-entry-primary" type="button" onClick={handleConfirmReportPopup}>
-                확인
-                <ChevronRight size={16} />
-              </button>
-              <button className="report-entry-muted" type="button" onClick={handleDismissReportPopupToday}>
-                오늘 하루 보지 않기
-              </button>
-            </div>
-          </section>
-        )}
 
         <section className="content-panel" ref={contentPanelRef}>
           {mode === 'prices' && (
@@ -2930,7 +2874,7 @@ function PriceView({
     <div className="view-stack price-view">
       <section className="local-report-entry" aria-label="우리동네 리포트 바로가기">
         <button className="local-report-main" type="button" onClick={() => onOpenReport('안양 전체')}>
-          <strong>우리동네 리포트 보기</strong>
+          <strong>지역선택 후 리포트 보기</strong>
         </button>
         <div className="local-report-region-row">
           {weeklyReportRegionOptions.slice(0, 5).map((region) => (
@@ -3187,6 +3131,10 @@ function NeighborhoodReportView({
   const weeklyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= weekCutoffTime)
   const monthlyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= monthCutoffTime)
   const previewDeals = weeklyDeals.length > 0 ? weeklyDeals.slice(0, 2) : sortedRegionDeals.slice(0, 2)
+  const previewNewsItems = reportNewsItems.slice(0, 2)
+  const reportTradeWindowLabel = sortedRegionDeals.length
+    ? `최근 공개 7일 · ${formatReportDateRange(weekCutoffTime, referenceTime)}`
+    : '실거래 캐시 준비중'
   const topRecommendation = regionRecommendations[0] ?? recommendations[0]
   const averagePrice =
     monthlyDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(monthlyDeals.length, 1)
@@ -3225,14 +3173,10 @@ function NeighborhoodReportView({
       .sort((a, b) => b.growthRate - a.growthRate)
       .slice(0, 5)
   }, [referenceTime, sortedRegionDeals])
-  const developmentProgressAverage = Math.round(
-    anyangDevelopmentNews.reduce((sum, item) => sum + item.progress, 0) / anyangDevelopmentNews.length,
-  )
   const topIssue = anyangDevelopmentNews
     .slice()
     .sort((a, b) => b.buzzScore - a.buzzScore)
     .at(0)
-  const reportGeneratedLabel = formatKoreanDateTime(reportNewsUpdatedAt || referenceTime)
 
   const openPublishedReport = () => {
     setReportExpanded(true)
@@ -3282,7 +3226,7 @@ function NeighborhoodReportView({
             <strong>{region}</strong>
           </div>
           <div>
-            <span>최근 7일</span>
+            <span>직전 공개주 거래</span>
             <strong>{weeklyDeals.length ? `${weeklyDeals.length}건` : '수집중'}</strong>
           </div>
           <div>
@@ -3290,15 +3234,19 @@ function NeighborhoodReportView({
             <strong>{monthlyDeals.length ? formatEok(averagePrice) : '확인중'}</strong>
           </div>
           <div>
-            <span>개발 진척</span>
-            <strong>{developmentProgressAverage}%</strong>
+            <span>뉴스 언급</span>
+            <strong>{previewNewsItems.length ? `${previewNewsItems.length}건` : '수집중'}</strong>
           </div>
         </div>
         <div className="report-preview-list">
+          <div className="report-preview-window">
+            <strong>{reportTradeWindowLabel}</strong>
+            <span>현재 공개된 RTMS 기준으로 직전 주 거래를 요약합니다.</span>
+          </div>
           {previewDeals.length > 0 ? (
             previewDeals.map((deal) => (
               <div key={`report-preview-${deal.id}`}>
-                <strong>{deal.aptName}</strong>
+                <strong>새 실거래 · {deal.aptName}</strong>
                 <span>
                   {formatShortDate(deal.dealDate)} · {Math.round(deal.pyeong)}평 · {formatEok(deal.priceEok)}
                 </span>
@@ -3310,19 +3258,25 @@ function NeighborhoodReportView({
               <span>주간 리포트에는 최근 신고 거래와 평형별 흐름이 자동으로 들어갑니다.</span>
             </div>
           )}
-          {topRecommendation && (
+          {previewNewsItems.map((item) => (
+            <div key={`report-preview-news-${item.link}-${item.title}`}>
+              <strong>뉴스 언급 · {item.keyword}</strong>
+              <span>{item.title}</span>
+            </div>
+          ))}
+          {topIssue && (
             <div>
-              <strong>추천 단지 1순위 {topRecommendation.name}</strong>
+              <strong>이번 주 화제축 · {topIssue.title}</strong>
               <span>
-                {topRecommendation.pyeong} · {formatEok(topRecommendation.priceEok)} · 상승여력 {topRecommendation.upsideScore}점
+                {topIssue.plainBrief}
               </span>
             </div>
           )}
-          {topIssue && (
+          {topRecommendation && (
             <div>
-              <strong>이번 주 화제축 {topIssue.title}</strong>
+              <strong>추천 단지 1순위 · {topRecommendation.name}</strong>
               <span>
-                {topIssue.phase} · 진척 {topIssue.progress}%
+                {topRecommendation.pyeong} · {formatEok(topRecommendation.priceEok)} · 상승여력 {topRecommendation.upsideScore}점
               </span>
             </div>
           )}
@@ -3344,7 +3298,7 @@ function NeighborhoodReportView({
           <div className="report-live-brief">
             <div>
               <span>이번 주 핵심</span>
-              <strong>{reportGeneratedLabel}</strong>
+              <strong>{reportTradeWindowLabel}</strong>
             </div>
             <p>
               {topIssue
@@ -3980,6 +3934,7 @@ const searchApartmentPlaceMarkers = (
         const baseMarkers = result
           .map(createEmptyPlaceMarker)
           .filter((marker): marker is MapValueMarker => Boolean(marker))
+          .filter((marker) => Boolean(marker.lawdCd))
           .filter((marker, index, list) => {
             const normalizedName = normalizeMarkerAptName(marker.aptName)
             return (
@@ -3990,7 +3945,20 @@ const searchApartmentPlaceMarkers = (
           })
           .slice(0, 14)
 
-        resolve(baseMarkers)
+        void Promise.all(
+          baseMarkers.map(async (marker) => {
+            if (!marker.lawdCd) return null
+
+            const latestDeal = await fetchLatestDealForPlaceMarker(marker.lawdCd, marker.aptName)
+            return latestDeal ? markerFromLatestDeal(marker, latestDeal) : null
+          }),
+        ).then((markers) =>
+          resolve(
+            markers
+              .filter((marker): marker is MapValueMarker => Boolean(marker))
+              .filter(hasDisplayableMarkerPrice),
+          ),
+        )
       },
       {
         location: map.getCenter(),
@@ -4085,11 +4053,13 @@ function ApartmentMap({
         ])
         if (disposed) return
 
-        const liveMarkerNames = new Set(liveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
+        const displayLiveMarkers = liveMarkers.filter(hasDisplayableMarkerPrice)
+        const displayListingMarkers = listingMarkers.filter(hasDisplayableMarkerPrice)
+        const liveMarkerNames = new Set(displayLiveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
         const specMarkers = apartmentMarkers(apartments, latestApartmentDeals).filter(
-          (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)),
+          (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)) && hasDisplayableMarkerPrice(marker),
         )
-        const markers = [...listingMarkers, ...liveMarkers, ...specMarkers]
+        const markers = [...displayListingMarkers, ...displayLiveMarkers, ...specMarkers]
 
         const markerNodes: HTMLElement[] = []
         const overlays = markers.map((marker) => {
@@ -4116,10 +4086,10 @@ function ApartmentMap({
         let activePlaceSearchKey = ''
 
         const focusedListingMarker = focusListing
-          ? listingMarkers.find((marker) => marker.listing?.id === focusListing.id)
+          ? displayListingMarkers.find((marker) => marker.listing?.id === focusListing.id)
           : null
         const focusedLiveMarker = focusLiveDeal
-          ? liveMarkers.find((marker) =>
+          ? displayLiveMarkers.find((marker) =>
               marker.relatedDeals.some(
                 (deal) =>
                   deal.id === focusLiveDeal.id ||
@@ -4221,10 +4191,10 @@ function ApartmentMap({
   }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, serverMarkers, userListings])
 
   const hasDisplayableMarkers =
-    serverMarkers.length > 0 ||
+    serverMarkers.some(hasDisplayableMarkerPrice) ||
     liveDeals.length > 0 ||
     userListings.length > 0 ||
-    apartmentMarkers(apartments, latestApartmentDeals).length > 0 ||
+    apartmentMarkers(apartments, latestApartmentDeals).some(hasDisplayableMarkerPrice) ||
     placeFallbackCount > 0
   const shouldShowMapStatus = !mapReady || mapError || (!hasDisplayableMarkers && rtmsStatus !== 'loading')
 
@@ -4256,7 +4226,7 @@ function ApartmentMap({
           <button type="button">면적</button>
         </div>
         <button className="map-report-cta" type="button" onClick={() => onReportClick()}>
-          우리동네 리포트 보기
+          지역선택 후 리포트 보기
           <FileText size={15} />
         </button>
         <button className="map-new-deal" type="button">
