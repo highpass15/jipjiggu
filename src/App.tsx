@@ -127,6 +127,11 @@ type RecommendedApartment = {
   dealCount: number
 }
 
+type DevelopmentTimelineItem = {
+  label: string
+  status: 'done' | 'active' | 'watch'
+}
+
 type DevelopmentIssue = {
   rank: number
   title: string
@@ -143,10 +148,9 @@ type DevelopmentIssue = {
   relatedApartments: string[]
   keywords: string[]
   body: string
-  timeline: Array<{
-    label: string
-    status: 'done' | 'active' | 'watch'
-  }>
+  sourceName?: string
+  sourceUrl?: string
+  timeline: DevelopmentTimelineItem[]
 }
 
 type ReportNewsItem = {
@@ -1454,8 +1458,1156 @@ const reportDevelopmentNewsByRegion: Record<string, DevelopmentIssue[]> = {
   과천시: gwacheonDevelopmentNews,
 }
 
+type SeoulIssueSeed = {
+  title: string
+  area: string
+  buzzScore: number
+  progress: number
+  activeStageIndex: number
+  expectedYear: string
+  plainBrief: string
+  phase?: string
+  nextMilestone?: string
+  priceImpact?: string
+  affectedDongs: string[]
+  relatedApartments: string[]
+  keywords: string[]
+  sourceName?: string
+  sourceUrl?: string
+  timeline?: DevelopmentTimelineItem[]
+}
+
+const seoulCleanupSourceName = '서울시 정비사업 정보몽땅'
+const seoulCleanupSearchUrl = 'https://cleanup.seoul.go.kr/cleanup/bsnssttus/lscrMainIndx.do'
+
+const buildSeoulTimeline = (activeStageIndex: number): DevelopmentTimelineItem[] => [
+  { label: developmentStageLabels[Math.max(0, activeStageIndex - 1)] ?? '이슈화', status: 'done' },
+  { label: developmentStageLabels[activeStageIndex] ?? '계획', status: 'active' },
+  { label: developmentStageLabels[Math.min(developmentStageLabels.length - 1, activeStageIndex + 1)] ?? '완공·반영', status: 'watch' },
+]
+
+const toSeoulIssue = (seed: SeoulIssueSeed, rank: number): DevelopmentIssue => ({
+  rank,
+  title: seed.title,
+  area: seed.area,
+  buzzScore: seed.buzzScore,
+  progress: seed.progress,
+  activeStageIndex: seed.activeStageIndex,
+  expectedYear: seed.expectedYear,
+  plainBrief: seed.plainBrief,
+  phase: seed.phase ?? '정비사업 진행상황 확인',
+  nextMilestone: seed.nextMilestone ?? '다음 확인: 정비사업 정보몽땅 단계 변경, 인허가·이주·분양 일정',
+  priceImpact: seed.priceImpact ?? '사업 단계가 올라간 구역 주변 단지는 실거래와 전세가율을 함께 봐야 합니다.',
+  affectedDongs: seed.affectedDongs,
+  relatedApartments: seed.relatedApartments,
+  keywords: seed.keywords,
+  body: `${seed.area} 핵심 사업은 ${seed.keywords.join(' · ')} 흐름을 기준으로 주간 리포트에서 계속 추적합니다.`,
+  sourceName: seed.sourceName ?? seoulCleanupSourceName,
+  sourceUrl: seed.sourceUrl ?? seoulCleanupSearchUrl,
+  timeline: seed.timeline ?? buildSeoulTimeline(seed.activeStageIndex),
+})
+
+const seoulIssueSeedsByDistrict: Record<string, SeoulIssueSeed[]> = {
+  종로구: [
+    {
+      title: '세운·사직 도심 정비',
+      area: '종로·사직·세운',
+      buzzScore: 84,
+      progress: 46,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 인허가 확인',
+      plainBrief: '도심 정비와 노후 주거지 개선이 실제 착공으로 넘어가는지 보는 단계입니다.',
+      affectedDongs: ['사직동', '종로', '세운상가 일대'],
+      relatedApartments: ['경희궁자이', '광화문풍림스페이스본', '인왕산아이파크'],
+      keywords: ['세운재정비', '사직2구역', '도심정비'],
+    },
+    {
+      title: '창신·숭인 재생 전환',
+      area: '창신·숭인',
+      buzzScore: 72,
+      progress: 34,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 방향성 확인',
+      plainBrief: '재생지역이 정비사업으로 얼마나 전환되는지 확인해야 합니다.',
+      affectedDongs: ['창신동', '숭인동'],
+      relatedApartments: ['창신쌍용', '숭인한양', '동묘역 인근 단지'],
+      keywords: ['창신숭인', '도시재생', '정비구역'],
+    },
+  ],
+  중구: [
+    {
+      title: '세운·을지로 재정비',
+      area: '을지로·충무로',
+      buzzScore: 82,
+      progress: 48,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 인허가 확인',
+      plainBrief: '도심 재정비 구역별 인허가와 착공 일정이 핵심입니다.',
+      affectedDongs: ['을지로', '충무로', '입정동'],
+      relatedApartments: ['남산타운', '신당KCC스위첸', '서울역센트럴자이'],
+      keywords: ['세운재정비', '도심정비', '을지로'],
+    },
+    {
+      title: '신당·황학 생활권 정비',
+      area: '신당·황학',
+      buzzScore: 76,
+      progress: 39,
+      activeStageIndex: 1,
+      expectedYear: '2027년 이후 관찰',
+      plainBrief: '신당역·청구역 주변 노후 주거지 정비 속도를 봅니다.',
+      affectedDongs: ['신당동', '황학동'],
+      relatedApartments: ['롯데캐슬베네치아', '신당삼성', '청구e편한세상'],
+      keywords: ['신당동 정비', '모아타운', '가로주택'],
+    },
+  ],
+  용산구: [
+    {
+      title: '한남뉴타운 1~5구역',
+      area: '한남·보광·동빙고',
+      buzzScore: 98,
+      progress: 64,
+      activeStageIndex: 2,
+      expectedYear: '2026 인가·관리처분 체크',
+      plainBrief: '한남5구역 인가 이슈를 포함해 구역별 관리처분·이주 일정이 핵심입니다.',
+      nextMilestone: '다음 확인: 한남5 사업시행인가 고시, 한남2~4 관리처분·이주 일정',
+      priceImpact: '한남동 신축·고급 단지와 보광동 구축의 가격 차이를 함께 봐야 합니다.',
+      affectedDongs: ['한남동', '보광동', '동빙고동'],
+      relatedApartments: ['나인원한남', '한남더힐', '래미안첼리투스'],
+      keywords: ['한남1구역', '한남5구역', '재개발'],
+      sourceUrl: 'https://cleanup.seoul.go.kr/assc/scrin-bbs/execute.do?cafeId=170900000102I07',
+    },
+    {
+      title: '용산정비창 국제업무지구',
+      area: '한강로·이촌·용산역',
+      buzzScore: 91,
+      progress: 45,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 계획 구체화',
+      plainBrief: '용산역 일대 개발계획이 토지이용·착공 일정으로 구체화되는지 보는 단계입니다.',
+      affectedDongs: ['한강로동', '이촌동', '용산동'],
+      relatedApartments: ['용산푸르지오써밋', '래미안첼리투스', '한강맨션'],
+      keywords: ['용산정비창', '국제업무지구', '용산역'],
+      sourceName: '서울시·국토부 발표 확인',
+    },
+  ],
+  성동구: [
+    {
+      title: '성수전략정비구역',
+      area: '성수동·한강변',
+      buzzScore: 94,
+      progress: 55,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 인허가 확인',
+      plainBrief: '성수 한강변 정비구역의 조합·인허가 일정이 가격 반응의 핵심입니다.',
+      affectedDongs: ['성수동1가', '성수동2가'],
+      relatedApartments: ['트리마제', '아크로서울포레스트', '성수전략정비 인접단지'],
+      keywords: ['성수전략정비구역', '서울숲', '한강변'],
+    },
+    {
+      title: '왕십리·마장 생활권 재편',
+      area: '왕십리·마장·행당',
+      buzzScore: 79,
+      progress: 42,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 관찰',
+      plainBrief: '역세권·준공업지 주변 정비 흐름을 확인하는 단계입니다.',
+      affectedDongs: ['행당동', '마장동', '왕십리'],
+      relatedApartments: ['텐즈힐', '서울숲리버뷰자이', '마장세림'],
+      keywords: ['왕십리역', '마장동 정비', '역세권'],
+    },
+  ],
+  광진구: [
+    {
+      title: '자양·구의 정비사업',
+      area: '자양·구의',
+      buzzScore: 84,
+      progress: 47,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 인허가 확인',
+      plainBrief: '구의역·자양동 주변 정비사업이 착공까지 이어지는지 확인합니다.',
+      affectedDongs: ['자양동', '구의동'],
+      relatedApartments: ['자양현대', '구의현대프라임', '광진트라팰리스'],
+      keywords: ['자양동 정비', '구의역', '한강변'],
+    },
+    {
+      title: '광장동 구축 재건축 관찰',
+      area: '광장·아차산',
+      buzzScore: 75,
+      progress: 33,
+      activeStageIndex: 1,
+      expectedYear: '2027년 이후 관찰',
+      plainBrief: '광장동 구축 단지의 재건축 추진 가능성을 봅니다.',
+      affectedDongs: ['광장동'],
+      relatedApartments: ['광장현대', '워커힐아파트', '광장극동'],
+      keywords: ['광장동', '구축 재건축', '학군'],
+    },
+  ],
+  동대문구: [
+    {
+      title: '청량리 재정비',
+      area: '청량리·전농',
+      buzzScore: 91,
+      progress: 68,
+      activeStageIndex: 3,
+      expectedYear: '2026~2028 입주·상권 반영',
+      plainBrief: '청량리역 일대 신축 입주와 상권 변화가 가격에 반영되는지 봅니다.',
+      affectedDongs: ['청량리동', '전농동', '답십리동'],
+      relatedApartments: ['청량리역롯데캐슬SKY-L65', '전농SK', '래미안크레시티'],
+      keywords: ['청량리역', '재정비촉진', 'GTX'],
+    },
+    {
+      title: '이문·휘경 뉴타운',
+      area: '이문·휘경',
+      buzzScore: 86,
+      progress: 70,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 입주·분양',
+      plainBrief: '이문·휘경권 대규모 입주가 주변 구축 가격에 미치는 영향을 봅니다.',
+      affectedDongs: ['이문동', '휘경동'],
+      relatedApartments: ['래미안라그란데', '이문아이파크자이', '휘경자이디센시아'],
+      keywords: ['이문휘경뉴타운', '대규모 입주', '외대앞'],
+    },
+  ],
+  중랑구: [
+    {
+      title: '상봉·망우 역세권',
+      area: '상봉·망우',
+      buzzScore: 78,
+      progress: 42,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 관찰',
+      plainBrief: '상봉터미널·망우역 일대 개발계획이 구체화되는지 확인합니다.',
+      affectedDongs: ['상봉동', '망우동'],
+      relatedApartments: ['상봉프레미어스엠코', '망우금호어울림', '상봉듀오트리스'],
+      keywords: ['상봉터미널', '망우역', '역세권'],
+    },
+    {
+      title: '면목동 모아타운',
+      area: '면목',
+      buzzScore: 73,
+      progress: 36,
+      activeStageIndex: 1,
+      expectedYear: '2026~2028 지정 확인',
+      plainBrief: '면목동 저층 주거지의 소규모 정비 지정 여부를 봅니다.',
+      affectedDongs: ['면목동'],
+      relatedApartments: ['사가정센트럴아이파크', '면목두산', '면목신성'],
+      keywords: ['면목동', '모아타운', '가로주택정비'],
+    },
+  ],
+  성북구: [
+    {
+      title: '장위뉴타운',
+      area: '장위·석관',
+      buzzScore: 88,
+      progress: 66,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 구역별 입주',
+      plainBrief: '장위뉴타운 구역별 분양·입주 일정이 가격을 나눕니다.',
+      affectedDongs: ['장위동', '석관동'],
+      relatedApartments: ['래미안장위포레카운티', '꿈의숲아이파크', '장위자이레디언트'],
+      keywords: ['장위뉴타운', '구역별 입주', '석관동'],
+    },
+    {
+      title: '길음·미아 생활권',
+      area: '길음·하월곡',
+      buzzScore: 80,
+      progress: 53,
+      activeStageIndex: 2,
+      expectedYear: '2026~2028 인허가 확인',
+      plainBrief: '길음뉴타운 주변 추가 정비와 교통 접근성을 확인합니다.',
+      affectedDongs: ['길음동', '하월곡동', '돈암동'],
+      relatedApartments: ['래미안길음센터피스', '길음뉴타운푸르지오', '돈암삼성'],
+      keywords: ['길음뉴타운', '하월곡', '4호선'],
+    },
+  ],
+  강북구: [
+    {
+      title: '미아뉴타운·번동 정비',
+      area: '미아·번동',
+      buzzScore: 78,
+      progress: 52,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 추진',
+      plainBrief: '미아뉴타운 잔여 구역과 번동 정비사업 속도를 봅니다.',
+      affectedDongs: ['미아동', '번동'],
+      relatedApartments: ['꿈의숲해링턴플레이스', '래미안트리베라', '북서울자이폴라리스'],
+      keywords: ['미아뉴타운', '번동', '재개발'],
+    },
+    {
+      title: '수유·우이 교통 접근성',
+      area: '수유·우이',
+      buzzScore: 70,
+      progress: 40,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 관찰',
+      plainBrief: '경전철 연결성과 역세권 정비가 거래에 반영되는지 봅니다.',
+      affectedDongs: ['수유동', '우이동'],
+      relatedApartments: ['수유벽산', '우이대우', '번동주공'],
+      keywords: ['우이신설선', '경전철', '역세권'],
+      sourceName: '서울시 교통자료 확인',
+    },
+  ],
+  도봉구: [
+    {
+      title: '창동·상계 신경제중심지',
+      area: '창동·도봉',
+      buzzScore: 83,
+      progress: 45,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 계획 확인',
+      plainBrief: '창동역 일대 광역개발과 GTX-C 일정이 핵심입니다.',
+      affectedDongs: ['창동', '도봉동'],
+      relatedApartments: ['창동주공', '창동동아청솔', '도봉한신'],
+      keywords: ['창동역', 'GTX-C', '창동상계'],
+      sourceName: '서울시·국토부 발표 확인',
+    },
+    {
+      title: '쌍문·방학 소규모 정비',
+      area: '쌍문·방학',
+      buzzScore: 68,
+      progress: 34,
+      activeStageIndex: 1,
+      expectedYear: '2026~2029 관찰',
+      plainBrief: '쌍문·방학동 저층 주거지 정비사업 지정 여부를 봅니다.',
+      affectedDongs: ['쌍문동', '방학동'],
+      relatedApartments: ['쌍문한양', '방학삼성래미안', '방학신동아'],
+      keywords: ['쌍문동', '방학동', '모아타운'],
+    },
+  ],
+  노원구: [
+    {
+      title: '상계주공 재건축',
+      area: '상계·중계',
+      buzzScore: 92,
+      progress: 42,
+      activeStageIndex: 1,
+      expectedYear: '2026~2030 단지별 추진',
+      plainBrief: '상계주공 단지별 안전진단·정비계획 속도가 핵심입니다.',
+      affectedDongs: ['상계동', '중계동'],
+      relatedApartments: ['상계주공', '중계그린', '은빛아파트'],
+      keywords: ['상계주공', '재건축', '노후대단지'],
+    },
+    {
+      title: '광운대역세권·동북권 교통',
+      area: '월계·공릉',
+      buzzScore: 84,
+      progress: 50,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 착공 확인',
+      plainBrief: '광운대역세권 개발과 GTX-C 일정이 월계·공릉권 변수입니다.',
+      affectedDongs: ['월계동', '공릉동'],
+      relatedApartments: ['월계시영', '공릉태강', '월계센트럴아이파크'],
+      keywords: ['광운대역세권', 'GTX-C', '월계동'],
+      sourceName: '서울시·국토부 발표 확인',
+    },
+  ],
+  은평구: [
+    {
+      title: '수색·증산 뉴타운',
+      area: '수색·증산',
+      buzzScore: 89,
+      progress: 69,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 입주 반영',
+      plainBrief: '수색·증산권 신축 입주와 DMC 접근성이 가격에 반영되는지 봅니다.',
+      affectedDongs: ['수색동', '증산동'],
+      relatedApartments: ['DMC파인시티자이', 'DMC센트럴자이', 'DMC롯데캐슬더퍼스트'],
+      keywords: ['수색증산뉴타운', 'DMC', '신축입주'],
+    },
+    {
+      title: '불광·대조 재개발',
+      area: '불광·대조',
+      buzzScore: 78,
+      progress: 55,
+      activeStageIndex: 2,
+      expectedYear: '2026~2028 인허가 확인',
+      plainBrief: '불광·대조동 재개발 구역별 인허가와 착공 일정을 확인합니다.',
+      affectedDongs: ['불광동', '대조동'],
+      relatedApartments: ['북한산힐스테이트', '불광롯데캐슬', '대조삼성타운'],
+      keywords: ['불광동', '대조동', '재개발'],
+    },
+  ],
+  서대문구: [
+    {
+      title: '북아현뉴타운',
+      area: '북아현·충정로',
+      buzzScore: 91,
+      progress: 62,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 인허가',
+      plainBrief: '북아현 구역별 인허가와 이주 일정이 핵심입니다.',
+      affectedDongs: ['북아현동', '충정로'],
+      relatedApartments: ['e편한세상신촌', '아현역푸르지오', '충정로SK뷰'],
+      keywords: ['북아현뉴타운', '재개발', '신촌'],
+    },
+    {
+      title: '홍제·홍은 정비사업',
+      area: '홍제·홍은',
+      buzzScore: 76,
+      progress: 45,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 관찰',
+      plainBrief: '홍제·홍은 일대 저층 주거지 정비가 구역 지정으로 이어지는지 봅니다.',
+      affectedDongs: ['홍제동', '홍은동'],
+      relatedApartments: ['홍제센트럴아이파크', '홍제한양', '홍은벽산'],
+      keywords: ['홍제동', '홍은동', '재개발'],
+    },
+  ],
+  마포구: [
+    {
+      title: '아현·공덕 재개발 잔여축',
+      area: '아현·공덕',
+      buzzScore: 88,
+      progress: 58,
+      activeStageIndex: 2,
+      expectedYear: '2026~2028 인허가 확인',
+      plainBrief: '아현·공덕권 잔여 정비구역의 인허가와 분양 일정이 핵심입니다.',
+      affectedDongs: ['아현동', '공덕동', '염리동'],
+      relatedApartments: ['마포래미안푸르지오', '공덕자이', '마포프레스티지자이'],
+      keywords: ['아현뉴타운', '공덕', '재개발'],
+    },
+    {
+      title: '성산시영 재건축',
+      area: '성산·상암',
+      buzzScore: 82,
+      progress: 40,
+      activeStageIndex: 1,
+      expectedYear: '2026~2030 사업성 확인',
+      plainBrief: '성산시영 재건축 추진 속도와 DMC 생활권 수요를 봅니다.',
+      affectedDongs: ['성산동', '상암동'],
+      relatedApartments: ['성산시영', '상암월드컵파크', 'DMC래미안클라시스'],
+      keywords: ['성산시영', 'DMC', '재건축'],
+    },
+  ],
+  양천구: [
+    {
+      title: '목동 1~14단지 재건축',
+      area: '목동·신정',
+      buzzScore: 96,
+      progress: 51,
+      activeStageIndex: 2,
+      expectedYear: '2026~2030 단지별 인허가',
+      plainBrief: '목동 단지별 정비계획과 안전진단 통과 여부가 핵심입니다.',
+      affectedDongs: ['목동', '신정동'],
+      relatedApartments: ['목동신시가지', '목동센트럴아이파크위브', '목동파크자이'],
+      keywords: ['목동신시가지', '재건축', '학군'],
+    },
+    {
+      title: '신월·신정 생활권 정비',
+      area: '신월·신정',
+      buzzScore: 72,
+      progress: 38,
+      activeStageIndex: 1,
+      expectedYear: '2027년 이후 관찰',
+      plainBrief: '신월·신정동 저층 주거지 정비와 교통 접근성 개선을 봅니다.',
+      affectedDongs: ['신월동', '신정동'],
+      relatedApartments: ['신정뉴타운', '신월시영', '목동센트럴아이파크위브'],
+      keywords: ['신월동', '신정뉴타운', '모아타운'],
+    },
+  ],
+  강서구: [
+    {
+      title: '마곡 업무지구·공항철도권',
+      area: '마곡·발산',
+      buzzScore: 88,
+      progress: 76,
+      activeStageIndex: 4,
+      expectedYear: '2026 이후 상권 안정',
+      plainBrief: '마곡 업무지구 입주 효과가 주거 수요로 안정되는지 봅니다.',
+      affectedDongs: ['마곡동', '발산동'],
+      relatedApartments: ['마곡엠밸리', '마곡힐스테이트', '마곡수명산파크'],
+      keywords: ['마곡', '업무지구', '공항철도'],
+      sourceName: '서울시·SH 공급 자료 확인',
+    },
+    {
+      title: '화곡동 모아타운',
+      area: '화곡·등촌',
+      buzzScore: 78,
+      progress: 37,
+      activeStageIndex: 1,
+      expectedYear: '2026~2029 지정 확인',
+      plainBrief: '화곡동 저층 주거지 정비사업 지정과 사업성을 봅니다.',
+      affectedDongs: ['화곡동', '등촌동'],
+      relatedApartments: ['화곡푸르지오', '등촌주공', '강서힐스테이트'],
+      keywords: ['화곡동', '모아타운', '가로주택'],
+    },
+  ],
+  구로구: [
+    {
+      title: '신도림·구로역세권 재편',
+      area: '신도림·구로',
+      buzzScore: 80,
+      progress: 43,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 계획 확인',
+      plainBrief: '구로역·신도림역 주변 노후 상업·주거지 정비를 봅니다.',
+      affectedDongs: ['신도림동', '구로동'],
+      relatedApartments: ['신도림대림', '신도림태영타운', '구로두산'],
+      keywords: ['신도림역', '구로역', '역세권정비'],
+    },
+    {
+      title: '개봉·고척 정비사업',
+      area: '개봉·고척',
+      buzzScore: 72,
+      progress: 38,
+      activeStageIndex: 1,
+      expectedYear: '2026~2029 관찰',
+      plainBrief: '개봉·고척동 구축 단지와 저층 주거지 정비 속도를 봅니다.',
+      affectedDongs: ['개봉동', '고척동'],
+      relatedApartments: ['개봉한마을', '고척아이파크', '개봉푸르지오'],
+      keywords: ['개봉동', '고척동', '정비사업'],
+    },
+  ],
+  금천구: [
+    {
+      title: '가산G밸리·독산 역세권',
+      area: '가산·독산',
+      buzzScore: 78,
+      progress: 44,
+      activeStageIndex: 1,
+      expectedYear: '2026~2029 계획 확인',
+      plainBrief: 'G밸리 직주근접 수요와 독산역 주변 정비를 같이 봅니다.',
+      affectedDongs: ['가산동', '독산동'],
+      relatedApartments: ['롯데캐슬골드파크', '독산한신', '가산두산위브'],
+      keywords: ['G밸리', '독산역', '역세권'],
+    },
+    {
+      title: '신안산선 시흥사거리권',
+      area: '시흥·독산',
+      buzzScore: 83,
+      progress: 60,
+      activeStageIndex: 3,
+      expectedYear: '2026~2028 교통 반영',
+      plainBrief: '신안산선 개통 기대가 시흥·독산 생활권에 반영되는지 확인합니다.',
+      affectedDongs: ['시흥동', '독산동'],
+      relatedApartments: ['금천롯데캐슬골드파크', '시흥벽산', '독산중앙하이츠'],
+      keywords: ['신안산선', '시흥사거리', '교통호재'],
+      sourceName: '국토부·서울시 교통자료 확인',
+    },
+  ],
+  영등포구: [
+    {
+      title: '여의도 재건축',
+      area: '여의도',
+      buzzScore: 94,
+      progress: 50,
+      activeStageIndex: 2,
+      expectedYear: '2026~2030 단지별 인허가',
+      plainBrief: '여의도 노후 단지별 정비계획과 사업시행 일정이 핵심입니다.',
+      affectedDongs: ['여의도동'],
+      relatedApartments: ['시범아파트', '공작아파트', '광장아파트'],
+      keywords: ['여의도 재건축', '한강변', '금융업무지'],
+    },
+    {
+      title: '신길뉴타운',
+      area: '신길·대림',
+      buzzScore: 86,
+      progress: 72,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 입주·잔여구역',
+      plainBrief: '신길뉴타운 신축 입주와 잔여 구역 추진 상황을 봅니다.',
+      affectedDongs: ['신길동', '대림동'],
+      relatedApartments: ['래미안에스티움', '보라매SK뷰', '신길센트럴자이'],
+      keywords: ['신길뉴타운', '보라매', '신축입주'],
+    },
+  ],
+  동작구: [
+    {
+      title: '노량진뉴타운',
+      area: '노량진·대방',
+      buzzScore: 91,
+      progress: 60,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 인허가',
+      plainBrief: '노량진 구역별 관리처분과 이주 일정이 핵심입니다.',
+      affectedDongs: ['노량진동', '대방동'],
+      relatedApartments: ['노량진뉴타운 인접단지', '대방현대', '상도더샵'],
+      keywords: ['노량진뉴타운', '재개발', '여의도접근'],
+    },
+    {
+      title: '흑석뉴타운·상도 정비',
+      area: '흑석·상도',
+      buzzScore: 88,
+      progress: 67,
+      activeStageIndex: 3,
+      expectedYear: '2026~2028 입주·잔여구역',
+      plainBrief: '흑석권 신축 입주와 잔여 구역 분양 일정을 봅니다.',
+      affectedDongs: ['흑석동', '상도동'],
+      relatedApartments: ['아크로리버하임', '흑석자이', '상도푸르지오클라베뉴'],
+      keywords: ['흑석뉴타운', '상도동', '한강변'],
+    },
+  ],
+  관악구: [
+    {
+      title: '봉천·신림 재개발',
+      area: '봉천·신림',
+      buzzScore: 84,
+      progress: 52,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 추진',
+      plainBrief: '봉천·신림동 구역별 인허가와 착공 일정을 봅니다.',
+      affectedDongs: ['봉천동', '신림동'],
+      relatedApartments: ['관악드림타운', 'e편한세상서울대입구', '신림푸르지오'],
+      keywords: ['봉천동 재개발', '신림동', '서울대입구'],
+    },
+    {
+      title: '신림선·서부선 교통축',
+      area: '신림·낙성대',
+      buzzScore: 77,
+      progress: 45,
+      activeStageIndex: 1,
+      expectedYear: '2027~2030 확인',
+      plainBrief: '경전철 이용성과 서부선 계획이 생활권 가치에 반영되는지 봅니다.',
+      affectedDongs: ['신림동', '봉천동', '낙성대동'],
+      relatedApartments: ['관악파크푸르지오', '봉천현대', '신림건영'],
+      keywords: ['신림선', '서부선', '경전철'],
+      sourceName: '서울시 교통자료 확인',
+    },
+  ],
+  서초구: [
+    {
+      title: '반포·잠원 재건축',
+      area: '반포·잠원',
+      buzzScore: 96,
+      progress: 73,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 입주·분양',
+      plainBrief: '반포·잠원 한강변 재건축 입주와 잔여 단지 인허가를 봅니다.',
+      affectedDongs: ['반포동', '잠원동'],
+      relatedApartments: ['래미안원베일리', '아크로리버파크', '신반포 메이플자이'],
+      keywords: ['반포 재건축', '잠원', '한강변'],
+    },
+    {
+      title: '방배 재건축벨트',
+      area: '방배·서리풀',
+      buzzScore: 90,
+      progress: 70,
+      activeStageIndex: 3,
+      expectedYear: '2026~2028 입주·분양',
+      plainBrief: '방배권 대형 재건축 단지 입주와 분양 일정이 이어지는지 봅니다.',
+      affectedDongs: ['방배동'],
+      relatedApartments: ['디에이치방배', '방배그랑자이', '래미안원페를라'],
+      keywords: ['방배 재건축', '서리풀', '일반분양'],
+    },
+  ],
+  강남구: [
+    {
+      title: '압구정 재건축',
+      area: '압구정·청담',
+      buzzScore: 99,
+      progress: 50,
+      activeStageIndex: 2,
+      expectedYear: '2026~2030 구역별 인허가',
+      plainBrief: '압구정 특별계획구역별 정비계획과 조합 일정이 핵심입니다.',
+      affectedDongs: ['압구정동', '청담동'],
+      relatedApartments: ['현대아파트', '한양아파트', '미성아파트'],
+      keywords: ['압구정 재건축', '한강변', '특별계획구역'],
+    },
+    {
+      title: '개포·대치 재건축 잔여축',
+      area: '개포·대치',
+      buzzScore: 93,
+      progress: 72,
+      activeStageIndex: 3,
+      expectedYear: '2026~2029 입주·잔여 인허가',
+      plainBrief: '개포 신축 입주와 대치 재건축 추진 속도를 같이 봅니다.',
+      affectedDongs: ['개포동', '대치동', '일원동'],
+      relatedApartments: ['디에이치퍼스티어아이파크', '래미안블레스티지', '은마아파트'],
+      keywords: ['개포 재건축', '대치동', '학군'],
+    },
+  ],
+  송파구: [
+    {
+      title: '잠실주공5단지',
+      area: '잠실·신천',
+      buzzScore: 96,
+      progress: 54,
+      activeStageIndex: 2,
+      expectedYear: '2026~2030 인허가 확인',
+      plainBrief: '잠실주공5단지 사업 단계와 한강변 계획이 송파 핵심 변수입니다.',
+      affectedDongs: ['잠실동', '신천동'],
+      relatedApartments: ['잠실주공5단지', '엘스', '리센츠'],
+      keywords: ['잠실주공5단지', '재건축', '잠실'],
+    },
+    {
+      title: '거여·마천 재정비',
+      area: '거여·마천',
+      buzzScore: 83,
+      progress: 58,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 추진',
+      plainBrief: '거여·마천 구역별 인허가와 분양 일정을 봅니다.',
+      affectedDongs: ['거여동', '마천동'],
+      relatedApartments: ['e편한세상송파파크센트럴', '거여새마을', '마천금호어울림'],
+      keywords: ['거여마천', '재정비촉진', '위례 인접'],
+    },
+  ],
+  강동구: [
+    {
+      title: '둔촌·고덕 신축 공급',
+      area: '둔촌·고덕',
+      buzzScore: 90,
+      progress: 82,
+      activeStageIndex: 4,
+      expectedYear: '2026 이후 입주 안정',
+      plainBrief: '대규모 신축 입주 이후 전세가율과 매매 회복 속도를 봅니다.',
+      affectedDongs: ['둔촌동', '고덕동'],
+      relatedApartments: ['올림픽파크포레온', '고덕그라시움', '고덕아르테온'],
+      keywords: ['둔촌주공', '고덕', '대단지입주'],
+    },
+    {
+      title: '천호·성내 재정비',
+      area: '천호·성내',
+      buzzScore: 82,
+      progress: 55,
+      activeStageIndex: 2,
+      expectedYear: '2026~2029 구역별 추진',
+      plainBrief: '천호역 일대 재정비와 한강변 생활권 변화가 핵심입니다.',
+      affectedDongs: ['천호동', '성내동'],
+      relatedApartments: ['래미안강동팰리스', '천호태영', '성내올림픽파크한양수자인'],
+      keywords: ['천호뉴타운', '성내동', '역세권정비'],
+    },
+  ],
+}
+
+const seoulInfraIssueSeedsByDistrict: Record<string, SeoulIssueSeed> = {
+  종로구: {
+    title: '광화문·종로 도심 보행축',
+    area: '광화문·종각·종로',
+    buzzScore: 76,
+    progress: 58,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 상권 반영',
+    plainBrief: '광화문광장과 종로 보행환경 개선이 업무·관광 상권 회복으로 이어지는지 봅니다.',
+    phase: '도심 보행·상권 재편',
+    nextMilestone: '다음 확인: 공실률, 관광객 회복, 업무지 임대수요',
+    priceImpact: '도심 직주근접 단지는 정비사업보다 업무·관광 상권 회복 여부가 중요할 수 있습니다.',
+    affectedDongs: ['사직동', '청진동', '종로1~4가'],
+    relatedApartments: ['경희궁자이', '광화문풍림스페이스본', '인왕산아이파크'],
+    keywords: ['광화문광장', '도심보행축', '업무상권'],
+    sourceName: '서울시 도심정책 확인',
+    sourceUrl: 'https://news.seoul.go.kr/',
+  },
+  중구: {
+    title: '서울역·남대문 업무상권 재편',
+    area: '서울역·남대문·명동',
+    buzzScore: 78,
+    progress: 52,
+    activeStageIndex: 2,
+    expectedYear: '2026~2029 계획 확인',
+    plainBrief: '서울역 일대 연결성과 명동·남대문 상권 회복이 주거 수요로 이어지는지 봅니다.',
+    phase: '도심 업무·관광 상권 회복',
+    nextMilestone: '다음 확인: 서울역 일대 개발계획, 명동 공실률, 관광 회복',
+    priceImpact: '남산·서울역 생활권 단지는 임대수요와 업무지 접근성을 함께 봐야 합니다.',
+    affectedDongs: ['회현동', '명동', '중림동'],
+    relatedApartments: ['서울역센트럴자이', '남산타운', '충정로SK뷰'],
+    keywords: ['서울역', '명동상권', '남대문'],
+    sourceName: '서울시 도심정책 확인',
+    sourceUrl: 'https://news.seoul.go.kr/',
+  },
+  용산구: {
+    title: '용산역 광역환승·업무축',
+    area: '용산역·한강로',
+    buzzScore: 93,
+    progress: 47,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 단계 확인',
+    plainBrief: '용산역 광역환승과 국제업무지구 일정이 실제 착공 단계로 가는지 봅니다.',
+    phase: '광역환승·업무지구 계획',
+    nextMilestone: '다음 확인: 기반시설 계획, 개발계획 확정, 착공 일정',
+    priceImpact: '이촌·한강로 단지는 장기 호재 기대와 실제 거래량을 분리해서 봐야 합니다.',
+    affectedDongs: ['한강로동', '이촌동', '용산동'],
+    relatedApartments: ['용산푸르지오써밋', '래미안첼리투스', '한강맨션'],
+    keywords: ['용산역', '국제업무지구', '광역환승'],
+    sourceName: '서울시·국토부 발표 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  성동구: {
+    title: '성수 준공업지·상권 확장',
+    area: '성수·서울숲',
+    buzzScore: 92,
+    progress: 69,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 상권 반영',
+    plainBrief: '성수 업무·상권 확장이 주거 선호와 임대수요에 얼마나 반영되는지 봅니다.',
+    phase: '업무·상권 확장',
+    nextMilestone: '다음 확인: 오피스 입주, 상권 임대료, 한강변 정비계획',
+    priceImpact: '성수권은 정비사업뿐 아니라 상권 프리미엄이 가격을 강하게 움직입니다.',
+    affectedDongs: ['성수동1가', '성수동2가'],
+    relatedApartments: ['트리마제', '아크로서울포레스트', '서울숲리버뷰자이'],
+    keywords: ['성수상권', '준공업지', '서울숲'],
+    sourceName: '서울시 도시계획 확인',
+    sourceUrl: 'https://urban.seoul.go.kr/',
+  },
+  광진구: {
+    title: '동서울터미널·구의역세권',
+    area: '구의·강변',
+    buzzScore: 86,
+    progress: 44,
+    activeStageIndex: 1,
+    expectedYear: '2027~2030 계획 확인',
+    plainBrief: '동서울터미널 현대화와 구의역세권 개발 방향이 구체화되는지 봅니다.',
+    phase: '터미널·역세권 개발',
+    nextMilestone: '다음 확인: 개발계획 확정, 착공 일정, 상권 배치',
+    priceImpact: '강변·구의권은 터미널 개발이 확정될 때 구축 단지 재평가가 가능합니다.',
+    affectedDongs: ['구의동', '자양동', '광장동'],
+    relatedApartments: ['구의현대프라임', '자양현대', '광장현대'],
+    keywords: ['동서울터미널', '구의역세권', '강변역'],
+    sourceName: '서울시 도시계획 확인',
+    sourceUrl: 'https://urban.seoul.go.kr/',
+  },
+  동대문구: {
+    title: 'GTX-B·C 청량리 환승축',
+    area: '청량리·전농',
+    buzzScore: 92,
+    progress: 58,
+    activeStageIndex: 3,
+    expectedYear: '2026~2030 공정 확인',
+    plainBrief: '청량리역 광역철도 환승축이 실제 통근시간 개선으로 이어지는지 봅니다.',
+    phase: '광역철도 공사·환승',
+    nextMilestone: '다음 확인: GTX-B·C 공정, 환승 동선, 역세권 상권',
+    priceImpact: '청량리역 반경 신축은 교통 공정과 입주 물량을 같이 봐야 합니다.',
+    affectedDongs: ['청량리동', '전농동', '제기동'],
+    relatedApartments: ['청량리역롯데캐슬SKY-L65', '래미안크레시티', '전농SK'],
+    keywords: ['GTX-B', 'GTX-C', '청량리역'],
+    sourceName: '국토부 광역철도 자료 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  중랑구: {
+    title: '면목선·상봉망우 교통축',
+    area: '면목·상봉·망우',
+    buzzScore: 80,
+    progress: 35,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 계획 확인',
+    plainBrief: '면목선 논의와 상봉·망우 환승 접근성이 실거주 수요를 끌어올리는지 봅니다.',
+    phase: '도시철도·환승 계획',
+    nextMilestone: '다음 확인: 면목선 사업 일정, 상봉역세권 개발계획',
+    priceImpact: '교통 개선 확정 전에는 저가 메리트와 거래량을 먼저 봐야 합니다.',
+    affectedDongs: ['면목동', '상봉동', '망우동'],
+    relatedApartments: ['사가정센트럴아이파크', '상봉프레미어스엠코', '망우금호어울림'],
+    keywords: ['면목선', '상봉역', '망우역'],
+    sourceName: '서울시 도시철도망 자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  성북구: {
+    title: '동북선·월곡 생활권',
+    area: '월곡·길음·정릉',
+    buzzScore: 81,
+    progress: 61,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 공정 확인',
+    plainBrief: '동북선 개통 기대가 월곡·정릉·길음권 접근성 개선으로 이어지는지 봅니다.',
+    phase: '도시철도 공사',
+    nextMilestone: '다음 확인: 동북선 공정률, 환승역 이용성, 역세권 거래',
+    priceImpact: '경전철 역세권 단지는 실제 통근시간 단축이 확인되어야 프리미엄이 유지됩니다.',
+    affectedDongs: ['월곡동', '정릉동', '길음동'],
+    relatedApartments: ['래미안길음센터피스', '정릉풍림아이원', '월곡두산위브'],
+    keywords: ['동북선', '월곡', '정릉'],
+    sourceName: '서울시 도시철도망 자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  강북구: {
+    title: '동북선 연계·북서울 생활권',
+    area: '미아·번동·수유',
+    buzzScore: 74,
+    progress: 42,
+    activeStageIndex: 1,
+    expectedYear: '2027~2030 확인',
+    plainBrief: '강북권 경전철·상권 개선이 4호선 생활권을 보완하는지 봅니다.',
+    phase: '교통·생활권 개선',
+    nextMilestone: '다음 확인: 경전철 공정, 역세권 상권 변화, 학교·공원 접근성',
+    priceImpact: '강북구는 교통 개선 확정성과 가격 메리트가 같이 맞아야 합니다.',
+    affectedDongs: ['미아동', '번동', '수유동'],
+    relatedApartments: ['북서울자이폴라리스', '래미안트리베라', '번동주공'],
+    keywords: ['동북선', '우이신설선', '북서울꿈의숲'],
+    sourceName: '서울시 교통자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  도봉구: {
+    title: 'GTX-C 창동역·창동상계',
+    area: '창동·도봉',
+    buzzScore: 88,
+    progress: 46,
+    activeStageIndex: 1,
+    expectedYear: '2027~2030 공정 확인',
+    plainBrief: 'GTX-C 창동역과 창동상계 개발이 착공·상권 변화로 이어지는지 봅니다.',
+    phase: '광역철도·복합개발',
+    nextMilestone: '다음 확인: GTX-C 공정, 창동역 복합개발 착공',
+    priceImpact: '창동역 인근 구축 단지는 교통 일정이 구체화될 때 거래 반응을 확인합니다.',
+    affectedDongs: ['창동', '도봉동'],
+    relatedApartments: ['창동주공', '창동동아청솔', '도봉한신'],
+    keywords: ['GTX-C', '창동역', '창동상계'],
+    sourceName: '국토부·서울시 발표 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  노원구: {
+    title: '광운대역세권·GTX-C',
+    area: '월계·상계·공릉',
+    buzzScore: 90,
+    progress: 52,
+    activeStageIndex: 2,
+    expectedYear: '2026~2030 착공 확인',
+    plainBrief: '광운대역세권 개발과 GTX-C 일정이 노후 대단지 재평가와 연결되는지 봅니다.',
+    phase: '역세권 개발·광역철도',
+    nextMilestone: '다음 확인: 광운대역세권 착공, GTX-C 공정, 상계단지 정비계획',
+    priceImpact: '상계·월계권은 교통 호재와 재건축 속도가 함께 맞을 때 상승 탄력이 큽니다.',
+    affectedDongs: ['월계동', '상계동', '공릉동'],
+    relatedApartments: ['월계시영', '상계주공', '공릉태강'],
+    keywords: ['광운대역세권', 'GTX-C', '상계주공'],
+    sourceName: '국토부·서울시 발표 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  은평구: {
+    title: '신분당선 서북부·DMC 연결',
+    area: '불광·연신내·수색',
+    buzzScore: 82,
+    progress: 31,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 방향성 확인',
+    plainBrief: '서북권 철도 연장 논의와 DMC 접근성이 실제 사업으로 이어지는지 봅니다.',
+    phase: '철도 연장·업무지 연결',
+    nextMilestone: '다음 확인: 예타·사업계획, DMC 접근성 개선, 수색역세권 계획',
+    priceImpact: '연장 사업은 확정 전 변동성이 커서 역세권 거래량을 보수적으로 봅니다.',
+    affectedDongs: ['불광동', '연신내', '수색동'],
+    relatedApartments: ['DMC파인시티자이', '북한산힐스테이트', '불광롯데캐슬'],
+    keywords: ['신분당선 서북부', 'DMC', '수색역'],
+    sourceName: '서울시·국토부 교통자료 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  서대문구: {
+    title: '서부선·신촌 업무상권',
+    area: '신촌·홍제·북아현',
+    buzzScore: 80,
+    progress: 39,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 사업성 확인',
+    plainBrief: '서부선 계획과 신촌 상권 회복이 주거 선호로 이어지는지 봅니다.',
+    phase: '도시철도·상권 회복',
+    nextMilestone: '다음 확인: 서부선 사업 일정, 신촌 상권 공실률, 대학가 임대수요',
+    priceImpact: '북아현 신축과 신촌·홍제 역세권의 가격 차이가 줄어드는지 봅니다.',
+    affectedDongs: ['신촌동', '홍제동', '북아현동'],
+    relatedApartments: ['e편한세상신촌', '홍제센트럴아이파크', '아현역푸르지오'],
+    keywords: ['서부선', '신촌상권', '홍제역'],
+    sourceName: '서울시 도시철도망 자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  마포구: {
+    title: 'DMC·공덕 업무 연결축',
+    area: '상암·공덕·합정',
+    buzzScore: 86,
+    progress: 64,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 수요 반영',
+    plainBrief: 'DMC·공덕 업무수요와 합정 상권이 매매·전세 수요를 지지하는지 봅니다.',
+    phase: '업무·상권 수요 반영',
+    nextMilestone: '다음 확인: DMC 임대수요, 공덕 오피스 수요, 합정 상권 회복',
+    priceImpact: '마포는 광화문·여의도·DMC 접근성이 동시에 작동하는지가 중요합니다.',
+    affectedDongs: ['상암동', '공덕동', '합정동'],
+    relatedApartments: ['마포래미안푸르지오', '공덕자이', '상암월드컵파크'],
+    keywords: ['DMC', '공덕역', '합정상권'],
+    sourceName: '서울시 도시계획 확인',
+    sourceUrl: 'https://urban.seoul.go.kr/',
+  },
+  양천구: {
+    title: '목동선·서부트럭터미널',
+    area: '목동·신정·신월',
+    buzzScore: 84,
+    progress: 36,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 계획 확인',
+    plainBrief: '목동선과 서부트럭터미널 개발 방향이 목동 재건축과 함께 움직이는지 봅니다.',
+    phase: '교통·복합개발 계획',
+    nextMilestone: '다음 확인: 목동선 사업 일정, 터미널 부지 개발계획',
+    priceImpact: '목동 학군 프리미엄에 교통·상권 개선이 더해지는지 확인합니다.',
+    affectedDongs: ['목동', '신정동', '신월동'],
+    relatedApartments: ['목동신시가지', '목동센트럴아이파크위브', '신월시영'],
+    keywords: ['목동선', '서부트럭터미널', '학군'],
+    sourceName: '서울시 도시철도망·도시계획 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  강서구: {
+    title: '마곡MICE·김포공항 연결',
+    area: '마곡·방화·공항동',
+    buzzScore: 88,
+    progress: 62,
+    activeStageIndex: 3,
+    expectedYear: '2026~2029 상권 반영',
+    plainBrief: '마곡 업무·MICE 기능과 공항 접근성이 주거 수요로 이어지는지 봅니다.',
+    phase: '업무·MICE·공항 연결',
+    nextMilestone: '다음 확인: 마곡 MICE 공정, 기업 입주, 공항철도 수요',
+    priceImpact: '마곡 신축은 업무지 입주와 상권 성숙도가 가격 방어력을 만듭니다.',
+    affectedDongs: ['마곡동', '방화동', '공항동'],
+    relatedApartments: ['마곡엠밸리', '방화동부센트레빌', '강서힐스테이트'],
+    keywords: ['마곡MICE', '김포공항', '공항철도'],
+    sourceName: '서울시·SH 사업자료 확인',
+    sourceUrl: 'https://www.i-sh.co.kr/',
+  },
+  구로구: {
+    title: 'G밸리·신도림 업무축',
+    area: '구로·신도림·가산 인접',
+    buzzScore: 82,
+    progress: 55,
+    activeStageIndex: 2,
+    expectedYear: '2026~2029 수요 확인',
+    plainBrief: 'G밸리 업무수요와 신도림 환승 접근성이 주거 수요를 얼마나 받치는지 봅니다.',
+    phase: '업무지·환승 수요 확인',
+    nextMilestone: '다음 확인: G밸리 고용, 신도림 환승 상권, 구로역 개발계획',
+    priceImpact: '구로는 업무수요는 강하지만 주거환경 개선 속도가 가격 차이를 만듭니다.',
+    affectedDongs: ['구로동', '신도림동'],
+    relatedApartments: ['신도림대림', '신도림태영타운', '구로두산'],
+    keywords: ['G밸리', '신도림역', '구로역'],
+    sourceName: '서울시 경제·도시계획 확인',
+    sourceUrl: 'https://urban.seoul.go.kr/',
+  },
+  금천구: {
+    title: '신안산선·G밸리 남부축',
+    area: '독산·시흥·가산',
+    buzzScore: 86,
+    progress: 60,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 개통 확인',
+    plainBrief: '신안산선 공정과 G밸리 출퇴근 수요가 시흥·독산 가격에 반영되는지 봅니다.',
+    phase: '광역철도 공사·업무지 연결',
+    nextMilestone: '다음 확인: 신안산선 공정, 역세권 정비, G밸리 고용',
+    priceImpact: '교통 개선이 현실화되면 금천 저평가 단지의 거래 회복 속도가 중요합니다.',
+    affectedDongs: ['시흥동', '독산동', '가산동'],
+    relatedApartments: ['롯데캐슬골드파크', '시흥벽산', '독산중앙하이츠'],
+    keywords: ['신안산선', 'G밸리', '시흥사거리'],
+    sourceName: '국토부·서울시 교통자료 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  영등포구: {
+    title: '여의도 금융중심·신안산선',
+    area: '여의도·영등포·신길',
+    buzzScore: 92,
+    progress: 63,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 교통 반영',
+    plainBrief: '여의도 금융업무지와 신안산선 접근성 개선이 주거 선호에 반영되는지 봅니다.',
+    phase: '업무지·광역철도 반영',
+    nextMilestone: '다음 확인: 신안산선 공정, 여의도 업무지 임대수요, 역세권 거래',
+    priceImpact: '여의도·신길권은 업무지 접근성과 신축 공급이 동시에 작동합니다.',
+    affectedDongs: ['여의도동', '영등포동', '신길동'],
+    relatedApartments: ['시범아파트', '신길센트럴자이', '보라매SK뷰'],
+    keywords: ['여의도 금융중심', '신안산선', '신길뉴타운'],
+    sourceName: '국토부·서울시 교통자료 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  동작구: {
+    title: '서부선·노량진 환승축',
+    area: '노량진·상도·흑석',
+    buzzScore: 87,
+    progress: 39,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 사업성 확인',
+    plainBrief: '서부선과 노량진 환승 접근성이 정비사업 가치에 더해지는지 봅니다.',
+    phase: '도시철도·환승 계획',
+    nextMilestone: '다음 확인: 서부선 일정, 노량진역 환승 편의, 흑석권 입주',
+    priceImpact: '동작은 여의도·강남 접근성이 좋아 교통 확정성이 가격 탄력을 키웁니다.',
+    affectedDongs: ['노량진동', '상도동', '흑석동'],
+    relatedApartments: ['아크로리버하임', '흑석자이', '상도더샵'],
+    keywords: ['서부선', '노량진역', '환승'],
+    sourceName: '서울시 도시철도망 자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  관악구: {
+    title: '신림선·서부선 남부축',
+    area: '신림·서울대입구·낙성대',
+    buzzScore: 82,
+    progress: 46,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 확인',
+    plainBrief: '신림선 이용성과 서부선 추진 여부가 관악 교통 약점을 얼마나 줄이는지 봅니다.',
+    phase: '도시철도 접근성 개선',
+    nextMilestone: '다음 확인: 서부선 사업 일정, 신림선 역세권 거래, 환승 편의',
+    priceImpact: '교통 호재가 확정될수록 서울대입구·봉천권 정비사업 가치가 커집니다.',
+    affectedDongs: ['신림동', '봉천동', '낙성대동'],
+    relatedApartments: ['e편한세상서울대입구', '관악드림타운', '관악파크푸르지오'],
+    keywords: ['신림선', '서부선', '서울대입구'],
+    sourceName: '서울시 도시철도망 자료 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+  서초구: {
+    title: '양재·서초 R&D 업무축',
+    area: '양재·우면·서초',
+    buzzScore: 86,
+    progress: 50,
+    activeStageIndex: 2,
+    expectedYear: '2026~2029 계획 확인',
+    plainBrief: '양재 R&D·업무축과 강남대로 상권 변화가 주거 선호를 받치는지 봅니다.',
+    phase: '업무지·상권 계획',
+    nextMilestone: '다음 확인: 양재 R&D 계획, 우면·양재 교통 개선, 오피스 수요',
+    priceImpact: '서초는 재건축 외에도 업무지 확장과 학군 수요가 가격 방어력을 만듭니다.',
+    affectedDongs: ['양재동', '우면동', '서초동'],
+    relatedApartments: ['서초그랑자이', '래미안서초에스티지', '우면서초네이처힐'],
+    keywords: ['양재R&D', '강남대로', '업무축'],
+    sourceName: '서울시 도시계획 확인',
+    sourceUrl: 'https://urban.seoul.go.kr/',
+  },
+  강남구: {
+    title: '영동대로 복합환승·GTX',
+    area: '삼성·대치·청담',
+    buzzScore: 99,
+    progress: 68,
+    activeStageIndex: 3,
+    expectedYear: '2026~2030 공정 확인',
+    plainBrief: '영동대로 복합환승센터와 GTX-A/C가 삼성역 일대 가치를 어떻게 바꾸는지 봅니다.',
+    phase: '광역환승·업무지 공사',
+    nextMilestone: '다음 확인: 환승센터 공정, GTX 운행 일정, 현대차GBC 주변 변화',
+    priceImpact: '삼성·대치·청담권은 교통·업무지 호재가 재건축 기대와 동시에 작동합니다.',
+    affectedDongs: ['삼성동', '대치동', '청담동'],
+    relatedApartments: ['은마아파트', '래미안대치팰리스', '청담자이'],
+    keywords: ['영동대로', 'GTX-A', '복합환승센터'],
+    sourceName: '서울시·국토부 교통자료 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  송파구: {
+    title: '잠실 MICE·수서 광역교통',
+    area: '잠실·문정·수서 인접',
+    buzzScore: 94,
+    progress: 48,
+    activeStageIndex: 1,
+    expectedYear: '2027~2031 계획 확인',
+    plainBrief: '잠실 MICE와 수서 광역교통 영향이 송파 동부·남부까지 퍼지는지 봅니다.',
+    phase: 'MICE·광역교통 계획',
+    nextMilestone: '다음 확인: 잠실 MICE 개발계획, 위례신사선·수서역 교통 일정',
+    priceImpact: '잠실권은 업무·상권 호재, 거여·마천은 정비사업 확정성이 중요합니다.',
+    affectedDongs: ['잠실동', '문정동', '거여동'],
+    relatedApartments: ['엘스', '리센츠', '헬리오시티'],
+    keywords: ['잠실MICE', '수서역', '위례신사선'],
+    sourceName: '서울시·국토부 발표 확인',
+    sourceUrl: 'https://www.molit.go.kr/',
+  },
+  강동구: {
+    title: '9호선 4단계·고덕비즈밸리',
+    area: '고덕·강일·둔촌',
+    buzzScore: 91,
+    progress: 70,
+    activeStageIndex: 3,
+    expectedYear: '2026~2028 교통·업무 반영',
+    plainBrief: '9호선 연장과 고덕비즈밸리 입주가 강동 주거수요를 얼마나 받치는지 봅니다.',
+    phase: '철도 공사·업무지 입주',
+    nextMilestone: '다음 확인: 9호선 공정, 업무시설 입주, 전세수요 변화',
+    priceImpact: '고덕·강일권은 교통 개선과 업무지 수요가 전세가율 회복에 중요합니다.',
+    affectedDongs: ['고덕동', '강일동', '둔촌동'],
+    relatedApartments: ['고덕그라시움', '고덕아르테온', '올림픽파크포레온'],
+    keywords: ['9호선 4단계', '고덕비즈밸리', '강일'],
+    sourceName: '서울시 교통·도시계획 확인',
+    sourceUrl: 'https://news.seoul.go.kr/traffic/',
+  },
+}
+
 const buildSeoulDevelopmentNews = (region: string): DevelopmentIssue[] => {
   const district = region.replace('서울 ', '')
+  const seededIssues = seoulIssueSeedsByDistrict[district]
+
+  if (seededIssues?.length) {
+    const infraIssue = seoulInfraIssueSeedsByDistrict[district]
+    const allSeeds = infraIssue ? [...seededIssues, infraIssue] : seededIssues
+
+    return allSeeds.map((seed, index) => toSeoulIssue(seed, index + 1))
+  }
 
   return [
     {
@@ -3491,6 +4643,7 @@ function NeighborhoodReportView({
   const region = initialRegion
   const [reportExpanded, setReportExpanded] = useState(true)
   const [reportSubscribed, setReportSubscribed] = useState(false)
+  const [reportRegionQuery, setReportRegionQuery] = useState('')
   const [reportNewsItems, setReportNewsItems] = useState<ReportNewsItem[]>([])
   const [reportNewsUpdatedAt, setReportNewsUpdatedAt] = useState('')
   const reportDetailRef = useRef<HTMLElement | null>(null)
@@ -3562,6 +4715,16 @@ function NeighborhoodReportView({
     ? `최근 공개 7일 · ${formatReportDateRange(weekCutoffTime, referenceTime)}`
     : '실거래 캐시 준비중'
   const developmentIssues = useMemo(() => getReportDevelopmentNews(region), [region])
+  const filteredReportRegionOptions = useMemo(() => {
+    const query = normalizeSearchText(reportRegionQuery)
+
+    if (!query) return weeklyReportRegionOptions
+
+    return weeklyReportRegionOptions.filter((option) => {
+      const keywords = weeklyReportRegionKeywords[option] ?? []
+      return normalizeSearchText(`${option} ${keywords.join(' ')}`).includes(query)
+    })
+  }, [reportRegionQuery])
   const growthLeaders = useMemo(() => {
     const groupedDeals = new Map<string, LiveRtmsDeal[]>()
     const oneYearCutoffTime = referenceTime - 365 * 24 * 60 * 60 * 1000
@@ -3624,16 +4787,32 @@ function NeighborhoodReportView({
           <span>지역 선택</span>
           <strong>{region} 리포트</strong>
         </div>
-        {weeklyReportRegionOptions.map((option) => (
-          <button
-            className={region === option ? 'active' : ''}
-            key={option}
-            type="button"
-            onClick={() => handleRegionSelect(option)}
-          >
-            {option}
-          </button>
-        ))}
+        <label className="report-region-search">
+          <Search size={16} />
+          <input
+            aria-label="리포트 지역 검색"
+            placeholder="구·동·지역명 검색"
+            type="search"
+            value={reportRegionQuery}
+            onChange={(event) => setReportRegionQuery(event.target.value)}
+          />
+        </label>
+        <div className="report-region-chip-row">
+          {filteredReportRegionOptions.length > 0 ? (
+            filteredReportRegionOptions.map((option) => (
+              <button
+                className={region === option ? 'active' : ''}
+                key={option}
+                type="button"
+                onClick={() => handleRegionSelect(option)}
+              >
+                {option}
+              </button>
+            ))
+          ) : (
+            <p className="report-region-empty">검색된 지역이 없습니다.</p>
+          )}
+        </div>
       </section>
 
       {reportExpanded && (
@@ -3726,6 +4905,12 @@ function NeighborhoodReportView({
                       ))}
                     </div>
                     <p>{item.nextMilestone}</p>
+                    {item.sourceUrl && (
+                      <a className="development-source-link" href={item.sourceUrl} target="_blank" rel="noreferrer">
+                        {item.sourceName ?? '공식 자료 확인'}
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
                     <dl>
                       <div>
                         <dt>관찰 동네</dt>
