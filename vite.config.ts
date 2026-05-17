@@ -1337,6 +1337,128 @@ const geocodeAddressWithKakao = async (address: string, restApiKey: string) => {
   }
 }
 
+type KakaoAddressSuggestion = {
+  id: string
+  label: string
+  address: string
+  roadAddress?: string
+  jibunAddress?: string
+  lat: number
+  lng: number
+  source: 'address' | 'keyword'
+}
+
+const searchKakaoAddressSuggestions = async (query: string, restApiKey: string): Promise<KakaoAddressSuggestion[]> => {
+  const normalizedQuery = normalizeAddressKey(query)
+  if (!normalizedQuery || !restApiKey) return []
+
+  const headers = { Authorization: `KakaoAK ${restApiKey}` }
+  const suggestions = new Map<string, KakaoAddressSuggestion>()
+
+  const appendSuggestion = (suggestion: Omit<KakaoAddressSuggestion, 'id'> & { id?: string }) => {
+    if (!Number.isFinite(suggestion.lat) || !Number.isFinite(suggestion.lng)) return
+    const address = normalizeAddressKey(suggestion.address || suggestion.roadAddress || suggestion.jibunAddress || '')
+    if (!address) return
+    const key = normalizeComparableName(`${suggestion.label}-${address}`)
+    if (!key || suggestions.has(key)) return
+
+    suggestions.set(key, {
+      ...suggestion,
+      id: suggestion.id || key,
+      address,
+    })
+  }
+
+  try {
+    const addressResponse = await fetchWithTimeout(
+      `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(normalizedQuery)}&size=7`,
+      7000,
+      { headers },
+    )
+
+    if (addressResponse.ok) {
+      const payload = (await addressResponse.json()) as {
+        documents?: Array<{
+          address_name?: string
+          x?: string
+          y?: string
+          road_address?: {
+            address_name?: string
+            building_name?: string
+          } | null
+          address?: {
+            address_name?: string
+          } | null
+        }>
+      }
+
+      ;(payload.documents ?? []).forEach((document, index) => {
+        const roadAddress = normalizeAddressKey(document.road_address?.address_name || '')
+        const jibunAddress = normalizeAddressKey(document.address?.address_name || document.address_name || '')
+        const address = roadAddress || jibunAddress || normalizeAddressKey(document.address_name || '')
+        const buildingName = normalizeAddressKey(document.road_address?.building_name || '')
+        const label = buildingName || address
+
+        appendSuggestion({
+          id: `address-${index}-${normalizeComparableName(address)}`,
+          label,
+          address,
+          roadAddress,
+          jibunAddress,
+          lat: Number(document.y),
+          lng: Number(document.x),
+          source: 'address',
+        })
+      })
+    }
+  } catch {
+    // Keyword search below can still return useful results.
+  }
+
+  try {
+    const keywordResponse = await fetchWithTimeout(
+      `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(normalizedQuery)}&size=7`,
+      7000,
+      { headers },
+    )
+
+    if (keywordResponse.ok) {
+      const payload = (await keywordResponse.json()) as {
+        documents?: Array<{
+          id?: string
+          place_name?: string
+          road_address_name?: string
+          address_name?: string
+          x?: string
+          y?: string
+        }>
+      }
+
+      ;(payload.documents ?? []).forEach((document, index) => {
+        const roadAddress = normalizeAddressKey(document.road_address_name || '')
+        const jibunAddress = normalizeAddressKey(document.address_name || '')
+        const address = roadAddress || jibunAddress
+        const label = normalizeAddressKey(document.place_name || address)
+
+        appendSuggestion({
+          id: `keyword-${document.id || index}`,
+          label,
+          address,
+          roadAddress,
+          jibunAddress,
+          lat: Number(document.y),
+          lng: Number(document.x),
+          source: 'keyword',
+        })
+      })
+    }
+  } catch {
+    // Empty suggestions are handled in the UI.
+  }
+
+  return Array.from(suggestions.values()).slice(0, 8)
+}
+
 const formatMarkerDealMonth = (date?: string) => {
   if (!date) return ''
   const [year, month] = date.split('-')
@@ -2109,6 +2231,51 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
             source: '집직구 청약 기본 브리핑',
             updatedAt: new Date().toISOString(),
             items: subscriptionFallbackItems,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        )
+      }
+    })
+
+    server.middlewares.use('/api/kakao/address-search', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'public, max-age=3600')
+
+      const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+      const query = incomingUrl.searchParams.get('query')?.trim() ?? ''
+      const env = loadRuntimeEnv()
+      const kakaoRestApiKey = readKakaoRestApiKey(env)
+
+      if (!query || query.length < 2) {
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: false, items: [], message: '주소를 조금 더 입력해주세요.' }))
+        return
+      }
+
+      if (!kakaoRestApiKey) {
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: false, items: [], message: '카카오 REST 키가 필요합니다.' }))
+        return
+      }
+
+      try {
+        const items = await searchKakaoAddressSuggestions(query, kakaoRestApiKey)
+
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: true,
+            query,
+            items,
+          }),
+        )
+      } catch (error) {
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: false,
+            items: [],
+            message: '주소 후보를 가져오지 못했습니다.',
             error: error instanceof Error ? error.message : 'Unknown error',
           }),
         )

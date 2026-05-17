@@ -106,6 +106,13 @@ type WorkplaceLocation = {
   label: string
 }
 
+type WorkplaceAddressSuggestion = WorkplaceLocation & {
+  id: string
+  roadAddress?: string
+  jibunAddress?: string
+  source?: string
+}
+
 type MortgageRuleProfile = {
   ltvRatio: number
   priceCapEok: number
@@ -7478,14 +7485,71 @@ function AiView({
 }) {
   const [hasSearched, setHasSearched] = useState(false)
   const [isResolvingWorkplace, setIsResolvingWorkplace] = useState(false)
+  const [isSearchingWorkplace, setIsSearchingWorkplace] = useState(false)
   const [workplaceMessage, setWorkplaceMessage] = useState('')
+  const [workplaceSuggestions, setWorkplaceSuggestions] = useState<WorkplaceAddressSuggestion[]>([])
+  const [workplaceSuggestionOpen, setWorkplaceSuggestionOpen] = useState(false)
   const searchResults = useMemo(() => (hasSearched ? apartments.slice(0, 5) : []), [apartments, hasSearched])
   const rankedPreferences = uniqueAiPreferenceRanks(aiPreferenceRanks)
+
+  useEffect(() => {
+    const query = workplaceAddress.trim()
+
+    if (query.length < 2) {
+      setWorkplaceSuggestions([])
+      setIsSearchingWorkplace(false)
+      return undefined
+    }
+
+    if (
+      workplaceLocation &&
+      (normalizeSearchText(workplaceLocation.label) === normalizeSearchText(query) ||
+        normalizeSearchText(workplaceLocation.address) === normalizeSearchText(query))
+    ) {
+      setWorkplaceSuggestions([])
+      setIsSearchingWorkplace(false)
+      return undefined
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setIsSearchingWorkplace(true)
+      fetch(`/api/kakao/address-search?query=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((response) => response.json())
+        .then((payload: { ok?: boolean; items?: WorkplaceAddressSuggestion[] }) => {
+          if (controller.signal.aborted) return
+          setWorkplaceSuggestions(payload.ok ? payload.items ?? [] : [])
+          setWorkplaceSuggestionOpen(true)
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setWorkplaceSuggestions([])
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsSearchingWorkplace(false)
+          }
+        })
+    }, 260)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [workplaceAddress, workplaceLocation])
 
   const handleRecommendationSearch = async () => {
     const trimmedWorkplaceAddress = workplaceAddress.trim()
 
-    if (trimmedWorkplaceAddress.length >= 3) {
+    if (
+      trimmedWorkplaceAddress.length >= 3 &&
+      workplaceLocation &&
+      (normalizeSearchText(workplaceLocation.label) === normalizeSearchText(trimmedWorkplaceAddress) ||
+        normalizeSearchText(workplaceLocation.address) === normalizeSearchText(trimmedWorkplaceAddress))
+    ) {
+      setWorkplaceMessage(`${workplaceLocation.label} 기준으로 통근 시간을 계산합니다.`)
+    } else if (trimmedWorkplaceAddress.length >= 3) {
       setIsResolvingWorkplace(true)
       setWorkplaceMessage('직장 주소 기준으로 좌표를 찾는 중입니다.')
 
@@ -7516,6 +7580,38 @@ function AiView({
     }
 
     setHasSearched(true)
+    setWorkplaceSuggestionOpen(false)
+  }
+
+  const handleWorkplaceSuggestionSelect = (suggestion: WorkplaceAddressSuggestion) => {
+    const nextAddress = suggestion.roadAddress || suggestion.address
+    setWorkplaceAddress(nextAddress)
+    setWorkplaceLocation({
+      address: suggestion.address,
+      label: suggestion.label,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+    })
+    setWorkplaceSuggestions([])
+    setWorkplaceSuggestionOpen(false)
+    setWorkplaceMessage(`${suggestion.label} 기준으로 통근 시간을 계산합니다.`)
+  }
+
+  const handleRelaxConditions = (type: 'price' | 'commute' | 'subway') => {
+    if (type === 'price') {
+      setMaxTradePriceEok(Math.min(120, maxTradePriceEok + 10))
+      setWorkplaceMessage('최대 가격을 10억 넓혔습니다. 다시 검색해보세요.')
+      return
+    }
+
+    if (type === 'commute') {
+      setMaxCommuteMinutes(Math.min(120, maxCommuteMinutes + 20))
+      setWorkplaceMessage('직장 거리 조건을 20분 넓혔습니다. 다시 검색해보세요.')
+      return
+    }
+
+    setMaxSubwayMinutes(Math.min(30, maxSubwayMinutes + 10))
+    setWorkplaceMessage('역 도보 조건을 10분 넓혔습니다. 다시 검색해보세요.')
   }
 
   const handlePreferenceRankChange = (rankIndex: number, value: AiPreferenceKey) => {
@@ -7571,7 +7667,7 @@ function AiView({
             </label>
           ))}
         </div>
-        <label className="workplace-address-field">
+        <div className="workplace-address-field">
           <span>직장 주소</span>
           <input
             value={workplaceAddress}
@@ -7579,15 +7675,47 @@ function AiView({
               setWorkplaceAddress(event.target.value)
               setWorkplaceLocation(null)
               setWorkplaceMessage('')
+              setWorkplaceSuggestionOpen(true)
+            }}
+            onFocus={() => setWorkplaceSuggestionOpen(true)}
+            onBlur={() => {
+              window.setTimeout(() => setWorkplaceSuggestionOpen(false), 160)
             }}
             placeholder="예: 서울 강남구 테헤란로 152"
+            autoComplete="street-address"
           />
+          {workplaceSuggestionOpen && workplaceAddress.trim().length >= 2 && (
+            <div className="workplace-address-suggestions" aria-label="직장 주소 추천">
+              {isSearchingWorkplace ? (
+                <div className="workplace-suggestion-status">주소 후보를 찾는 중입니다.</div>
+              ) : workplaceSuggestions.length > 0 ? (
+                workplaceSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleWorkplaceSuggestionSelect(suggestion)}
+                  >
+                    <strong>{suggestion.label}</strong>
+                    <span>{suggestion.roadAddress || suggestion.address}</span>
+                    {suggestion.jibunAddress && suggestion.jibunAddress !== (suggestion.roadAddress || suggestion.address) && (
+                      <em>지번 {suggestion.jibunAddress}</em>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="workplace-suggestion-status">
+                  주소 후보가 없습니다. 도로명과 건물번호를 같이 입력해보세요.
+                </div>
+              )}
+            </div>
+          )}
           <small>
             {workplaceLocation
               ? `${workplaceLocation.label} 좌표 기준`
               : '정확한 주소를 입력하면 단지별 통근 시간을 주소 기준으로 계산합니다.'}
           </small>
-        </label>
+        </div>
         <div className="preference-grid">
           <SelectField
             label="직장권역 보조"
@@ -7672,6 +7800,21 @@ function AiView({
             <Search size={20} />
             <strong>조건에 맞는 단지가 아직 없습니다</strong>
             <p>가격대를 조금 넓히거나 직장 거리·역 도보 조건을 완화해서 다시 검색해보세요.</p>
+            <div className="recommend-empty-actions">
+              <button type="button" onClick={() => handleRelaxConditions('price')}>
+                가격 +10억
+              </button>
+              <button type="button" onClick={() => handleRelaxConditions('commute')}>
+                직장거리 +20분
+              </button>
+              <button type="button" onClick={() => handleRelaxConditions('subway')}>
+                역도보 +10분
+              </button>
+            </div>
+            <button className="primary-action compact" type="button" onClick={handleRecommendationSearch}>
+              조건 다시 검색
+              <ChevronRight size={16} />
+            </button>
           </section>
         )}
 
