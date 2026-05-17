@@ -2112,6 +2112,60 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       }
     })
 
+    server.middlewares.use('/api/kakao/geocode', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'public, max-age=86400')
+
+      const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
+      const query = incomingUrl.searchParams.get('query')?.trim() ?? ''
+      const env = loadRuntimeEnv()
+      const kakaoRestApiKey = readKakaoRestApiKey(env)
+
+      if (!query || query.length < 2) {
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: false, message: '주소를 조금 더 정확히 입력해주세요.' }))
+        return
+      }
+
+      if (!kakaoRestApiKey) {
+        response.statusCode = 200
+        response.end(JSON.stringify({ ok: false, message: '카카오 REST 키가 없어 직장권역 기준으로 계산합니다.' }))
+        return
+      }
+
+      try {
+        const location = await geocodeAddressWithKakao(query, kakaoRestApiKey)
+
+        if (!location) {
+          response.statusCode = 200
+          response.end(JSON.stringify({ ok: false, message: '주소 좌표를 찾지 못해 직장권역 기준으로 계산합니다.' }))
+          return
+        }
+
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: true,
+            location: {
+              address: location.address,
+              label: query,
+              lat: location.lat,
+              lng: location.lng,
+            },
+          }),
+        )
+      } catch (error) {
+        response.statusCode = 200
+        response.end(
+          JSON.stringify({
+            ok: false,
+            message: '주소 좌표 변환이 지연되어 직장권역 기준으로 계산합니다.',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        )
+      }
+    })
+
     server.middlewares.use('/api/health', async (_request, response) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
       response.setHeader('Cache-Control', 'no-store')

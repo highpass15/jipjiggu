@@ -97,8 +97,14 @@ type Apartment = {
   tags: string[]
 }
 
-type AiPreferenceKey = 'budget' | 'pyeong' | 'subway' | 'commute' | 'growth' | 'newness' | 'direct'
+type AiPreferenceKey = 'pyeong' | 'subway' | 'commute' | 'growth' | 'newness' | 'direct'
 type TradePyeongBandKey = 'under20' | 'p20' | 'p25' | 'p34' | 'p40' | 'over50'
+type WorkplaceLocation = {
+  address: string
+  lat: number
+  lng: number
+  label: string
+}
 
 type RecommendedApartment = {
   name: string
@@ -117,7 +123,7 @@ type RecommendedApartment = {
   recommendationScore: number
   commuteToOffice: number
   commuteRouteUrl: string
-  commuteSource: 'kakao-route-link' | 'estimated'
+  commuteSource: 'address-geocoded' | 'kakao-route-link' | 'estimated'
   upsideScore: number
   developmentSignals: string[]
   fitReasons: string[]
@@ -1000,11 +1006,10 @@ const pyeongPreferenceOptions = [25, 32, 34, 40]
 const subwayPreferenceOptions = [5, 8, 10, 15]
 const commutePreferenceOptions = [20, 30, 40, 60]
 const aiPreferenceOptions: Array<{ value: AiPreferenceKey; label: string; shortLabel: string }> = [
-  { value: 'budget', label: '예산 적합도', shortLabel: '예산' },
-  { value: 'pyeong', label: '선호 평형', shortLabel: '평형' },
-  { value: 'subway', label: '역과의 거리', shortLabel: '역세권' },
+  { value: 'growth', label: '상승여력·관심도', shortLabel: '상승여력' },
   { value: 'commute', label: '직장과의 거리', shortLabel: '직장' },
-  { value: 'growth', label: '최근 1년 상승률', shortLabel: '상승률' },
+  { value: 'subway', label: '역과의 거리', shortLabel: '역세권' },
+  { value: 'pyeong', label: '선호 평형', shortLabel: '평형' },
   { value: 'newness', label: '입주년차', shortLabel: '연식' },
   { value: 'direct', label: '직거래 사례', shortLabel: '직거래' },
 ]
@@ -3040,17 +3045,17 @@ const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixe
 const clampScore = (value: number) => Math.min(100, Math.max(0, value))
 
 const uniqueAiPreferenceRanks = (ranks: AiPreferenceKey[]) => {
-  const fallback: AiPreferenceKey[] = ['budget', 'commute', 'growth', 'pyeong']
+  const fallback: AiPreferenceKey[] = ['growth', 'commute', 'subway', 'pyeong']
   const uniqueRanks = ranks.filter((rank, index) => ranks.indexOf(rank) === index)
 
   fallback.forEach((rank) => {
-    if (uniqueRanks.length < 3 && !uniqueRanks.includes(rank)) {
+    if (uniqueRanks.length < 4 && !uniqueRanks.includes(rank)) {
       uniqueRanks.push(rank)
     }
   })
 
   aiPreferenceOptions.forEach((option) => {
-    if (uniqueRanks.length < 3 && !uniqueRanks.includes(option.value)) {
+    if (uniqueRanks.length < 4 && !uniqueRanks.includes(option.value)) {
       uniqueRanks.push(option.value)
     }
   })
@@ -3132,11 +3137,37 @@ const estimateRtmsCommuteMinutes = (deal: LiveRtmsDeal, officeArea: OfficeArea) 
   return baseByOffice[officeArea]
 }
 
+const estimateTransitMinutesFromDistance = (meters: number) => {
+  const kilometers = meters / 1000
+  const transferBuffer = kilometers > 16 ? 16 : kilometers > 8 ? 11 : 7
+  return Math.round(Math.min(115, Math.max(8, 10 + kilometers * 3.15 + transferBuffer)))
+}
+
+const estimateCommuteMinutesToWorkplace = ({
+  origin,
+  workplaceLocation,
+  fallbackMinutes,
+}: {
+  origin?: { lat?: number; lng?: number }
+  workplaceLocation: WorkplaceLocation | null
+  fallbackMinutes: number
+}) => {
+  if (
+    workplaceLocation &&
+    typeof origin?.lat === 'number' &&
+    typeof origin.lng === 'number'
+  ) {
+    return estimateTransitMinutesFromDistance(
+      calculateDistanceMeters({ lat: origin.lat, lng: origin.lng }, workplaceLocation),
+    )
+  }
+
+  return fallbackMinutes
+}
+
 const scoreRecommendationPreference = (
   preference: AiPreferenceKey,
   context: {
-    priceEok: number
-    budgetEok: number
     pyeong: number
     preferredPyeong: number
     subwayMinutes: number
@@ -3149,8 +3180,6 @@ const scoreRecommendationPreference = (
   },
 ) => {
   switch (preference) {
-    case 'budget':
-      return clampScore(100 - Math.abs(context.priceEok - context.budgetEok) * 9)
     case 'pyeong':
       return clampScore(100 - Math.abs(context.pyeong - context.preferredPyeong) * 8)
     case 'subway':
@@ -3167,6 +3196,9 @@ const scoreRecommendationPreference = (
       return 50
   }
 }
+
+const getAffordableRecommendationMax = (budgetEok: number, maxPriceEok: number) =>
+  Math.min(maxPriceEok, Math.max(budgetEok + 0.8, budgetEok * 1.12))
 
 const formatGrowth = (value: number | null) => (value === null ? '산정중' : formatPercent(value))
 
@@ -3208,16 +3240,19 @@ const buildKakaoRouteUrl = ({
   lat,
   lng,
   officeArea,
+  workplaceLocation,
 }: {
   originName: string
   lat?: number
   lng?: number
   officeArea: OfficeArea
+  workplaceLocation?: WorkplaceLocation | null
 }) => {
-  const destination = officeAreaDestinations[officeArea]
+  const destination = workplaceLocation ?? officeAreaDestinations[officeArea]
+  const destinationName = workplaceLocation?.label || officeAreaDestinations[officeArea].name
 
   if (typeof lat !== 'number' || typeof lng !== 'number') {
-    return `https://m.map.kakao.com/scheme/search?q=${encodeURIComponent(`${originName} ${destination.name} 대중교통`)}`
+    return `https://m.map.kakao.com/scheme/search?q=${encodeURIComponent(`${originName} ${destinationName} 대중교통`)}`
   }
 
   return `https://m.map.kakao.com/scheme/route?sp=${lat},${lng}&ep=${destination.lat},${destination.lng}&by=publictransit`
@@ -3370,6 +3405,7 @@ const buildRtmsRecommendationCandidates = ({
   preferredPyeong,
   maxSubwayMinutes,
   officeArea,
+  workplaceLocation,
   maxCommuteMinutes,
 }: {
   deals: LiveRtmsDeal[]
@@ -3380,12 +3416,14 @@ const buildRtmsRecommendationCandidates = ({
   preferredPyeong: number
   maxSubwayMinutes: number
   officeArea: OfficeArea
+  workplaceLocation: WorkplaceLocation | null
   maxCommuteMinutes: number
 }): RecommendedApartment[] => {
   const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
+  const affordableMaxEok = getAffordableRecommendationMax(budgetEok, maxPriceEok)
   const groupedDeals = Array.from(
     deals
-      .filter((deal) => deal.status === 'active' && deal.priceEok >= minPriceEok && deal.priceEok <= maxPriceEok)
+      .filter((deal) => deal.status === 'active' && deal.priceEok >= minPriceEok && deal.priceEok <= affordableMaxEok)
       .reduce((group, deal) => {
         const key = getRecommendationDealKey(deal)
         group.set(key, [...(group.get(key) ?? []), deal])
@@ -3404,7 +3442,11 @@ const buildRtmsRecommendationCandidates = ({
 
       const oneYearGrowthRate = getOneYearGrowth(preferredHistory)
       const subwayMinutes = estimateRtmsSubwayMinutes(latestDeal)
-      const commuteToOffice = estimateRtmsCommuteMinutes(latestDeal, officeArea)
+      const commuteToOffice = estimateCommuteMinutesToWorkplace({
+        origin: { lat: latestDeal.lat, lng: latestDeal.lng },
+        workplaceLocation,
+        fallbackMinutes: estimateRtmsCommuteMinutes(latestDeal, officeArea),
+      })
       const budgetDistance = Math.abs(latestDeal.priceEok - budgetEok)
       const directDealCount = preferredHistory.filter((deal) => deal.tradeType === 'direct').length
       const upside = calculateUpsideScore(
@@ -3414,8 +3456,6 @@ const buildRtmsRecommendationCandidates = ({
       )
       const regionPremium = getRegionPreferenceBonus(`${latestDeal.district} ${latestDeal.legalDong} ${latestDeal.address}`)
       const context = {
-        priceEok: latestDeal.priceEok,
-        budgetEok,
         pyeong: latestDeal.pyeong,
         preferredPyeong,
         subwayMinutes,
@@ -3432,10 +3472,11 @@ const buildRtmsRecommendationCandidates = ({
         0,
       )
       const baseFitScore =
-        scoreRecommendationPreference('budget', context) * 0.03 +
         scoreRecommendationPreference('pyeong', context) * 0.01 +
         Math.min(preferredHistory.length, 12) * 0.35
-      const recommendationScore = Math.round(Math.min(99, preferenceScore + baseFitScore + regionPremium.score))
+      const recommendationScore = Math.round(
+        Math.min(99, preferenceScore * 0.58 + upside.score * 0.28 + baseFitScore + regionPremium.score + 10),
+      )
       const recentDeals = preferredHistory.slice(0, 5).map((deal) => ({
         date: formatShortDate(deal.dealDate),
         priceEok: deal.priceEok,
@@ -3459,8 +3500,14 @@ const buildRtmsRecommendationCandidates = ({
           lat: latestDeal.lat,
           lng: latestDeal.lng,
           officeArea,
+          workplaceLocation,
         }),
-        commuteSource: typeof latestDeal.lat === 'number' && typeof latestDeal.lng === 'number' ? 'kakao-route-link' : 'estimated',
+        commuteSource:
+          workplaceLocation && typeof latestDeal.lat === 'number' && typeof latestDeal.lng === 'number'
+            ? 'address-geocoded'
+            : typeof latestDeal.lat === 'number' && typeof latestDeal.lng === 'number'
+              ? 'kakao-route-link'
+              : 'estimated',
         upsideScore: upside.score,
         developmentSignals: upside.signals,
         source: 'rtms' as const,
@@ -3473,7 +3520,7 @@ const buildRtmsRecommendationCandidates = ({
           `최근 실거래 ${formatShortDate(latestDeal.dealDate)} · ${Math.round(latestDeal.pyeong)}평 · ${formatEok(latestDeal.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
-          `${officeArea} 대중교통 ${commuteToOffice}분`,
+          `${workplaceLocation?.label || officeArea} 대중교통 약 ${commuteToOffice}분`,
           directDealCount > 0 ? `직거래 ${directDealCount}건 포함` : `동일 평형권 ${preferredHistory.length}건 분석`,
         ],
       }
@@ -3489,6 +3536,7 @@ const buildCuratedRecommendationCandidates = ({
   preferredPyeong,
   maxSubwayMinutes,
   officeArea,
+  workplaceLocation,
   maxCommuteMinutes,
 }: {
   preferenceRanks: AiPreferenceKey[]
@@ -3498,16 +3546,24 @@ const buildCuratedRecommendationCandidates = ({
   preferredPyeong: number
   maxSubwayMinutes: number
   officeArea: OfficeArea
+  workplaceLocation: WorkplaceLocation | null
   maxCommuteMinutes: number
 }) =>
   apartments
-    .filter((apartment) => apartment.priceEok >= minPriceEok && apartment.priceEok <= maxPriceEok)
+    .filter((apartment) => {
+      const affordableMaxEok = getAffordableRecommendationMax(budgetEok, maxPriceEok)
+      return apartment.priceEok >= minPriceEok && apartment.priceEok <= affordableMaxEok
+    })
     .map((apartment): RecommendedApartment => {
       const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
       const apartmentPyeong = Number(apartment.pyeong.replace('평', ''))
       const oneYearGrowthRate =
         apartment.previousEok > 0 ? ((apartment.priceEok - apartment.previousEok) / apartment.previousEok) * 100 : null
-      const commuteToOffice = apartment.commuteMinutes[officeArea]
+      const commuteToOffice = estimateCommuteMinutesToWorkplace({
+        origin: { lat: apartment.lat, lng: apartment.lng },
+        workplaceLocation,
+        fallbackMinutes: apartment.commuteMinutes[officeArea],
+      })
       const curatedHistory = apartment.recentDeals.map((deal, index) => ({
         id: `curated-${apartment.name}-${index}`,
         aptSeq: `curated-${apartment.name}`,
@@ -3543,8 +3599,6 @@ const buildCuratedRecommendationCandidates = ({
       )
       const regionPremium = getRegionPreferenceBonus(apartment.region)
       const context = {
-        priceEok: apartment.priceEok,
-        budgetEok,
         pyeong: apartmentPyeong,
         preferredPyeong,
         subwayMinutes: apartment.subwayMinutes,
@@ -3562,7 +3616,7 @@ const buildCuratedRecommendationCandidates = ({
       )
       const budgetDistance = Math.abs(apartment.priceEok - budgetEok)
       const recommendationScore = Math.round(
-        Math.min(99, preferenceScore + scoreRecommendationPreference('budget', context) * 0.03 + regionPremium.score),
+        Math.min(99, preferenceScore * 0.58 + upside.score * 0.28 + regionPremium.score + 10),
       )
 
       return {
@@ -3585,8 +3639,9 @@ const buildCuratedRecommendationCandidates = ({
           lat: apartment.lat,
           lng: apartment.lng,
           officeArea,
+          workplaceLocation,
         }),
-        commuteSource: 'kakao-route-link',
+        commuteSource: workplaceLocation ? 'address-geocoded' : 'kakao-route-link',
         upsideScore: upside.score,
         developmentSignals: upside.signals,
         fitReasons: [
@@ -3595,7 +3650,7 @@ const buildCuratedRecommendationCandidates = ({
           `최근 실거래 ${apartment.recentDeals[0]?.date ?? '업데이트 예정'} · ${apartment.pyeong} · ${formatEok(apartment.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
-          `${officeArea} 대중교통 ${commuteToOffice}분`,
+          `${workplaceLocation?.label || officeArea} 대중교통 약 ${commuteToOffice}분`,
         ],
         source: 'curated',
         oneYearGrowthRate,
@@ -3688,10 +3743,12 @@ function App() {
   const [preferredPyeong, setPreferredPyeong] = useState(34)
   const [maxSubwayMinutes, setMaxSubwayMinutes] = useState(10)
   const [officeArea, setOfficeArea] = useState<OfficeArea>('강남')
+  const [workplaceAddress, setWorkplaceAddress] = useState('')
+  const [workplaceLocation, setWorkplaceLocation] = useState<WorkplaceLocation | null>(null)
   const [maxCommuteMinutes, setMaxCommuteMinutes] = useState(40)
   const [minTradePriceEok, setMinTradePriceEok] = useState(0)
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
-  const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['budget', 'commute', 'growth', 'pyeong'])
+  const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['growth', 'commute', 'subway', 'pyeong'])
   const [userListings, setUserListings] = useState<UserListing[]>([])
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
@@ -4088,6 +4145,7 @@ function App() {
       preferredPyeong,
       maxSubwayMinutes,
       officeArea,
+      workplaceLocation,
       maxCommuteMinutes,
     })
     const curatedCandidates = buildCuratedRecommendationCandidates({
@@ -4098,6 +4156,7 @@ function App() {
       preferredPyeong,
       maxSubwayMinutes,
       officeArea,
+      workplaceLocation,
       maxCommuteMinutes,
     })
     const candidatesByName = new Map<string, RecommendedApartment>()
@@ -4132,6 +4191,7 @@ function App() {
       normalizedMinTradePriceEok,
       preferredPyeong,
       recommendationBudgetEok,
+      workplaceLocation,
     ],
   )
 
@@ -4272,10 +4332,14 @@ function App() {
               preferredPyeong={preferredPyeong}
               maxSubwayMinutes={maxSubwayMinutes}
               officeArea={officeArea}
+              workplaceAddress={workplaceAddress}
+              workplaceLocation={workplaceLocation}
               maxCommuteMinutes={maxCommuteMinutes}
               setPreferredPyeong={setPreferredPyeong}
               setMaxSubwayMinutes={setMaxSubwayMinutes}
               setOfficeArea={setOfficeArea}
+              setWorkplaceAddress={setWorkplaceAddress}
+              setWorkplaceLocation={setWorkplaceLocation}
               setMaxCommuteMinutes={setMaxCommuteMinutes}
               minTradePriceEok={minTradePriceEok}
               maxTradePriceEok={maxTradePriceEok}
@@ -7074,6 +7138,8 @@ function AiView({
   preferredPyeong,
   maxSubwayMinutes,
   officeArea,
+  workplaceAddress,
+  workplaceLocation,
   maxCommuteMinutes,
   setIncome,
   setAssets,
@@ -7081,6 +7147,8 @@ function AiView({
   setPreferredPyeong,
   setMaxSubwayMinutes,
   setOfficeArea,
+  setWorkplaceAddress,
+  setWorkplaceLocation,
   setMaxCommuteMinutes,
   minTradePriceEok,
   maxTradePriceEok,
@@ -7098,6 +7166,8 @@ function AiView({
   preferredPyeong: number
   maxSubwayMinutes: number
   officeArea: OfficeArea
+  workplaceAddress: string
+  workplaceLocation: WorkplaceLocation | null
   maxCommuteMinutes: number
   setIncome: (value: number) => void
   setAssets: (value: number) => void
@@ -7105,6 +7175,8 @@ function AiView({
   setPreferredPyeong: (value: number) => void
   setMaxSubwayMinutes: (value: number) => void
   setOfficeArea: (value: OfficeArea) => void
+  setWorkplaceAddress: (value: string) => void
+  setWorkplaceLocation: (value: WorkplaceLocation | null) => void
   setMaxCommuteMinutes: (value: number) => void
   minTradePriceEok: number
   maxTradePriceEok: number
@@ -7117,10 +7189,44 @@ function AiView({
   apartments: RecommendedApartment[]
 }) {
   const [hasSearched, setHasSearched] = useState(false)
+  const [isResolvingWorkplace, setIsResolvingWorkplace] = useState(false)
+  const [workplaceMessage, setWorkplaceMessage] = useState('')
   const searchResults = useMemo(() => (hasSearched ? apartments.slice(0, 5) : []), [apartments, hasSearched])
   const rankedPreferences = uniqueAiPreferenceRanks(aiPreferenceRanks)
 
-  const handleRecommendationSearch = () => {
+  const handleRecommendationSearch = async () => {
+    const trimmedWorkplaceAddress = workplaceAddress.trim()
+
+    if (trimmedWorkplaceAddress.length >= 3) {
+      setIsResolvingWorkplace(true)
+      setWorkplaceMessage('직장 주소 기준으로 좌표를 찾는 중입니다.')
+
+      try {
+        const response = await fetch(`/api/kakao/geocode?query=${encodeURIComponent(trimmedWorkplaceAddress)}`)
+        const payload = (await response.json()) as {
+          ok?: boolean
+          location?: WorkplaceLocation
+          message?: string
+        }
+
+        if (payload.ok && payload.location) {
+          setWorkplaceLocation(payload.location)
+          setWorkplaceMessage(`${payload.location.label} 기준으로 통근 시간을 다시 계산했습니다.`)
+        } else {
+          setWorkplaceLocation(null)
+          setWorkplaceMessage(payload.message || '주소 좌표를 찾지 못해 직장권역 기준으로 계산합니다.')
+        }
+      } catch {
+        setWorkplaceLocation(null)
+        setWorkplaceMessage('주소 좌표 변환이 지연되어 직장권역 기준으로 계산합니다.')
+      } finally {
+        setIsResolvingWorkplace(false)
+      }
+    } else {
+      setWorkplaceLocation(null)
+      setWorkplaceMessage('정확한 직장 주소를 넣으면 단지별 통근 시간을 더 세밀하게 비교합니다.')
+    }
+
     setHasSearched(true)
   }
 
@@ -7160,8 +7266,8 @@ function AiView({
           <strong>1~4순위 기준으로 점수화</strong>
         </div>
         <p className="ai-ranking-note">
-          선호 조건을 먼저 반영하되 서울 입지에는 가점을 주고, 점수가 비슷한 단지는 평형별 실거래 추이, 단지 내 상승률,
-          인덕원·GTX-C·동탄인덕원선·월곶판교선 같은 교통 호재를 함께 반영합니다.
+          예산은 먼저 통과 조건으로 적용하고, 순위는 상승여력·관심도·직장 접근성을 중심으로 봅니다. 점수가 비슷하면
+          평형별 실거래 추이, 단지 내 상승률, 서울 입지, 인덕원·GTX-C·동탄인덕원선·월곶판교선 같은 교통 호재를 더 반영합니다.
         </p>
         <div className="preference-rank-grid" aria-label="추천 우선순위">
           {rankedPreferences.map((rank, index) => (
@@ -7177,9 +7283,26 @@ function AiView({
             </label>
           ))}
         </div>
+        <label className="workplace-address-field">
+          <span>직장 주소</span>
+          <input
+            value={workplaceAddress}
+            onChange={(event) => {
+              setWorkplaceAddress(event.target.value)
+              setWorkplaceLocation(null)
+              setWorkplaceMessage('')
+            }}
+            placeholder="예: 서울 강남구 테헤란로 152"
+          />
+          <small>
+            {workplaceLocation
+              ? `${workplaceLocation.label} 좌표 기준`
+              : '정확한 주소를 입력하면 단지별 통근 시간을 주소 기준으로 계산합니다.'}
+          </small>
+        </label>
         <div className="preference-grid">
           <SelectField
-            label="직장권역"
+            label="직장권역 보조"
             value={officeArea}
             options={officeAreaOptions.map((area) => ({ label: area, value: area }))}
             onChange={(value) => setOfficeArea(value as OfficeArea)}
@@ -7219,9 +7342,10 @@ function AiView({
       </section>
 
       <button className="primary-action ai-search-action" type="button" onClick={handleRecommendationSearch}>
-        조건으로 검색하기
+        {isResolvingWorkplace ? '직장 주소 계산 중' : '조건으로 검색하기'}
         <ChevronRight size={18} />
       </button>
+      {workplaceMessage && <p className="ai-workplace-message">{workplaceMessage}</p>}
 
       <section className="budget-band">
         <div>
@@ -7271,7 +7395,7 @@ function AiView({
                 {apartment.name} {apartment.pyeong}
               </h3>
               <p>
-                {apartment.region} · {apartment.station} · {officeArea} 대중교통 {apartment.commuteToOffice}분
+                {apartment.region} · {apartment.station} · {workplaceLocation?.label || officeArea} 대중교통 약 {apartment.commuteToOffice}분
               </p>
               {latestRecommendationDeal && (
                 <div className="recommend-deal-strip" aria-label={`${apartment.name} 최근 실거래`}>
@@ -7297,10 +7421,10 @@ function AiView({
                   href={apartment.commuteRouteUrl}
                   target="_blank"
                   rel="noreferrer"
-                  aria-label={`${apartment.name}에서 ${officeArea}까지 카카오맵 대중교통 경로 확인`}
+                  aria-label={`${apartment.name}에서 ${workplaceLocation?.label || officeArea}까지 카카오맵 대중교통 경로 확인`}
                 >
                   <BusFront size={12} />
-                  카카오맵 대중교통 확인
+                  {apartment.commuteSource === 'address-geocoded' ? '주소 기준 경로' : '카카오맵 대중교통 확인'}
                   <ExternalLink size={11} />
                 </a>
               </div>
@@ -7316,8 +7440,8 @@ function AiView({
       </div>
 
       <p className="fine-print">
-        추천은 입력값과 공개 실거래가 기반의 참고 정보입니다. 직장 시간은 카카오맵 대중교통 경로 확인 링크를 함께 제공하며,
-        자동 산출 API 연결 전까지 권역별 기준값으로 비교합니다.
+        추천은 입력값과 공개 실거래가 기반의 참고 정보입니다. 직장 주소를 입력하면 좌표 기준 추정 통근 시간을 먼저 비교하고,
+        카카오맵 경로 링크에서 실제 대중교통 경로를 다시 확인할 수 있습니다.
       </p>
     </div>
   )
