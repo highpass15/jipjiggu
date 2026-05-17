@@ -5628,9 +5628,11 @@ function NotificationCenterView({
     <div className="view-stack notification-view">
       <section className="notification-hero">
         <span>집직구 앱 알림</span>
-        <h2>우리동네 리포트</h2>
-        <p>매주 토요일 아침, 동네 실거래와 개발 소식을 한 번에 확인하세요.</p>
+        <h2>회원가입과 알림 설정</h2>
+        <p>매물 등록, 관심 단지 알림, 우리동네 리포트를 한 번에 관리하세요.</p>
       </section>
+
+      <MembershipSignupCard />
 
       {notifications.length > 0 ? (
         <section className="notification-list" aria-label="앱 알림 목록">
