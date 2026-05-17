@@ -4673,6 +4673,9 @@ h1 {
 
 .subscription-view {
   gap: 12px;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(12, 181, 155, 0.13), transparent 32%),
+    linear-gradient(180deg, #f3fffc 0%, #f7fbfa 44%, #ffffff 100%);
 }
 
 .subscription-hero {
@@ -4680,16 +4683,18 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding: 20px 18px;
-  border: 1px solid rgba(12, 181, 155, 0.16);
+  overflow: hidden;
+  padding: 20px 18px 22px;
+  border: 1px solid rgba(134, 255, 229, 0.16);
+  border-radius: 24px;
   background:
-    radial-gradient(circle at 92% -20%, rgba(91, 77, 243, 0.16), transparent 34%),
-    linear-gradient(135deg, rgba(12, 181, 155, 0.14), rgba(255, 255, 255, 0.96)),
-    #ffffff;
+    radial-gradient(circle at 88% -18%, rgba(156, 255, 235, 0.28), transparent 32%),
+    linear-gradient(135deg, #102335 0%, #0b5759 48%, #0bb59b 100%);
+  box-shadow: 0 18px 38px rgba(4, 42, 44, 0.18);
 }
 
 .subscription-hero span {
-  color: var(--accent);
+  color: rgba(216, 255, 247, 0.84);
   font-size: 12px;
   font-weight: 950;
 }
@@ -4697,9 +4702,9 @@ h1 {
 .subscription-hero h2 {
   max-width: 310px;
   margin-top: 6px;
-  color: var(--text-strong);
-  font-size: 30px;
-  line-height: 1.1;
+  color: #ffffff;
+  font-size: 27px;
+  line-height: 1.13;
   font-weight: 950;
   word-break: keep-all;
 }
@@ -4707,7 +4712,7 @@ h1 {
 .subscription-hero p {
   max-width: 320px;
   margin-top: 8px;
-  color: var(--text-muted);
+  color: rgba(226, 255, 249, 0.82);
   font-size: 12px;
   line-height: 1.45;
   font-weight: 800;
@@ -4718,8 +4723,8 @@ h1 {
   flex: 0 0 auto;
   padding: 8px 9px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.74);
-  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(235, 255, 251, 0.9);
   font-size: 10px;
   font-weight: 950;
   white-space: nowrap;
@@ -4728,18 +4733,21 @@ h1 {
 .subscription-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid var(--border-soft);
-  background: #ffffff;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(12, 181, 155, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-sm);
 }
 
 .subscription-tabs button {
   min-width: 0;
-  min-height: 48px;
-  padding: 0 5px;
+  min-height: 44px;
+  padding: 0 6px;
   border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: #ffffff;
+  border-radius: 14px;
+  background: transparent;
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 950;
@@ -4747,8 +4755,9 @@ h1 {
 }
 
 .subscription-tabs button.active {
-  border-color: var(--text-strong);
-  color: var(--text-strong);
+  background: #102335;
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(16, 35, 53, 0.16);
 }
 
 .subscription-region-tabs,
@@ -4774,9 +4783,9 @@ h1 {
   min-width: 68px;
   min-height: 42px;
   padding: 0 13px;
-  border: 1px solid var(--border-soft);
-  border-radius: 13px;
-  background: #ffffff;
+  border: 1px solid rgba(12, 181, 155, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
   color: var(--text-strong);
   font-size: 13px;
   font-weight: 950;
@@ -4784,10 +4793,11 @@ h1 {
 }
 
 .subscription-region-tabs button.active {
-  border-color: #5b4df3;
-  color: #4f46e5;
+  border-color: rgba(12, 181, 155, 0.4);
+  background: var(--accent-soft);
+  color: var(--accent);
   box-shadow:
-    inset 0 0 0 1px #5b4df3,
+    inset 0 0 0 1px rgba(12, 181, 155, 0.2),
     var(--shadow-sm);
 }
 
@@ -4800,7 +4810,7 @@ h1 {
   padding: 0 10px;
   border: 1px solid rgba(12, 181, 155, 0.2);
   border-radius: 999px;
-  background: #f5fbf9;
+  background: rgba(234, 251, 248, 0.95);
   color: var(--accent);
   font-size: 11px;
   font-weight: 950;
@@ -4811,9 +4821,9 @@ h1 {
 .subscription-list {
   display: grid;
   overflow: hidden;
-  border: 1px solid var(--border-soft);
+  border: 1px solid rgba(12, 181, 155, 0.12);
   border-radius: 22px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--shadow-sm);
 }
 
@@ -4822,8 +4832,10 @@ h1 {
   justify-content: space-between;
   gap: 12px;
   padding: 20px 14px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  background: #ffffff;
+  border-bottom: 1px solid rgba(12, 181, 155, 0.08);
+  background:
+    linear-gradient(90deg, rgba(234, 251, 248, 0.6), rgba(255, 255, 255, 0.96) 35%),
+    #ffffff;
 }
 
 .subscription-card:last-child {
@@ -4840,7 +4852,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #5b4df3;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 950;
 }
@@ -4848,8 +4860,8 @@ h1 {
 .subscription-card-main span em {
   padding: 2px 6px;
   border-radius: 999px;
-  background: #ef4444;
-  color: #ffffff;
+  background: #102335;
+  color: #9ff5e6;
   font-size: 10px;
   font-style: normal;
   font-weight: 950;
@@ -4873,7 +4885,7 @@ h1 {
 }
 
 .subscription-card-main b {
-  color: #5b4df3;
+  color: var(--accent);
   font-size: 13px;
   line-height: 1.35;
   font-weight: 950;
@@ -4904,9 +4916,11 @@ h1 {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #e8eef5;
-  color: #64748b;
+  border: 1px solid rgba(12, 181, 155, 0.14);
+  background: linear-gradient(145deg, #eafff9, #ffffff);
+  color: var(--accent);
   text-decoration: none;
+  box-shadow: 0 10px 20px rgba(12, 181, 155, 0.12);
 }
 
 .subscription-empty {

@@ -5317,11 +5317,11 @@ function SubscriptionView() {
     <div className="view-stack subscription-view">
       <section className="subscription-hero">
         <div>
-          <span>청약/분양</span>
-          <h2>청약홈·LH·SH 공고를 한눈에</h2>
+          <span>ZIP JIKGU 분양 브리핑</span>
+          <h2>청약 일정도 집직구 톤으로 한눈에</h2>
           <p>민간분양, 공공분양, 분양결과를 지역별로 빠르게 확인하세요.</p>
         </div>
-        <small>{updatedAt ? `${formatKoreanDateTime(updatedAt)} 갱신` : '공식 출처 연결'}</small>
+        <small>{updatedAt ? `${formatKoreanDateTime(updatedAt)} 갱신` : '공식 출처 연결중'}</small>
       </section>
 
       <section className="subscription-tabs" aria-label="청약 유형">
