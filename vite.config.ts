@@ -1205,6 +1205,9 @@ const writeRtmsCacheFile = async (cacheKey: string, payload: string) => {
   await fs.writeFile(rtmsCacheFilePath(cacheKey), payload, 'utf8')
 }
 
+const publicCacheHeader = (maxAge: number, staleWhileRevalidate = maxAge * 6) =>
+  `public, max-age=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`
+
 const createDefaultCapitalQuery = (): RtmsQuery => ({
   lawdCd: '',
   scope: 'capital',
@@ -2058,10 +2061,22 @@ type RtmsMiddlewareServer =
 const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
     const rtmsCache = new Map<string, string>()
     const rtmsQueries = new Map<string, RtmsQuery>()
+    const inflightPayloads = new Map<string, Promise<string>>()
     let dailyRefreshTimer: NodeJS.Timeout | undefined
     let keepAliveTimer: NodeJS.Timeout | undefined
     let activeRefresh: Promise<void> | null = null
     let activeMapMarkerRefresh: Promise<void> | null = null
+
+    const getOrCreateInflightPayload = (key: string, buildPayload: () => Promise<string>) => {
+      const existingPayload = inflightPayloads.get(key)
+      if (existingPayload) return existingPayload
+
+      const payloadPromise = buildPayload().finally(() => {
+        inflightPayloads.delete(key)
+      })
+      inflightPayloads.set(key, payloadPromise)
+      return payloadPromise
+    }
 
     const refreshRtmsCache = async (forceDefaultQuery = false) => {
       const env = loadRuntimeEnv()
@@ -2424,6 +2439,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
 
     server.middlewares.use('/api/rtms/refresh', async (request, response) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'no-store')
 
       try {
         const incomingUrl = new URL(request.url ?? '/', 'http://localhost')
@@ -2479,6 +2495,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', publicCacheHeader(60, 600))
 
       if (!serviceKey) {
         response.statusCode = 500
@@ -2564,10 +2581,13 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
           return
         }
 
-        const payload = await buildRtmsPayload(query, serviceKey)
-        const serializedPayload = JSON.stringify(payload)
-        rtmsCache.set(cacheKey, serializedPayload)
-        await writeRtmsCacheFile(cacheKey, serializedPayload)
+        const serializedPayload = await getOrCreateInflightPayload(`rtms:${cacheKey}`, async () => {
+          const payload = await buildRtmsPayload(query, serviceKey)
+          const nextPayload = JSON.stringify(payload)
+          rtmsCache.set(cacheKey, nextPayload)
+          await writeRtmsCacheFile(cacheKey, nextPayload)
+          return nextPayload
+        })
         response.statusCode = 200
         response.end(serializedPayload)
       } catch (error) {
@@ -2582,6 +2602,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       const kakaoRestApiKey = readKakaoRestApiKey(env)
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', publicCacheHeader(30, 120))
 
       if (!serviceKey) {
         response.statusCode = 500
@@ -2606,6 +2627,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       try {
         const markerCache = await readAggregatedMapMarkerCache(query, markerLimit)
         if (markerCache.markers.length > 0) {
+          response.setHeader('Cache-Control', publicCacheHeader(300, 3600))
           if (kakaoRestApiKey && markerCache.refreshedDistricts < markerCache.searchedDistricts) {
             void startMapMarkerRefresh(query.scope, query.lawdCd, {
               maxDistricts: query.scope === 'pyeongchon-core' && !query.lawdCd ? 4 : rtmsMapMarkerBatchSize,
@@ -2690,16 +2712,26 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
           return
         }
 
-        const payload = await buildRtmsMapMarkerPayload({
-          serializedPayload: cachedPayload,
-          query,
-          kakaoRestApiKey,
-          limit: markerLimit,
-          geocodeLimit,
-        })
+        const serializedPayload = await getOrCreateInflightPayload(
+          `rtms-map:${cacheKey}:${markerLimit}:${geocodeLimit}`,
+          async () => {
+            const payload = await buildRtmsMapMarkerPayload({
+              serializedPayload: cachedPayload,
+              query,
+              kakaoRestApiKey,
+              limit: markerLimit,
+              geocodeLimit,
+            })
+            return JSON.stringify(payload)
+          },
+        )
+        const payload = JSON.parse(serializedPayload) as { markers?: unknown[] }
 
-        response.statusCode = payload.markers.length ? 200 : 202
-        response.end(JSON.stringify(payload))
+        if (payload.markers?.length) {
+          response.setHeader('Cache-Control', publicCacheHeader(300, 3600))
+        }
+        response.statusCode = payload.markers?.length ? 200 : 202
+        response.end(serializedPayload)
       } catch (error) {
         response.statusCode = 500
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
@@ -2711,6 +2743,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       const serviceKey = env.MOLIT_APT_TRADE_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', publicCacheHeader(3600, 86400))
 
       if (!serviceKey) {
         response.statusCode = 500
@@ -2741,26 +2774,29 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
           return
         }
 
-        const result = await findLatestApartmentDeal({
-          lawdCd,
-          aptName,
-          aptSeq,
-          monthsBack,
-          serviceKey,
-        })
-        const serializedPayload = JSON.stringify({
-          meta: {
-            source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료',
-            resultCode: result ? '000' : 'EMPTY',
-            resultMessage: result?.deal ? 'OK' : '최근 거래 없음',
-            searchedMonths: result?.searchedMonths ?? 0,
-            updatedAt: new Date().toISOString(),
-          },
-          deal: result?.deal ?? null,
-        })
+        const serializedPayload = await getOrCreateInflightPayload(`latest-apartment:${cacheKey}`, async () => {
+          const result = await findLatestApartmentDeal({
+            lawdCd,
+            aptName,
+            aptSeq,
+            monthsBack,
+            serviceKey,
+          })
+          const nextPayload = JSON.stringify({
+            meta: {
+              source: '국토교통부 RTMS 아파트 매매 실거래가 상세 자료',
+              resultCode: result ? '000' : 'EMPTY',
+              resultMessage: result?.deal ? 'OK' : '최근 거래 없음',
+              searchedMonths: result?.searchedMonths ?? 0,
+              updatedAt: new Date().toISOString(),
+            },
+            deal: result?.deal ?? null,
+          })
 
-        rtmsCache.set(cacheKey, serializedPayload)
-        await writeRtmsCacheFile(cacheKey, serializedPayload)
+          rtmsCache.set(cacheKey, nextPayload)
+          await writeRtmsCacheFile(cacheKey, nextPayload)
+          return nextPayload
+        })
         response.statusCode = 200
         response.end(serializedPayload)
       } catch (error) {
@@ -2774,6 +2810,7 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       const serviceKey = env.MOLIT_BUILDING_LEDGER_SERVICE_KEY
 
       response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', publicCacheHeader(86400, 604800))
 
       if (!serviceKey) {
         response.statusCode = 500
@@ -2809,6 +2846,15 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
         pageNo: '1',
         _type: 'json',
       }
+      const cacheKey = [
+        'building-ledger',
+        lawdCd,
+        umdCd,
+        platGbCd,
+        bonbun,
+        bubun,
+        safeCacheFilename(`${aptName}:${address}:${buildYear}`),
+      ].join(':')
 
       const fetchBuildingItems = async (resource: string) => {
         const params = new URLSearchParams(baseParams)
@@ -2828,15 +2874,21 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
       }
 
       try {
-        const [title, recap] = await Promise.all([
-          fetchBuildingItems('getBrTitleInfo'),
-          fetchBuildingItems('getBrRecapTitleInfo'),
-        ])
-        const ledger = normalizeBuildingLedger(title.items, recap.items[0], { aptName, address, buildYear })
+        const cachedPayload = rtmsCache.get(cacheKey) || (await readRtmsCacheFile(cacheKey))
+        if (cachedPayload) {
+          rtmsCache.set(cacheKey, cachedPayload)
+          response.statusCode = 200
+          response.end(cachedPayload)
+          return
+        }
 
-        response.statusCode = 200
-        response.end(
-          JSON.stringify({
+        const serializedPayload = await getOrCreateInflightPayload(`building-ledger:${cacheKey}`, async () => {
+          const [title, recap] = await Promise.all([
+            fetchBuildingItems('getBrTitleInfo'),
+            fetchBuildingItems('getBrRecapTitleInfo'),
+          ])
+          const ledger = normalizeBuildingLedger(title.items, recap.items[0], { aptName, address, buildYear })
+          const nextPayload = JSON.stringify({
             meta: {
               source: '국토교통부 건축HUB 건축물대장정보 서비스',
               resultCode: title.resultCode || recap.resultCode || '000',
@@ -2846,8 +2898,14 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
               updatedAt: new Date().toISOString(),
             },
             ledger,
-          }),
-        )
+          })
+
+          rtmsCache.set(cacheKey, nextPayload)
+          await writeRtmsCacheFile(cacheKey, nextPayload)
+          return nextPayload
+        })
+        response.statusCode = 200
+        response.end(serializedPayload)
       } catch (error) {
         response.statusCode = 500
         response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }))
