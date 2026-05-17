@@ -576,7 +576,7 @@ const apartments: Apartment[] = [
     ],
     volume: 7,
     fit: 88,
-    verified: '소유자 확인중',
+    verified: '소유자 검증 대기',
     households: 948,
     parkingSpaces: 1520,
     floorAreaRatio: 199,
@@ -706,7 +706,7 @@ const apartments: Apartment[] = [
     ],
     volume: 10,
     fit: 87,
-    verified: '소유자 확인중',
+    verified: '소유자 검증 대기',
     households: 2072,
     parkingSpaces: 2650,
     floorAreaRatio: 249,
@@ -732,7 +732,7 @@ const apartments: Apartment[] = [
     ],
     volume: 6,
     fit: 85,
-    verified: '실거래 확인중',
+    verified: '실거래 검증 대기',
     households: 2540,
     parkingSpaces: 3302,
     floorAreaRatio: 245,
@@ -1174,7 +1174,7 @@ const formatMarkerPrice = (marker: MapValueMarker) =>
 const hasDisplayableMarkerPrice = (marker: MapValueMarker) => formatMarkerPrice(marker).length > 0
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
 const formatListingStatus = (status: UserListing['verificationStatus']) =>
-  status === 'verified' ? '실소유자 확인 완료' : '실소유자 확인중'
+  status === 'verified' ? '실소유자 확인 완료' : '실소유자 검증 대기'
 const getDefaultRtmsDealYmd = () => {
   const date = new Date()
   date.setMonth(date.getMonth() - 1)
@@ -1229,7 +1229,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     progress: 62,
     activeStageIndex: 3,
     expectedYear: '2028~2030 예상',
-    plainBrief: '인덕원역 환승·공사 일정이 구체화되는지 확인 중입니다.',
+    plainBrief: '인덕원역 환승·공사 일정이 구체화되는지 지켜볼 단계입니다.',
     phase: '철도 3축 동시 체크',
     nextMilestone: '다음 확인: 역 위치, 환승 동선, 공사 일정',
     priceImpact: '인덕원역 반경 1km 단지는 매물 회전과 호가 반응을 주간 체크',
@@ -1273,7 +1273,7 @@ const anyangDevelopmentNews: DevelopmentIssue[] = [
     progress: 48,
     activeStageIndex: 1,
     expectedYear: '2027년 이후 순차 진행',
-    plainBrief: '안양역 주변 정비와 교통 개선 논의가 실제 사업으로 넘어가는지 확인 중입니다.',
+    plainBrief: '안양역 주변 정비와 교통 개선 논의가 실제 사업으로 넘어가는지 지켜볼 단계입니다.',
     phase: '원도심 정비·교통망 관찰',
     nextMilestone: '다음 확인: 안양역 주변 정비 인허가',
     priceImpact: '상대적으로 낮은 진입가 단지의 거래량 회복 여부가 관건',
@@ -1364,7 +1364,7 @@ const gwacheonDevelopmentNews: DevelopmentIssue[] = [
     progress: 72,
     activeStageIndex: 3,
     expectedYear: '2026~2028 생활권 안정',
-    plainBrief: '신축 입주와 업무시설 입주가 생활권 가격에 얼마나 반영되는지 확인 중입니다.',
+    plainBrief: '신축 입주와 업무시설 입주가 생활권 가격에 얼마나 반영되는지 지켜볼 단계입니다.',
     phase: '입주·업무시설 활성화',
     nextMilestone: '다음 확인: 상권 형성, 학교·교통 이용 안정화',
     priceImpact: '신축 프리미엄은 전세가율과 실거래 회전 속도를 함께 봐야 합니다.',
@@ -1582,7 +1582,7 @@ const getProjectStageMeta = (stageLabels: string[], currentStage: string, notice
   const stageIndex = getProjectStageIndex(stageLabels, currentStage)
 
   if (stageIndex < 0) {
-    return noticeDate ? `${noticeDate} 고시 확인` : '공식 단계 확인중'
+    return noticeDate ? `${noticeDate} 고시 확인` : '공식 단계 업데이트 예정'
   }
 
   return noticeDate ? `${noticeDate} · ${stageIndex + 1}/${stageLabels.length}단계` : `${stageIndex + 1}/${stageLabels.length}단계`
@@ -3592,7 +3592,7 @@ const buildCuratedRecommendationCandidates = ({
         fitReasons: [
           `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
           regionPremium.label || `입지 ${apartment.station}`,
-          `최근 실거래 ${apartment.recentDeals[0]?.date ?? '확인중'} · ${apartment.pyeong} · ${formatEok(apartment.priceEok)}`,
+          `최근 실거래 ${apartment.recentDeals[0]?.date ?? '업데이트 예정'} · ${apartment.pyeong} · ${formatEok(apartment.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
           `${officeArea} 대중교통 ${commuteToOffice}분`,
@@ -4022,6 +4022,22 @@ function App() {
     setSearchFocused(false)
   }
 
+  const handleOpenReportDeal = (deal: LiveRtmsDeal) => {
+    setQuery(deal.aptName)
+    setFocusApartment(null)
+    setFocusLiveDeal(deal)
+    setFocusListing(null)
+    setMode('prices')
+    setPriceHeaderMinimized(false)
+    setSearchFocused(false)
+    setAppToast(`${deal.aptName} 실거래 상세를 열었습니다.`)
+
+    window.requestAnimationFrame(() => {
+      contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    })
+  }
+
   const handleListingCreate = (listing: UserListing) => {
     setUserListings((currentListings) => [listing, ...currentListings])
     setFocusListing(listing)
@@ -4231,6 +4247,7 @@ function App() {
               liveDeals={capitalLiveDeals}
               initialRegion={activeReportRegion}
               onRegionChange={setActiveReportRegion}
+              onOpenDeal={handleOpenReportDeal}
             />
           )}
 
@@ -4698,7 +4715,7 @@ function PriceView({
         </div>
         <div>
           <span>직거래</span>
-          <strong>{rtmsData ? `${filteredLiveDeals.filter((deal) => deal.tradeType === 'direct').length}건` : '확인중'}</strong>
+          <strong>{rtmsData ? `${filteredLiveDeals.filter((deal) => deal.tradeType === 'direct').length}건` : '0건'}</strong>
         </div>
       </div>
 
@@ -4790,10 +4807,12 @@ function NeighborhoodReportView({
   liveDeals,
   initialRegion,
   onRegionChange,
+  onOpenDeal,
 }: {
   liveDeals: LiveRtmsDeal[]
   initialRegion: string
   onRegionChange: (region: string) => void
+  onOpenDeal: (deal: LiveRtmsDeal) => void
 }) {
   const region = initialRegion
   const [reportExpanded, setReportExpanded] = useState(true)
@@ -4868,7 +4887,7 @@ function NeighborhoodReportView({
   const monthlyDeals = sortedRegionDeals.filter((deal) => parseDealTime(deal.dealDate) >= monthCutoffTime)
   const reportTradeWindowLabel = sortedRegionDeals.length
     ? `최근 공개 7일 · ${formatReportDateRange(weekCutoffTime, referenceTime)}`
-    : '실거래 캐시 준비중'
+    : '실거래 반영 대기'
   const developmentIssues = useMemo(() => getReportDevelopmentNews(region), [region])
   const filteredReportRegionOptions = useMemo(() => {
     const query = normalizeSearchText(reportRegionQuery)
@@ -4909,6 +4928,7 @@ function NeighborhoodReportView({
           latestPrice: latestDeal.priceEok,
           latestDate: latestDeal.dealDate,
           dealCount: orderedDeals.length,
+          latestDeal,
         }
       })
       .filter((leader): leader is NonNullable<typeof leader> => Boolean(leader))
@@ -4974,7 +4994,7 @@ function NeighborhoodReportView({
             <p>
               {topIssue
                 ? topIssue.plainBrief
-                : '이번 주 핵심 개발 이슈를 수집중입니다.'}
+                : '이번 주 핵심 개발 이슈를 정리하고 있습니다.'}
             </p>
           </div>
 
@@ -4989,7 +5009,7 @@ function NeighborhoodReportView({
             </div>
             <div>
               <span>상승률 TOP</span>
-              <strong>{growthLeaders[0] ? formatSignedRate(growthLeaders[0].growthRate) : '집계중'}</strong>
+              <strong>{growthLeaders[0] ? formatSignedRate(growthLeaders[0].growthRate) : '표본 대기'}</strong>
             </div>
             <div>
               <span>뉴스 스캔</span>
@@ -5124,16 +5144,26 @@ function NeighborhoodReportView({
                 ))
               ) : (
                 <article>
-                  <span>수집중</span>
-                  <strong>우리동네 개발·교통 뉴스 스캔 대기</strong>
+                  <span>업데이트</span>
+                  <strong>우리동네 개발·교통 뉴스 정리 대기</strong>
                   <em>서버가 최신 뉴스 목록을 가져오면 이 영역에 자동 반영됩니다.</em>
                 </article>
               )}
             </div>
           </div>
 
-          <ReportDealList title="최근 일주일 거래" deals={weeklyDeals.slice(0, 6)} emptyText="최근 일주일 거래는 수집중입니다." />
-          <ReportDealList title="최근 한달 거래" deals={monthlyDeals.slice(0, 8)} emptyText="최근 한달 거래는 수집중입니다." />
+          <ReportDealList
+            title="최근 일주일 거래"
+            deals={weeklyDeals.slice(0, 6)}
+            emptyText="최근 일주일 거래가 아직 없습니다."
+            onOpenDeal={onOpenDeal}
+          />
+          <ReportDealList
+            title="최근 한달 거래"
+            deals={monthlyDeals.slice(0, 8)}
+            emptyText="최근 한달 거래가 아직 없습니다."
+            onOpenDeal={onOpenDeal}
+          />
 
           <div className="report-section">
             <div className="detail-section-head">
@@ -5146,14 +5176,14 @@ function NeighborhoodReportView({
             <div className="report-rank-list">
               {growthLeaders.length > 0 ? (
                 growthLeaders.map((leader, index) => (
-                  <div key={leader.key}>
+                  <button key={leader.key} type="button" onClick={() => onOpenDeal(leader.latestDeal)}>
                     <strong>{index + 1}</strong>
                     <span>
                       {leader.name}
                       <small>{leader.pyeong}평 · {leader.dealCount}건</small>
                     </span>
                     <em>{formatSignedRate(leader.growthRate)}</em>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <p>동일 평형대 거래가 2건 이상 쌓이면 상승률 순위가 자동 표시됩니다.</p>
@@ -5211,10 +5241,12 @@ function ReportDealList({
   title,
   deals,
   emptyText,
+  onOpenDeal,
 }: {
   title: string
   deals: LiveRtmsDeal[]
   emptyText: string
+  onOpenDeal: (deal: LiveRtmsDeal) => void
 }) {
   return (
     <div className="report-section">
@@ -5223,12 +5255,12 @@ function ReportDealList({
           <FileText size={15} />
           {title}
         </span>
-        <em>{deals.length ? `${deals.length}건 보기` : '수집중'}</em>
+        <em>{deals.length ? `${deals.length}건 보기` : '0건'}</em>
       </div>
       <div className="report-deal-list">
         {deals.length > 0 ? (
           deals.map((deal) => (
-            <div key={`weekly-report-deal-${deal.id}`}>
+            <button key={`weekly-report-deal-${deal.id}`} type="button" onClick={() => onOpenDeal(deal)}>
               <span>
                 <strong>{deal.aptName}</strong>
                 <small>
@@ -5236,7 +5268,7 @@ function ReportDealList({
                 </small>
               </span>
               <em>{formatEok(deal.priceEok)}</em>
-            </div>
+            </button>
           ))
         ) : (
           <p>{emptyText}</p>
@@ -5358,7 +5390,7 @@ function SubscriptionView() {
           <h2>청약 일정도 집직구 톤으로 한눈에</h2>
           <p>민간분양, 공공분양, 분양결과를 지역별로 빠르게 확인하세요.</p>
         </div>
-        <small>{updatedAt ? `${formatKoreanDateTime(updatedAt)} 갱신` : '공식 출처 연결중'}</small>
+        <small>{updatedAt ? `${formatKoreanDateTime(updatedAt)} 갱신` : '공식 출처 연결 중'}</small>
       </section>
 
       <section className="subscription-tabs" aria-label="청약 유형">
@@ -5388,8 +5420,8 @@ function SubscriptionView() {
       </section>
 
       <section className="subscription-source-strip" aria-label="청약 공식 출처">
-        <a href="https://www.applyhome.co.kr/co/coa/selectMainView.do" target="_blank" rel="noreferrer">
-          청약홈
+        <a href="https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do" target="_blank" rel="noreferrer">
+          청약홈 APT분양정보
           <ExternalLink size={13} />
         </a>
         <a href="https://apply.lh.or.kr/lhapply/main.do" target="_blank" rel="noreferrer">
@@ -5430,7 +5462,7 @@ function SubscriptionView() {
         ) : (
           <div className="subscription-empty">
             <CalendarDays size={26} />
-            <strong>선택한 지역의 공고를 확인 중입니다</strong>
+            <strong>선택한 지역의 신규 공고가 아직 없습니다</strong>
             <p>공식 사이트에 신규 공고가 올라오면 이 화면에 맞춰 연결해둘게요.</p>
           </div>
         )}
@@ -5950,7 +5982,7 @@ function ApartmentMap({
 
         const focusedMarker = focusedListingMarker ?? focusedLiveMarker
         if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
-          onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing) })
+          onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing || focusLiveDeal) })
         }
 
         const updateDensity = () => {
@@ -6114,7 +6146,7 @@ function MapDataStatus({
             : status === 'loading'
               ? '서울·경기·인천 실거래 API 불러오는 중'
               : status === 'refreshing'
-                ? '서울·경기·인천 실거래 캐시 수집중'
+                ? '서울·경기·인천 실거래 캐시 갱신 중'
                 : '표시할 실제 실거래가 없습니다'}
         </strong>
         <p>
@@ -6439,7 +6471,7 @@ function RoadviewPanel({ marker }: { marker: MapValueMarker }) {
         {roadviewStatus !== 'ready' && (
           <div className="roadview-fallback">
             <Eye size={24} />
-            <strong>{roadviewStatus === 'loading' ? '로드뷰 찾는 중' : '로드뷰 준비중'}</strong>
+            <strong>{roadviewStatus === 'loading' ? '로드뷰 찾는 중' : '로드뷰 연결 대기'}</strong>
             <p>{marker.address}</p>
           </div>
         )}
@@ -6523,26 +6555,26 @@ function BuildingLedgerPanel({
         ledger.familyCount ? `${ledger.familyCount.toLocaleString('ko-KR')}가구` : '',
       ]
         .filter(Boolean)
-        .join(' / ') || '확인중'
+        .join(' / ') || '대장 연동 대기'
     : apartment
       ? `${apartment.households.toLocaleString('ko-KR')}세대`
-      : '확인중'
+      : '대장 연동 대기'
   const metrics = [
     ['주용도', ledger?.mainUsage || '공동주택'],
     [
       '승인일',
-      ledger?.approvalDate || (latestDeal?.buildYear ? `${latestDeal.buildYear}` : apartment ? `${apartment.approvalYear}` : '확인중'),
+      ledger?.approvalDate || (latestDeal?.buildYear ? `${latestDeal.buildYear}` : apartment ? `${apartment.approvalYear}` : '대장 연동 대기'),
     ],
-    ['층수', ledger ? `${ledger.groundFloors || '-'}F / B${ledger.undergroundFloors || '-'}` : '확인중'],
+    ['층수', ledger ? `${ledger.groundFloors || '-'}F / B${ledger.undergroundFloors || '-'}` : '대장 연동 대기'],
     ['총 세대수/가구수', householdFamilyValue],
-    ['용적률', ledger?.floorAreaRatio ? `${ledger.floorAreaRatio}%` : apartment ? `${apartment.floorAreaRatio}%` : '확인중'],
+    ['용적률', ledger?.floorAreaRatio ? `${ledger.floorAreaRatio}%` : apartment ? `${apartment.floorAreaRatio}%` : '대장 연동 대기'],
     [
       '주차',
       ledger?.parkingCount
         ? `${ledger.parkingCount.toLocaleString('ko-KR')}대`
         : apartment
           ? `${apartment.parkingSpaces.toLocaleString('ko-KR')}대`
-          : '확인중',
+          : '대장 연동 대기',
     ],
   ]
 
@@ -6558,7 +6590,7 @@ function BuildingLedgerPanel({
             ? '조회중'
             : ledgerState.status === 'ready'
               ? '건축HUB'
-              : '보완 필요'}
+              : '건축HUB 대기'}
         </em>
       </div>
 
@@ -6599,7 +6631,7 @@ function AiTrendAnalysisPanel({
     ? ownTrend.changeRate >= 0
       ? '상승'
       : '하락'
-    : '확인중'
+    : '분석 대기'
   const summary =
     ownTrend && gap !== null
       ? `${marker.aptName}은 최근 6개월 ${formatPercent(ownTrend.changeRate)} ${directionLabel}했고, 같은 동 비교군 평균보다 ${Math.abs(gap).toFixed(1)}%p ${gap >= 0 ? '더 강했습니다' : '약했습니다'}.`
@@ -6627,7 +6659,7 @@ function AiTrendAnalysisPanel({
       <div className="ai-trend-grid">
         <div>
           <span>이 단지</span>
-          <strong>{ownTrend ? formatPercent(ownTrend.changeRate) : '확인중'}</strong>
+          <strong>{ownTrend ? formatPercent(ownTrend.changeRate) : '표본 부족'}</strong>
         </div>
         <div>
           <span>인근 평균</span>
@@ -6635,7 +6667,7 @@ function AiTrendAnalysisPanel({
         </div>
         <div>
           <span>비교</span>
-          <strong>{gap !== null ? `${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%p` : '분석중'}</strong>
+          <strong>{gap !== null ? `${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%p` : '표본 부족'}</strong>
         </div>
       </div>
     </section>
@@ -8034,7 +8066,7 @@ function DirectListingsView({
             ))
           ) : (
             <div className="listing-market-empty">
-              <strong>최근 직거래 신고 사례를 수집중입니다</strong>
+              <strong>최근 직거래 신고 사례를 모으고 있습니다</strong>
               <span>새벽 1시 RTMS 캐시 갱신 후 직거래 신고 건이 있으면 자동 표시됩니다.</span>
             </div>
           )}
