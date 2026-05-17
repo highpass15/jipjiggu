@@ -1576,6 +1576,23 @@ const buildMaintenanceProjectStatuses = (
   }))
 }
 
+const getProjectStageIndex = (stageLabels: string[], currentStage: string) => stageLabels.indexOf(currentStage)
+
+const getProjectStageMeta = (stageLabels: string[], currentStage: string, noticeDate?: string) => {
+  const stageIndex = getProjectStageIndex(stageLabels, currentStage)
+
+  if (stageIndex < 0) {
+    return noticeDate ? `${noticeDate} 고시 확인` : '공식 단계 확인중'
+  }
+
+  return noticeDate ? `${noticeDate} · ${stageIndex + 1}/${stageLabels.length}단계` : `${stageIndex + 1}/${stageLabels.length}단계`
+}
+
+const getProjectStageProgress = (stageLabels: string[], currentStage: string) => {
+  const stageIndex = getProjectStageIndex(stageLabels, currentStage)
+  return stageIndex < 0 ? 8 : Math.round(((stageIndex + 1) / stageLabels.length) * 100)
+}
+
 const toSeoulIssue = (seed: SeoulIssueSeed, rank: number, district?: string): DevelopmentIssue => {
   const stageLabels = getIssueStageLabels(seed)
   const activeStageIndex = getIssueActiveStageIndex(seed, stageLabels)
@@ -4902,6 +4919,9 @@ function NeighborhoodReportView({
     .slice()
     .sort((a, b) => b.buzzScore - a.buzzScore)
     .at(0)
+  const reportSourcePriority = Array.from(
+    new Set(developmentIssues.flatMap((issue) => issue.sourcePriority ?? [])),
+  ).slice(0, 3)
 
   return (
     <div className="view-stack report-view">
@@ -4981,9 +5001,17 @@ function NeighborhoodReportView({
             <div className="detail-section-head">
               <span>
                 <LineChart size={15} />
-                개발 진척도 레이더
+                사업별 진행단계
               </span>
-              <em>공정·일정·가격 영향</em>
+              <em>구역별 현재 위치</em>
+            </div>
+            <div className="development-source-summary">
+              <span>공식 자료 기준</span>
+              <strong>{reportSourcePriority.join(' → ') || '자치구 고시·공고 → 정비사업 정보몽땅 추진경과'}</strong>
+              <a href={seoulCleanupSearchUrl} target="_blank" rel="noreferrer">
+                정비사업 정보몽땅
+                <ExternalLink size={12} />
+              </a>
             </div>
             <div className="development-tracker">
               {developmentIssues
@@ -4991,6 +5019,7 @@ function NeighborhoodReportView({
                 .sort((a, b) => b.buzzScore - a.buzzScore)
                 .map((item) => {
                   const stageLabels = item.stageLabels ?? developmentStageLabels
+                  const hasProjectStages = Boolean(item.projects?.length)
 
                   return (
                   <article key={`development-${item.title}`}>
@@ -5006,56 +5035,58 @@ function NeighborhoodReportView({
                     <div className="development-progress" aria-label={`${item.title} 진척도 ${item.progress}%`}>
                       <span style={{ width: `${item.progress}%` }} />
                     </div>
-                    <div className="development-stage-map" aria-label={`${item.title} 전체 사업 단계`}>
-                      {stageLabels.map((stageLabel, index) => (
-                        <span
-                          className={
-                            index < item.activeStageIndex
-                              ? 'done'
-                              : index === item.activeStageIndex
-                                ? 'active'
-                                : 'watch'
-                          }
-                          key={`${item.title}-${stageLabel}`}
-                        >
-                          <i>{index + 1}</i>
-                          {stageLabel}
-                        </span>
-                      ))}
-                    </div>
-                    {item.sourcePriority && item.sourcePriority.length > 0 && (
-                      <div className="development-source-priority">
-                        <span>자료 기준</span>
-                        <strong>{item.sourcePriority.join(' → ')}</strong>
+                    {!hasProjectStages && (
+                      <div className="development-stage-map" aria-label={`${item.title} 전체 사업 단계`}>
+                        {stageLabels.map((stageLabel, index) => (
+                          <span
+                            className={
+                              index < item.activeStageIndex
+                                ? 'done'
+                                : index === item.activeStageIndex
+                                  ? 'active'
+                                  : 'watch'
+                            }
+                            key={`${item.title}-${stageLabel}`}
+                          >
+                            <i>{index + 1}</i>
+                            {stageLabel}
+                          </span>
+                        ))}
                       </div>
                     )}
                     {item.projects && item.projects.length > 0 && (
                       <div className="development-project-list" aria-label={`${item.title} 구역별 진행단계`}>
-                        {item.projects.map((project) => (
-                          <div key={`${item.title}-${project.name}`}>
-                            <span>{project.name}</span>
-                            <strong>{project.currentStage}</strong>
-                            {project.noticeDate && <em>{project.noticeDate}</em>}
-                            {project.source && <small>{project.source}</small>}
-                            {project.note && <p>{project.note}</p>}
-                          </div>
+                        {item.projects.map((project) => {
+                          const projectProgress = getProjectStageProgress(stageLabels, project.currentStage)
+                          const projectStageIndex = getProjectStageIndex(stageLabels, project.currentStage)
+
+                          return (
+                            <div
+                              className={projectStageIndex >= 0 ? 'is-confirmed' : 'is-watch'}
+                              key={`${item.title}-${project.name}`}
+                            >
+                              <span>{project.name}</span>
+                              <strong>{project.currentStage}</strong>
+                              <em>{getProjectStageMeta(stageLabels, project.currentStage, project.noticeDate)}</em>
+                              <i aria-hidden="true">
+                                <b style={{ width: `${projectProgress}%` }} />
+                              </i>
+                              {project.note && <p>{project.note}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {!hasProjectStages && (
+                      <div className="development-timeline">
+                        {item.timeline.map((step) => (
+                          <span className={step.status} key={`${item.title}-${step.label}`}>
+                            {step.label}
+                          </span>
                         ))}
                       </div>
                     )}
-                    <div className="development-timeline">
-                      {item.timeline.map((step) => (
-                        <span className={step.status} key={`${item.title}-${step.label}`}>
-                          {step.label}
-                        </span>
-                      ))}
-                    </div>
                     <p>{item.nextMilestone}</p>
-                    {item.sourceUrl && (
-                      <a className="development-source-link" href={item.sourceUrl} target="_blank" rel="noreferrer">
-                        {item.sourceName ?? '공식 자료 확인'}
-                        <ExternalLink size={12} />
-                      </a>
-                    )}
                     <dl>
                       <div>
                         <dt>관찰 동네</dt>
@@ -5316,8 +5347,14 @@ function SubscriptionView() {
   return (
     <div className="view-stack subscription-view">
       <section className="subscription-hero">
-        <div>
-          <span>ZIP JIKGU 분양 브리핑</span>
+        <div className="subscription-hero-copy">
+          <div className="subscription-hero-brand">
+            <span className="subscription-hero-mark">
+              <Home size={16} strokeWidth={2.8} />
+            </span>
+            <b>집직구 청약</b>
+          </div>
+          <span className="subscription-hero-kicker">ZIP JIKGU 분양 브리핑</span>
           <h2>청약 일정도 집직구 톤으로 한눈에</h2>
           <p>민간분양, 공공분양, 분양결과를 지역별로 빠르게 확인하세요.</p>
         </div>
