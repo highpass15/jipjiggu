@@ -132,6 +132,14 @@ type DevelopmentTimelineItem = {
   status: 'done' | 'active' | 'watch'
 }
 
+type DevelopmentProjectStatus = {
+  name: string
+  currentStage: string
+  noticeDate?: string
+  source?: string
+  note?: string
+}
+
 type DevelopmentIssue = {
   rank: number
   title: string
@@ -150,6 +158,9 @@ type DevelopmentIssue = {
   body: string
   sourceName?: string
   sourceUrl?: string
+  sourcePriority?: string[]
+  stageLabels?: string[]
+  projects?: DevelopmentProjectStatus[]
   timeline: DevelopmentTimelineItem[]
 }
 
@@ -962,6 +973,21 @@ const fallbackSubscriptionNotices: SubscriptionNotice[] = [
 ]
 
 const developmentStageLabels = ['이슈화', '계획', '인허가', '착공·공사', '완공·반영']
+const maintenanceStageLabels = [
+  '정비구역지정',
+  '추진위승인',
+  '조합설립인가',
+  '사업시행인가',
+  '시공사선정',
+  '관리처분인가',
+  '이주',
+  '철거신고',
+  '착공신고',
+  '준공인가',
+  '이전고시',
+  '조합해산',
+]
+const broadToMaintenanceStageIndex = [0, 2, 3, 8, 9]
 
 const officeAreaOptions: OfficeArea[] = ['강남', '여의도', '광화문', '판교']
 const officeAreaDestinations: Record<OfficeArea, { name: string; lat: number; lng: number }> = {
@@ -1474,38 +1500,116 @@ type SeoulIssueSeed = {
   keywords: string[]
   sourceName?: string
   sourceUrl?: string
+  sourcePriority?: string[]
+  stageLabels?: string[]
+  currentStage?: string
+  projects?: DevelopmentProjectStatus[]
   timeline?: DevelopmentTimelineItem[]
 }
 
-const seoulCleanupSourceName = '서울시 정비사업 정보몽땅'
+const seoulCleanupSourceName = '자치구 고시·서울시 정비사업 정보몽땅'
 const seoulCleanupSearchUrl = 'https://cleanup.seoul.go.kr/cleanup/bsnssttus/lscrMainIndx.do'
+const maintenanceKeywordPattern = /구역|뉴타운|재건축|재개발|모아타운|정비|가로주택|신속통합|전략정비/
 
-const buildSeoulTimeline = (activeStageIndex: number): DevelopmentTimelineItem[] => [
-  { label: developmentStageLabels[Math.max(0, activeStageIndex - 1)] ?? '이슈화', status: 'done' },
-  { label: developmentStageLabels[activeStageIndex] ?? '계획', status: 'active' },
-  { label: developmentStageLabels[Math.min(developmentStageLabels.length - 1, activeStageIndex + 1)] ?? '완공·반영', status: 'watch' },
+const isMaintenanceStageSet = (stageLabels: string[]) =>
+  stageLabels.length === maintenanceStageLabels.length && stageLabels[0] === maintenanceStageLabels[0]
+
+const getMaintenanceSourcePriority = (district?: string) => [
+  `${district ?? '자치구'} 고시·공고`,
+  '정비사업 정보몽땅 추진경과',
+  '서울시·국토부 발표',
 ]
 
-const toSeoulIssue = (seed: SeoulIssueSeed, rank: number): DevelopmentIssue => ({
-  rank,
-  title: seed.title,
-  area: seed.area,
-  buzzScore: seed.buzzScore,
-  progress: seed.progress,
-  activeStageIndex: seed.activeStageIndex,
-  expectedYear: seed.expectedYear,
-  plainBrief: seed.plainBrief,
-  phase: seed.phase ?? '정비사업 진행상황 확인',
-  nextMilestone: seed.nextMilestone ?? '다음 확인: 정비사업 정보몽땅 단계 변경, 인허가·이주·분양 일정',
-  priceImpact: seed.priceImpact ?? '사업 단계가 올라간 구역 주변 단지는 실거래와 전세가율을 함께 봐야 합니다.',
-  affectedDongs: seed.affectedDongs,
-  relatedApartments: seed.relatedApartments,
-  keywords: seed.keywords,
-  body: `${seed.area} 핵심 사업은 ${seed.keywords.join(' · ')} 흐름을 기준으로 주간 리포트에서 계속 추적합니다.`,
-  sourceName: seed.sourceName ?? seoulCleanupSourceName,
-  sourceUrl: seed.sourceUrl ?? seoulCleanupSearchUrl,
-  timeline: seed.timeline ?? buildSeoulTimeline(seed.activeStageIndex),
-})
+const buildDevelopmentTimeline = (stageLabels: string[], activeStageIndex: number): DevelopmentTimelineItem[] => [
+  { label: stageLabels[Math.max(0, activeStageIndex - 1)] ?? stageLabels[0] ?? '확인', status: 'done' },
+  { label: stageLabels[activeStageIndex] ?? stageLabels[0] ?? '진행', status: 'active' },
+  {
+    label: stageLabels[Math.min(stageLabels.length - 1, activeStageIndex + 1)] ?? stageLabels.at(-1) ?? '다음',
+    status: 'watch',
+  },
+]
+
+const getIssueStageLabels = (seed: SeoulIssueSeed) => seed.stageLabels ?? maintenanceStageLabels
+
+const getIssueActiveStageIndex = (seed: SeoulIssueSeed, stageLabels: string[]) => {
+  if (seed.currentStage) {
+    return Math.max(0, stageLabels.indexOf(seed.currentStage))
+  }
+
+  if (stageLabels === maintenanceStageLabels) {
+    return broadToMaintenanceStageIndex[seed.activeStageIndex] ?? seed.activeStageIndex
+  }
+
+  return seed.activeStageIndex
+}
+
+const extractMaintenanceProjectNames = (seed: SeoulIssueSeed) => {
+  const candidates = [seed.title, ...seed.keywords]
+    .map((value) => value.trim())
+    .filter((value) => maintenanceKeywordPattern.test(value))
+  const unique = Array.from(new Set(candidates))
+
+  return unique.length ? unique.slice(0, 3) : [seed.title]
+}
+
+const buildMaintenanceProjectStatuses = (
+  seed: SeoulIssueSeed,
+  stageLabels: string[],
+  activeStageIndex: number,
+  district?: string,
+) => {
+  if (seed.projects?.length) {
+    return seed.projects
+  }
+
+  if (!isMaintenanceStageSet(stageLabels)) {
+    return undefined
+  }
+
+  const currentStage = seed.currentStage ?? stageLabels[activeStageIndex] ?? '추진경과 확인'
+
+  return extractMaintenanceProjectNames(seed).map((name) => ({
+    name,
+    currentStage,
+    source: `${district ?? '자치구'} 고시·정비사업 정보몽땅`,
+    note: '구역별 최신 고시를 우선 확인하고, 정비몽땅 추진경과로 보완합니다.',
+  }))
+}
+
+const toSeoulIssue = (seed: SeoulIssueSeed, rank: number, district?: string): DevelopmentIssue => {
+  const stageLabels = getIssueStageLabels(seed)
+  const activeStageIndex = getIssueActiveStageIndex(seed, stageLabels)
+  const projects = buildMaintenanceProjectStatuses(seed, stageLabels, activeStageIndex, district)
+
+  return {
+    rank,
+    title: seed.title,
+    area: seed.area,
+    buzzScore: seed.buzzScore,
+    progress: seed.progress,
+    activeStageIndex,
+    expectedYear: seed.expectedYear,
+    plainBrief: seed.plainBrief,
+    phase: seed.phase ?? '정비사업 진행상황 확인',
+    nextMilestone:
+      seed.nextMilestone ?? '다음 확인: 자치구 고시, 정비사업 정보몽땅 추진경과, 관리처분·이주·분양 일정',
+    priceImpact: seed.priceImpact ?? '사업 단계가 올라간 구역 주변 단지는 실거래와 전세가율을 함께 봐야 합니다.',
+    affectedDongs: seed.affectedDongs,
+    relatedApartments: seed.relatedApartments,
+    keywords: seed.keywords,
+    body: `${seed.area} 핵심 사업은 ${seed.keywords.join(' · ')} 흐름을 기준으로 주간 리포트에서 계속 추적합니다.`,
+    sourceName: seed.sourceName ?? seoulCleanupSourceName,
+    sourceUrl: seed.sourceUrl ?? seoulCleanupSearchUrl,
+    sourcePriority:
+      seed.sourcePriority ??
+      (isMaintenanceStageSet(stageLabels)
+        ? getMaintenanceSourcePriority(district)
+        : ['서울시·국토부 발표', '자치구 고시·공고', '사업자 공지']),
+    stageLabels,
+    projects,
+    timeline: seed.timeline ?? buildDevelopmentTimeline(stageLabels, activeStageIndex),
+  }
+}
 
 const seoulIssueSeedsByDistrict: Record<string, SeoulIssueSeed[]> = {
   종로구: [
@@ -1568,13 +1672,47 @@ const seoulIssueSeedsByDistrict: Record<string, SeoulIssueSeed[]> = {
       progress: 64,
       activeStageIndex: 2,
       expectedYear: '2026 인가·관리처분 체크',
-      plainBrief: '한남5구역 인가 이슈를 포함해 구역별 관리처분·이주 일정이 핵심입니다.',
-      nextMilestone: '다음 확인: 한남5 사업시행인가 고시, 한남2~4 관리처분·이주 일정',
+      plainBrief: '한남1~5구역은 단계가 각각 달라, 구역별 고시와 이주 일정을 따로 봐야 합니다.',
+      nextMilestone: '다음 확인: 한남5 사업시행인가 이후 관리처분 준비, 한남3 관리처분 이후 이주 일정',
       priceImpact: '한남동 신축·고급 단지와 보광동 구축의 가격 차이를 함께 봐야 합니다.',
       affectedDongs: ['한남동', '보광동', '동빙고동'],
       relatedApartments: ['나인원한남', '한남더힐', '래미안첼리투스'],
-      keywords: ['한남1구역', '한남5구역', '재개발'],
+      keywords: ['한남1구역', '한남2구역', '한남3구역', '한남4구역', '한남5구역', '재개발'],
       sourceUrl: 'https://cleanup.seoul.go.kr/assc/scrin-bbs/execute.do?cafeId=170900000102I07',
+      currentStage: '사업시행인가',
+      projects: [
+        {
+          name: '한남1구역',
+          currentStage: '추진경과 확인',
+          source: '용산구 고시·정비사업 정보몽땅',
+          note: '최신 구역계·고시 공개분을 우선 확인하는 관찰 구역입니다.',
+        },
+        {
+          name: '한남2구역',
+          currentStage: '추진경과 확인',
+          source: '용산구 고시·정비사업 정보몽땅',
+          note: '조합 일정과 시공·인허가 변경 고시를 분리해서 확인합니다.',
+        },
+        {
+          name: '한남3구역',
+          currentStage: '관리처분인가',
+          source: '용산구 고시·정비사업 정보몽땅',
+          note: '관리처분 이후 이주·철거 일정이 가격 민감 구간입니다.',
+        },
+        {
+          name: '한남4구역',
+          currentStage: '시공사선정',
+          source: '용산구 고시·정비사업 정보몽땅',
+          note: '시공사 선정 이후 사업시행 변경·관리처분 일정을 봅니다.',
+        },
+        {
+          name: '한남5구역',
+          currentStage: '사업시행인가',
+          noticeDate: '26.04.30',
+          source: '용산구 고시·정비사업 정보몽땅',
+          note: '고시 이후 관리처분 준비 단계 진입 여부를 확인합니다.',
+        },
+      ],
     },
     {
       title: '용산정비창 국제업무지구',
@@ -2604,14 +2742,14 @@ const buildSeoulDevelopmentNews = (region: string): DevelopmentIssue[] => {
 
   if (seededIssues?.length) {
     const infraIssue = seoulInfraIssueSeedsByDistrict[district]
-    const allSeeds = infraIssue ? [...seededIssues, infraIssue] : seededIssues
+    const allSeeds = infraIssue ? [...seededIssues, { ...infraIssue, stageLabels: developmentStageLabels }] : seededIssues
 
-    return allSeeds.map((seed, index) => toSeoulIssue(seed, index + 1))
+    return allSeeds.map((seed, index) => toSeoulIssue(seed, index + 1, district))
   }
 
   return [
-    {
-      rank: 1,
+    toSeoulIssue(
+      {
       title: `${district} 정비사업`,
       area: district,
       buzzScore: 82,
@@ -2625,13 +2763,10 @@ const buildSeoulDevelopmentNews = (region: string): DevelopmentIssue[] => {
       affectedDongs: [district],
       relatedApartments: [`${district} 주요 구축 단지`, `${district} 역세권 단지`, `${district} 신축 단지`],
       keywords: ['재건축', '재개발', '일반분양'],
-      body: `${district} 안에서 정비사업 속도가 빠른 생활권을 주간 리포트에서 우선 추적합니다.`,
-      timeline: [
-        { label: '구역 이슈화', status: 'done' },
-        { label: '인허가·조합 일정', status: 'active' },
-        { label: '이주·분양 반영', status: 'watch' },
-      ],
-    },
+      },
+      1,
+      district,
+    ),
     {
       rank: 2,
       title: `${district} 교통·상권 변화`,
@@ -2648,6 +2783,9 @@ const buildSeoulDevelopmentNews = (region: string): DevelopmentIssue[] => {
       relatedApartments: [`${district} 역세권 단지`, `${district} 학군지 단지`, `${district} 대단지`],
       keywords: ['역세권', '상권', '학군'],
       body: `${district}의 교통과 상권 변화는 매수 선호도와 전세 수요에 직접 연결됩니다.`,
+      sourceName: '서울시·국토부 발표 확인',
+      sourceUrl: 'https://news.seoul.go.kr/traffic/',
+      sourcePriority: ['서울시·국토부 발표', '자치구 고시·공고', '사업자 공지'],
       timeline: [
         { label: '생활권 변화 감지', status: 'done' },
         { label: '거래 반응 확인', status: 'active' },
@@ -4765,23 +4903,8 @@ function NeighborhoodReportView({
     .sort((a, b) => b.buzzScore - a.buzzScore)
     .at(0)
 
-  const openPublishedReport = () => {
-    setReportExpanded(true)
-    window.setTimeout(() => reportDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-  }
-
   return (
     <div className="view-stack report-view">
-      <section className="report-hero">
-        <span>매주 토요일 아침 갱신</span>
-        <h2>우리동네 리포트 보기</h2>
-        <p>지역을 고르면 실거래와 개발 소식이 바로 열립니다.</p>
-        <button className="report-hero-action" type="button" onClick={openPublishedReport}>
-          리포트 바로 보기
-          <ChevronRight size={15} />
-        </button>
-      </section>
-
       <section className="report-region-tabs" aria-label="보고서 지역 선택">
         <div className="report-region-guide">
           <span>지역 선택</span>
@@ -4866,7 +4989,10 @@ function NeighborhoodReportView({
               {developmentIssues
                 .slice()
                 .sort((a, b) => b.buzzScore - a.buzzScore)
-                .map((item) => (
+                .map((item) => {
+                  const stageLabels = item.stageLabels ?? developmentStageLabels
+
+                  return (
                   <article key={`development-${item.title}`}>
                     <div className="development-head">
                       <span>{item.area}</span>
@@ -4881,7 +5007,7 @@ function NeighborhoodReportView({
                       <span style={{ width: `${item.progress}%` }} />
                     </div>
                     <div className="development-stage-map" aria-label={`${item.title} 전체 사업 단계`}>
-                      {developmentStageLabels.map((stageLabel, index) => (
+                      {stageLabels.map((stageLabel, index) => (
                         <span
                           className={
                             index < item.activeStageIndex
@@ -4897,6 +5023,25 @@ function NeighborhoodReportView({
                         </span>
                       ))}
                     </div>
+                    {item.sourcePriority && item.sourcePriority.length > 0 && (
+                      <div className="development-source-priority">
+                        <span>자료 기준</span>
+                        <strong>{item.sourcePriority.join(' → ')}</strong>
+                      </div>
+                    )}
+                    {item.projects && item.projects.length > 0 && (
+                      <div className="development-project-list" aria-label={`${item.title} 구역별 진행단계`}>
+                        {item.projects.map((project) => (
+                          <div key={`${item.title}-${project.name}`}>
+                            <span>{project.name}</span>
+                            <strong>{project.currentStage}</strong>
+                            {project.noticeDate && <em>{project.noticeDate}</em>}
+                            {project.source && <small>{project.source}</small>}
+                            {project.note && <p>{project.note}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="development-timeline">
                       {item.timeline.map((step) => (
                         <span className={step.status} key={`${item.title}-${step.label}`}>
@@ -4922,7 +5067,8 @@ function NeighborhoodReportView({
                       </div>
                     </dl>
                   </article>
-                ))}
+                  )
+                })}
             </div>
           </div>
 

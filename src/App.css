@@ -3828,25 +3828,23 @@ h1 {
 
 .development-stage-map {
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 5px;
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
 }
 
-.development-stage-map::before {
-  content: '';
-  position: absolute;
-  top: 14px;
-  right: 8%;
-  left: 8%;
-  height: 2px;
-  background: rgba(16, 35, 53, 0.1);
+.development-stage-map::-webkit-scrollbar {
+  display: none;
 }
 
 .development-stage-map span {
   position: relative;
   z-index: 1;
-  min-width: 0;
+  flex: 0 0 58px;
+  min-width: 58px;
   display: grid;
   justify-items: center;
   gap: 4px;
@@ -3856,6 +3854,7 @@ h1 {
   font-weight: 900;
   text-align: center;
   word-break: keep-all;
+  scroll-snap-align: start;
 }
 
 .development-stage-map i {
@@ -3886,6 +3885,92 @@ h1 {
   background: #102335;
   color: #ffffff;
   box-shadow: 0 0 0 4px rgba(12, 181, 155, 0.13);
+}
+
+.development-source-priority {
+  border: 1px solid rgba(16, 35, 53, 0.08);
+  border-radius: 12px;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.development-source-priority span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.development-source-priority strong {
+  color: var(--text-strong);
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.development-project-list {
+  display: grid;
+  gap: 7px;
+}
+
+.development-project-list div {
+  min-width: 0;
+  border: 1px solid rgba(12, 181, 155, 0.18);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 9px 10px;
+  background: rgba(234, 251, 248, 0.68);
+}
+
+.development-project-list span,
+.development-project-list strong,
+.development-project-list em,
+.development-project-list small,
+.development-project-list p {
+  min-width: 0;
+}
+
+.development-project-list span {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.development-project-list strong {
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #102335;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.development-project-list em {
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.development-project-list small {
+  grid-column: 1 / -1;
+  color: #64736f;
+  font-size: 9px;
+  line-height: 1.25;
+  font-weight: 850;
+}
+
+.development-project-list p {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 850;
 }
 
 .development-timeline {
