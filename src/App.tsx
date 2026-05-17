@@ -106,6 +106,42 @@ type WorkplaceLocation = {
   label: string
 }
 
+type MortgageRuleProfile = {
+  ltvRatio: number
+  priceCapEok: number
+  isRegulatedArea: boolean
+}
+
+type FinancingPlan = {
+  annualIncomeManwon: number
+  assetsManwon: number
+  existingDebtManwon: number
+  estimatedExistingAnnualDebtManwon: number
+  dsrRoomAnnualManwon: number
+  dsrLimitLoanEok: number
+  displayMaxPurchaseEok: number
+  baseRatePercent: number
+  stressRatePercent: number
+  dsrCapPercent: number
+  termYears: number
+  assumedRegionLabel: string
+  assumedRule: MortgageRuleProfile
+  baseMonthlyPaymentManwon: number
+  stressMonthlyPaymentManwon: number
+}
+
+type CandidateMortgagePlan = {
+  isAffordable: boolean
+  loanEok: number
+  cashNeededEok: number
+  cashBufferEok: number
+  monthlyPaymentManwon: number
+  stressMonthlyPaymentManwon: number
+  dsrPercent: number
+  ltvPercent: number
+  rule: MortgageRuleProfile
+}
+
 type RecommendedApartment = {
   name: string
   region: string
@@ -131,6 +167,7 @@ type RecommendedApartment = {
   oneYearGrowthRate: number | null
   latestDealDate: string
   dealCount: number
+  mortgage: CandidateMortgagePlan
 }
 
 type DevelopmentTimelineItem = {
@@ -233,6 +270,7 @@ type SearchSuggestion = {
 
 type UserListing = {
   id: string
+  intent?: 'sell' | 'want'
   aptName: string
   address: string
   detailAddress: string
@@ -1178,11 +1216,11 @@ const formatMarkerPrice = (marker: MapValueMarker) =>
   marker.hasPrice === false || marker.priceEok <= 0 ? '' : formatEok(marker.priceEok)
 const hasDisplayableMarkerPrice = (marker: MapValueMarker) => formatMarkerPrice(marker).length > 0
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
+const formatRate = (value: number) => `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`
 const formatListingStatus = (status: UserListing['verificationStatus']) =>
   status === 'verified' ? '실소유자 확인 완료' : '실소유자 검증 대기'
 const getDefaultRtmsDealYmd = () => {
   const date = new Date()
-  date.setMonth(date.getMonth() - 1)
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 const getMapRtmsDealYmd = () => 'auto'
@@ -3044,6 +3082,195 @@ const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixe
 
 const clampScore = (value: number) => Math.min(100, Math.max(0, value))
 
+const mortgageAssumptions = {
+  baseRatePercent: 4.8,
+  stressAddRatePercent: 3,
+  dsrCapPercent: 40,
+  termYears: 30,
+  existingDebtAnnualRepaymentRatio: 0.12,
+}
+
+const calculateMonthlyPaymentManwon = (loanEok: number, annualRatePercent: number, termYears: number) => {
+  if (loanEok <= 0) return 0
+
+  const principalManwon = loanEok * 10000
+  const monthlyRate = annualRatePercent / 100 / 12
+  const months = termYears * 12
+
+  if (monthlyRate <= 0) return principalManwon / months
+
+  return principalManwon * (monthlyRate * (1 + monthlyRate) ** months) / ((1 + monthlyRate) ** months - 1)
+}
+
+const calculateLoanLimitEokFromMonthlyPayment = (
+  monthlyPaymentManwon: number,
+  annualRatePercent: number,
+  termYears: number,
+) => {
+  if (monthlyPaymentManwon <= 0) return 0
+
+  const monthlyRate = annualRatePercent / 100 / 12
+  const months = termYears * 12
+
+  if (monthlyRate <= 0) return (monthlyPaymentManwon * months) / 10000
+
+  return (monthlyPaymentManwon * (1 - (1 + monthlyRate) ** -months) / monthlyRate) / 10000
+}
+
+const getMortgageRuleProfile = (regionText: string, priceEok: number): MortgageRuleProfile => {
+  const normalized = normalizeSearchText(regionText)
+  const isRegulatedArea = ['강남구', '서초구', '송파구', '용산구'].some((district) =>
+    normalized.includes(normalizeSearchText(district)),
+  )
+
+  return {
+    ltvRatio: isRegulatedArea ? 0.4 : 0.7,
+    priceCapEok: priceEok <= 15 ? 6 : priceEok <= 25 ? 4 : 2,
+    isRegulatedArea,
+  }
+}
+
+const calculateCandidateMortgagePlan = (
+  priceEok: number,
+  regionText: string,
+  financingPlan: Pick<
+    FinancingPlan,
+    | 'assetsManwon'
+    | 'annualIncomeManwon'
+    | 'estimatedExistingAnnualDebtManwon'
+    | 'dsrLimitLoanEok'
+    | 'baseRatePercent'
+    | 'stressRatePercent'
+    | 'termYears'
+  >,
+): CandidateMortgagePlan => {
+  const rule = getMortgageRuleProfile(regionText, priceEok)
+  const assetsEok = financingPlan.assetsManwon / 10000
+  const ltvLimitEok = priceEok * rule.ltvRatio
+  const loanEok = Math.max(0, Math.min(priceEok, financingPlan.dsrLimitLoanEok, ltvLimitEok, rule.priceCapEok))
+  const cashNeededEok = Math.max(0, priceEok - loanEok)
+  const cashBufferEok = assetsEok - cashNeededEok
+  const monthlyPaymentManwon = calculateMonthlyPaymentManwon(
+    loanEok,
+    financingPlan.baseRatePercent,
+    financingPlan.termYears,
+  )
+  const stressMonthlyPaymentManwon = calculateMonthlyPaymentManwon(
+    loanEok,
+    financingPlan.stressRatePercent,
+    financingPlan.termYears,
+  )
+  const dsrPercent =
+    financingPlan.annualIncomeManwon > 0
+      ? ((stressMonthlyPaymentManwon * 12 + financingPlan.estimatedExistingAnnualDebtManwon) /
+          financingPlan.annualIncomeManwon) *
+        100
+      : 0
+
+  return {
+    isAffordable: cashBufferEok >= -0.02,
+    loanEok,
+    cashNeededEok,
+    cashBufferEok,
+    monthlyPaymentManwon,
+    stressMonthlyPaymentManwon,
+    dsrPercent,
+    ltvPercent: rule.ltvRatio * 100,
+    rule,
+  }
+}
+
+const calculateDisplayMaxPurchaseEok = (
+  plan: Pick<
+    FinancingPlan,
+    | 'assetsManwon'
+    | 'annualIncomeManwon'
+    | 'estimatedExistingAnnualDebtManwon'
+    | 'dsrLimitLoanEok'
+    | 'baseRatePercent'
+    | 'stressRatePercent'
+    | 'termYears'
+  >,
+) => {
+  let low = 0
+  let high = 80
+
+  for (let index = 0; index < 32; index += 1) {
+    const mid = (low + high) / 2
+    const mortgage = calculateCandidateMortgagePlan(mid, '수도권 비규제', plan)
+
+    if (mortgage.isAffordable) {
+      low = mid
+    } else {
+      high = mid
+    }
+  }
+
+  return Math.max(0, low)
+}
+
+const calculateFinancingPlan = ({
+  incomeManwon,
+  assetsManwon,
+  debtManwon,
+}: {
+  incomeManwon: number
+  assetsManwon: number
+  debtManwon: number
+}): FinancingPlan => {
+  const baseRatePercent = mortgageAssumptions.baseRatePercent
+  const stressRatePercent = mortgageAssumptions.baseRatePercent + mortgageAssumptions.stressAddRatePercent
+  const estimatedExistingAnnualDebtManwon = Math.max(
+    0,
+    debtManwon * mortgageAssumptions.existingDebtAnnualRepaymentRatio,
+  )
+  const dsrRoomAnnualManwon = Math.max(
+    0,
+    incomeManwon * (mortgageAssumptions.dsrCapPercent / 100) - estimatedExistingAnnualDebtManwon,
+  )
+  const dsrLimitLoanEok = calculateLoanLimitEokFromMonthlyPayment(
+    dsrRoomAnnualManwon / 12,
+    stressRatePercent,
+    mortgageAssumptions.termYears,
+  )
+  const planBase = {
+    assetsManwon,
+    annualIncomeManwon: incomeManwon,
+    estimatedExistingAnnualDebtManwon,
+    dsrLimitLoanEok,
+    baseRatePercent,
+    stressRatePercent,
+    termYears: mortgageAssumptions.termYears,
+  }
+  const displayMaxPurchaseEok = calculateDisplayMaxPurchaseEok(planBase)
+  const assumedRule = getMortgageRuleProfile('수도권 비규제', displayMaxPurchaseEok)
+  const displayLoanEok = Math.min(
+    dsrLimitLoanEok,
+    assumedRule.priceCapEok,
+    displayMaxPurchaseEok * assumedRule.ltvRatio,
+  )
+
+  return {
+    ...planBase,
+    existingDebtManwon: debtManwon,
+    dsrRoomAnnualManwon,
+    displayMaxPurchaseEok,
+    dsrCapPercent: mortgageAssumptions.dsrCapPercent,
+    assumedRegionLabel: '수도권 비규제·무주택/처분조건부 1주택 기준',
+    assumedRule,
+    baseMonthlyPaymentManwon: calculateMonthlyPaymentManwon(
+      displayLoanEok,
+      baseRatePercent,
+      mortgageAssumptions.termYears,
+    ),
+    stressMonthlyPaymentManwon: calculateMonthlyPaymentManwon(
+      displayLoanEok,
+      stressRatePercent,
+      mortgageAssumptions.termYears,
+    ),
+  }
+}
+
 const uniqueAiPreferenceRanks = (ranks: AiPreferenceKey[]) => {
   const fallback: AiPreferenceKey[] = ['growth', 'commute', 'subway', 'pyeong']
   const uniqueRanks = ranks.filter((rank, index) => ranks.indexOf(rank) === index)
@@ -3196,9 +3423,6 @@ const scoreRecommendationPreference = (
       return 50
   }
 }
-
-const getAffordableRecommendationMax = (budgetEok: number, maxPriceEok: number) =>
-  Math.min(maxPriceEok, Math.max(budgetEok + 0.8, budgetEok * 1.12))
 
 const formatGrowth = (value: number | null) => (value === null ? '산정중' : formatPercent(value))
 
@@ -3399,7 +3623,7 @@ const calculateUpsideScore = (history: LiveRtmsDeal[], regionText: string, locat
 const buildRtmsRecommendationCandidates = ({
   deals,
   preferenceRanks,
-  budgetEok,
+  financingPlan,
   minPriceEok,
   maxPriceEok,
   preferredPyeong,
@@ -3410,7 +3634,7 @@ const buildRtmsRecommendationCandidates = ({
 }: {
   deals: LiveRtmsDeal[]
   preferenceRanks: AiPreferenceKey[]
-  budgetEok: number
+  financingPlan: FinancingPlan
   minPriceEok: number
   maxPriceEok: number
   preferredPyeong: number
@@ -3420,10 +3644,9 @@ const buildRtmsRecommendationCandidates = ({
   maxCommuteMinutes: number
 }): RecommendedApartment[] => {
   const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
-  const affordableMaxEok = getAffordableRecommendationMax(budgetEok, maxPriceEok)
   const groupedDeals = Array.from(
     deals
-      .filter((deal) => deal.status === 'active' && deal.priceEok >= minPriceEok && deal.priceEok <= affordableMaxEok)
+      .filter((deal) => deal.status === 'active' && deal.priceEok >= minPriceEok && deal.priceEok <= maxPriceEok)
       .reduce((group, deal) => {
         const key = getRecommendationDealKey(deal)
         group.set(key, [...(group.get(key) ?? []), deal])
@@ -3440,6 +3663,11 @@ const buildRtmsRecommendationCandidates = ({
 
       if (!latestDeal) return null
 
+      const regionText = `${latestDeal.district} ${latestDeal.legalDong} ${latestDeal.address}`
+      const mortgage = calculateCandidateMortgagePlan(latestDeal.priceEok, regionText, financingPlan)
+
+      if (!mortgage.isAffordable) return null
+
       const oneYearGrowthRate = getOneYearGrowth(preferredHistory)
       const subwayMinutes = estimateRtmsSubwayMinutes(latestDeal)
       const commuteToOffice = estimateCommuteMinutesToWorkplace({
@@ -3447,7 +3675,7 @@ const buildRtmsRecommendationCandidates = ({
         workplaceLocation,
         fallbackMinutes: estimateRtmsCommuteMinutes(latestDeal, officeArea),
       })
-      const budgetDistance = Math.abs(latestDeal.priceEok - budgetEok)
+      const budgetDistance = Math.abs(mortgage.cashBufferEok)
       const directDealCount = preferredHistory.filter((deal) => deal.tradeType === 'direct').length
       const upside = calculateUpsideScore(
         preferredHistory,
@@ -3514,12 +3742,14 @@ const buildRtmsRecommendationCandidates = ({
         oneYearGrowthRate,
         latestDealDate: latestDeal.dealDate,
         dealCount: preferredHistory.length,
+        mortgage,
         fitReasons: [
           `${rankedPreferences.map((rank, index) => `${index + 1}순위 ${aiPreferenceLabelByKey[rank]}`).join(' · ')}`,
           regionPremium.label || `입지 ${getRtmsStationHint(latestDeal, subwayMinutes)}`,
           `최근 실거래 ${formatShortDate(latestDeal.dealDate)} · ${Math.round(latestDeal.pyeong)}평 · ${formatEok(latestDeal.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
+          `대출추정 ${formatEok(mortgage.loanEok)} · 월 ${formatManwon(mortgage.monthlyPaymentManwon)}`,
           `${workplaceLocation?.label || officeArea} 대중교통 약 ${commuteToOffice}분`,
           directDealCount > 0 ? `직거래 ${directDealCount}건 포함` : `동일 평형권 ${preferredHistory.length}건 분석`,
         ],
@@ -3530,7 +3760,7 @@ const buildRtmsRecommendationCandidates = ({
 
 const buildCuratedRecommendationCandidates = ({
   preferenceRanks,
-  budgetEok,
+  financingPlan,
   minPriceEok,
   maxPriceEok,
   preferredPyeong,
@@ -3540,7 +3770,7 @@ const buildCuratedRecommendationCandidates = ({
   maxCommuteMinutes,
 }: {
   preferenceRanks: AiPreferenceKey[]
-  budgetEok: number
+  financingPlan: FinancingPlan
   minPriceEok: number
   maxPriceEok: number
   preferredPyeong: number
@@ -3551,10 +3781,11 @@ const buildCuratedRecommendationCandidates = ({
 }) =>
   apartments
     .filter((apartment) => {
-      const affordableMaxEok = getAffordableRecommendationMax(budgetEok, maxPriceEok)
-      return apartment.priceEok >= minPriceEok && apartment.priceEok <= affordableMaxEok
+      const mortgage = calculateCandidateMortgagePlan(apartment.priceEok, apartment.region, financingPlan)
+      return apartment.priceEok >= minPriceEok && apartment.priceEok <= maxPriceEok && mortgage.isAffordable
     })
     .map((apartment): RecommendedApartment => {
+      const mortgage = calculateCandidateMortgagePlan(apartment.priceEok, apartment.region, financingPlan)
       const rankedPreferences = uniqueAiPreferenceRanks(preferenceRanks)
       const apartmentPyeong = Number(apartment.pyeong.replace('평', ''))
       const oneYearGrowthRate =
@@ -3614,7 +3845,7 @@ const buildCuratedRecommendationCandidates = ({
         (score, preference, index) => score + scoreRecommendationPreference(preference, context) * preferenceWeights[index],
         0,
       )
-      const budgetDistance = Math.abs(apartment.priceEok - budgetEok)
+      const budgetDistance = Math.abs(mortgage.cashBufferEok)
       const recommendationScore = Math.round(
         Math.min(99, preferenceScore * 0.58 + upside.score * 0.28 + regionPremium.score + 10),
       )
@@ -3650,12 +3881,14 @@ const buildCuratedRecommendationCandidates = ({
           `최근 실거래 ${apartment.recentDeals[0]?.date ?? '업데이트 예정'} · ${apartment.pyeong} · ${formatEok(apartment.priceEok)}`,
           `1년 상승률 ${formatGrowth(oneYearGrowthRate)}`,
           upside.signals[0] ? `호재 ${upside.signals[0]}` : `상승여력 ${upside.score}점`,
+          `대출추정 ${formatEok(mortgage.loanEok)} · 월 ${formatManwon(mortgage.monthlyPaymentManwon)}`,
           `${workplaceLocation?.label || officeArea} 대중교통 약 ${commuteToOffice}분`,
         ],
         source: 'curated',
         oneYearGrowthRate,
         latestDealDate: apartment.recentDeals[0]?.date ?? '',
         dealCount: apartment.recentDeals.length,
+        mortgage,
       }
     })
 
@@ -3750,6 +3983,7 @@ function App() {
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
   const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['growth', 'commute', 'subway', 'pyeong'])
   const [userListings, setUserListings] = useState<UserListing[]>([])
+  const [listingFormIntent, setListingFormIntent] = useState<UserListing['intent']>('sell')
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
@@ -3859,6 +4093,11 @@ function App() {
     }
     setFilterOpenRequest((request) => request + 1)
   }, [mode])
+
+  const handleOpenListingRegistration = useCallback((intent: UserListing['intent'] = 'sell') => {
+    setListingFormIntent(intent)
+    setMode('directListings')
+  }, [])
 
   const filteredApartments = useMemo(() => {
     const normalized = query.trim()
@@ -4001,7 +4240,7 @@ function App() {
       }))
 
     return [...latestLiveSuggestions, ...fallbackSuggestions]
-  }, [capitalLiveDeals])
+  }, [apartments, capitalLiveDeals])
 
   const visibleSearchSuggestions = query.trim().length < 2 ? defaultSearchSuggestions : searchSuggestions
   const searchHasNoResults = searchFocused && query.trim().length >= 2 && searchSuggestions.length === 0
@@ -4101,15 +4340,20 @@ function App() {
     setFocusApartment(null)
     setFocusLiveDeal(null)
     setMode('prices')
-    setAppToast('매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.')
-    void sendTelegramLead('listing', {
+    setAppToast(
+      listing.intent === 'want'
+        ? '매물 원해요 등록 완료. 직거래 화면에서 함께 볼 수 있습니다.'
+        : '매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.',
+    )
+    void sendTelegramLead(listing.intent === 'want' ? '매수 희망 등록' : 'listing', {
+      유형: listing.intent === 'want' ? '매물 원해요' : '매도 매물',
       아파트: listing.aptName,
       주소: listing.address,
       동호수: listing.detailAddress,
       희망가: formatEok(listing.priceEok),
       평형: `${listing.pyeong}평`,
       층: `${listing.floor}층`,
-      소유자: listing.ownerName || '미입력',
+      소유자: listing.intent === 'want' ? '매수희망자' : listing.ownerName || '미입력',
       연락처: listing.ownerPhone || '미입력',
       사진수: `${listing.photos.length}장`,
       설명: listing.memo || '미입력',
@@ -4131,15 +4375,24 @@ function App() {
     }
   }, [salePrice])
 
-  const recommendationBudgetEok = Math.max(3.5, (assets + income * 4.2 - debt) / 10000)
-  const recommendationStretchEok = recommendationBudgetEok * 1.12
+  const financingPlan = useMemo(
+    () =>
+      calculateFinancingPlan({
+        incomeManwon: Math.max(0, income),
+        assetsManwon: Math.max(0, assets),
+        debtManwon: Math.max(0, debt),
+      }),
+    [assets, debt, income],
+  )
+  const recommendationBudgetEok = Math.max(0, financingPlan.displayMaxPurchaseEok)
+  const recommendationStretchEok = recommendationBudgetEok
   const normalizedMinTradePriceEok = Math.min(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
   const normalizedMaxTradePriceEok = Math.max(Math.max(0, minTradePriceEok), Math.max(0, maxTradePriceEok))
   const recommendedApartments = useMemo<RecommendedApartment[]>(() => {
     const rtmsCandidates = buildRtmsRecommendationCandidates({
       deals: capitalLiveDeals,
       preferenceRanks: aiPreferenceRanks,
-      budgetEok: recommendationBudgetEok,
+      financingPlan,
       minPriceEok: normalizedMinTradePriceEok,
       maxPriceEok: normalizedMaxTradePriceEok,
       preferredPyeong,
@@ -4150,7 +4403,7 @@ function App() {
     })
     const curatedCandidates = buildCuratedRecommendationCandidates({
       preferenceRanks: aiPreferenceRanks,
-      budgetEok: recommendationBudgetEok,
+      financingPlan,
       minPriceEok: normalizedMinTradePriceEok,
       maxPriceEok: normalizedMaxTradePriceEok,
       preferredPyeong,
@@ -4190,7 +4443,7 @@ function App() {
       normalizedMaxTradePriceEok,
       normalizedMinTradePriceEok,
       preferredPyeong,
-      recommendationBudgetEok,
+      financingPlan,
       workplaceLocation,
     ],
   )
@@ -4198,7 +4451,7 @@ function App() {
   return (
     <main className="app">
       <section
-        className={`mobile-stage mode-${mode}${priceHeaderMinimized ? ' map-header-minimized' : ''}`}
+        className={`mobile-stage mode-${mode}${priceHeaderMinimized ? ' map-header-minimized' : ''}${searchFocused ? ' search-active' : ''}`}
         aria-label="집직구 모바일 앱 미리보기"
       >
         <header className="topbar">
@@ -4241,8 +4494,18 @@ function App() {
                 id="search"
                 value={query}
                 onChange={(event) => handleSearchChange(event.target.value)}
-                onFocus={() => setSearchFocused(true)}
+                onFocus={() => {
+                  setSearchFocused(true)
+                  window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'auto' }), 0)
+                }}
                 onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return
+                  const [firstSuggestion] = visibleSearchSuggestions
+                  if (!firstSuggestion) return
+                  event.preventDefault()
+                  handleSearchSuggestionClick(firstSuggestion)
+                }}
                 placeholder="아파트, 지역, 역 이름 검색"
               />
               <button
@@ -4349,6 +4612,7 @@ function App() {
               setAiPreferenceRanks={setAiPreferenceRanks}
               budget={recommendationBudgetEok}
               stretch={recommendationStretchEok}
+              financingPlan={financingPlan}
               apartments={recommendedApartments}
             />
           )}
@@ -4357,7 +4621,8 @@ function App() {
             <DirectListingsView
               userListings={userListings}
               liveDeals={capitalLiveDeals}
-              onRegister={() => setMode('directListings')}
+              onRegister={() => handleOpenListingRegistration('sell')}
+              onRegisterWanted={() => handleOpenListingRegistration('want')}
               onOpenListing={(listing) => {
                 setFocusListing(listing)
                 setFocusApartment(null)
@@ -4381,6 +4646,7 @@ function App() {
               setSalePrice={setSalePrice}
               brokerage={brokerage}
               listingCandidates={listingApartmentCandidates}
+              initialIntent={listingFormIntent}
               onCreateListing={handleListingCreate}
             />
           )}
@@ -5733,14 +5999,14 @@ const geocodeListingMarkers = async (
 
             resolve({
               id: `listing-${listing.id}`,
-              label: '매물',
+              label: listing.intent === 'want' ? '원해요' : '매물',
               aptName: listing.aptName,
               address: listing.address,
-            tradeTypeLabel: formatListingStatus(listing.verificationStatus),
+            tradeTypeLabel: listing.intent === 'want' ? '매수 희망' : formatListingStatus(listing.verificationStatus),
             priceEok: listing.priceEok,
             hasPrice: true,
-            dateLabel: '매물',
-            subLabel: `${listing.pyeong}평`,
+            dateLabel: listing.intent === 'want' ? '희망' : '매물',
+            subLabel: listing.intent === 'want' ? `${listing.pyeong}평 희망` : `${listing.pyeong}평`,
             lat: Number(result[0].y),
             lng: Number(result[0].x),
               tone: 'listing',
@@ -5988,12 +6254,24 @@ function ApartmentMap({
         })
         kakaoMapRef.current = map
 
-        const [liveMarkers, listingMarkers] = await Promise.all([
+        const [baseLiveMarkers, focusedDealMarkers, listingMarkers] = await Promise.all([
           serverMarkers.length > 0 ? Promise.resolve(serverMarkers) : geocodeDealMarkers(kakao, liveDeals),
+          focusLiveDeal ? geocodeDealMarkers(kakao, [focusLiveDeal]) : Promise.resolve([]),
           geocodeListingMarkers(kakao, userListings),
         ])
         if (disposed) return
 
+        const liveMarkers = Array.from(
+          [...focusedDealMarkers, ...baseLiveMarkers]
+            .reduce((group, marker) => {
+              const key = marker.aptSeq || marker.id
+              if (!group.has(key)) {
+                group.set(key, marker)
+              }
+              return group
+            }, new Map<string, MapValueMarker>())
+            .values(),
+        )
         const displayLiveMarkers = liveMarkers.filter(hasDisplayableMarkerPrice)
         const displayListingMarkers = listingMarkers.filter(hasDisplayableMarkerPrice)
         const liveMarkerNames = new Set(displayLiveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
@@ -6559,20 +6837,20 @@ function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
       <div className="detail-section-head">
         <span>
           <ShieldCheck size={15} />
-          안심 직거래 매물
+          {listing.intent === 'want' ? '매물 원해요' : '안심 직거래 매물'}
         </span>
-        <em>{formatListingStatus(listing.verificationStatus)}</em>
+        <em>{listing.intent === 'want' ? '매수 희망' : formatListingStatus(listing.verificationStatus)}</em>
       </div>
 
       <div className="listing-detail-price">
         <div>
-          <span>희망가</span>
+          <span>{listing.intent === 'want' ? '희망 예산' : '희망가'}</span>
           <strong>{formatEok(listing.priceEok)}</strong>
         </div>
         <div>
-          <span>평형·층</span>
+          <span>{listing.intent === 'want' ? '희망 평형' : '평형·층'}</span>
           <strong>
-            {listing.pyeong}평 · {listing.floor}층
+            {listing.intent === 'want' ? `${listing.pyeong}평` : `${listing.pyeong}평 · ${listing.floor}층`}
           </strong>
         </div>
       </div>
@@ -6580,24 +6858,33 @@ function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
       <p className="listing-detail-address">
         {listing.address} · {listing.detailAddress}
       </p>
-      <p className="listing-detail-memo">{listing.memo || '매도인이 사진과 설명을 등록한 직거래 매물입니다.'}</p>
+      <p className="listing-detail-memo">
+        {listing.memo ||
+          (listing.intent === 'want'
+            ? '매수 희망자가 원하는 조건을 등록했습니다.'
+            : '매도인이 사진과 설명을 등록한 직거래 매물입니다.')}
+      </p>
 
-      {listing.photos.length > 0 ? (
+      {listing.intent !== 'want' && listing.photos.length > 0 ? (
         <div className="listing-detail-photos" aria-label="매물 사진">
           {listing.photos.map((photo) => (
             <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
           ))}
         </div>
-      ) : (
+      ) : listing.intent !== 'want' ? (
         <div className="listing-photo-empty">
           <Camera size={18} />
           <span>사진 등록 대기</span>
         </div>
-      )}
+      ) : null}
 
       <div className="owner-check-card">
-        <strong>실소유자 확인 단계</strong>
-        <p>등기부상 소유자, 연락처, 허위매물 여부를 중개사가 확인한 뒤 공개 상태로 전환합니다.</p>
+        <strong>{listing.intent === 'want' ? '매수 희망 확인 단계' : '실소유자 확인 단계'}</strong>
+        <p>
+          {listing.intent === 'want'
+            ? '연락처와 희망 조건을 확인한 뒤 매도 희망자에게 연결합니다.'
+            : '등기부상 소유자, 연락처, 허위매물 여부를 중개사가 확인한 뒤 공개 상태로 전환합니다.'}
+        </p>
       </div>
     </section>
   )
@@ -7157,7 +7444,7 @@ function AiView({
   aiPreferenceRanks,
   setAiPreferenceRanks,
   budget,
-  stretch,
+  financingPlan,
   apartments,
 }: {
   income: number
@@ -7186,6 +7473,7 @@ function AiView({
   setAiPreferenceRanks: (value: AiPreferenceKey[] | ((current: AiPreferenceKey[]) => AiPreferenceKey[])) => void
   budget: number
   stretch: number
+  financingPlan: FinancingPlan
   apartments: RecommendedApartment[]
 }) {
   const [hasSearched, setHasSearched] = useState(false)
@@ -7266,8 +7554,8 @@ function AiView({
           <strong>1~4순위 기준으로 점수화</strong>
         </div>
         <p className="ai-ranking-note">
-          예산은 먼저 통과 조건으로 적용하고, 순위는 상승여력·관심도·직장 접근성을 중심으로 봅니다. 점수가 비슷하면
-          평형별 실거래 추이, 단지 내 상승률, 서울 입지, 인덕원·GTX-C·동탄인덕원선·월곶판교선 같은 교통 호재를 더 반영합니다.
+          예산은 DSR·스트레스 DSR·LTV·수도권 대출한도를 먼저 통과 조건으로 적용합니다. 순위는 상승여력·관심도·직장
+          접근성을 중심으로 보고, 점수가 비슷하면 평형별 실거래 추이, 단지 내 상승률, 서울 입지와 교통 호재를 더 반영합니다.
         </p>
         <div className="preference-rank-grid" aria-label="추천 우선순위">
           {rankedPreferences.map((rank, index) => (
@@ -7349,14 +7637,26 @@ function AiView({
 
       <section className="budget-band">
         <div>
-          <span>보수 예산</span>
+          <span>실질 가용가</span>
           <strong>{formatEok(budget)}</strong>
         </div>
         <div>
-          <span>확장 예산</span>
-          <strong>{formatEok(stretch)}</strong>
+          <span>DSR 대출한도</span>
+          <strong>{formatEok(financingPlan.dsrLimitLoanEok)}</strong>
+        </div>
+        <div>
+          <span>예상 월 원리금</span>
+          <strong>{formatManwon(financingPlan.baseMonthlyPaymentManwon)}</strong>
+        </div>
+        <div>
+          <span>스트레스 DSR</span>
+          <strong>{formatRate(financingPlan.dsrCapPercent)} 이내</strong>
         </div>
       </section>
+      <p className="loan-assumption-note">
+        {financingPlan.assumedRegionLabel} · {financingPlan.termYears}년 원리금균등 · 금리 {formatRate(financingPlan.baseRatePercent)}
+        · 스트레스 {formatRate(financingPlan.stressRatePercent)}로 보수 계산
+      </p>
 
       <div className="recommend-list" aria-label="AI 집추천 결과">
         {!hasSearched && (
@@ -7408,6 +7708,14 @@ function AiView({
                   </em>
                 </div>
               )}
+              <div className="mortgage-strip" aria-label={`${apartment.name} 대출 추정`}>
+                <span>대출 추정</span>
+                <strong>{formatEok(apartment.mortgage.loanEok)}</strong>
+                <em>
+                  월 {formatManwon(apartment.mortgage.monthlyPaymentManwon)} · 현금필요{' '}
+                  {formatEok(apartment.mortgage.cashNeededEok)} · DSR {formatRate(apartment.mortgage.dsrPercent)}
+                </em>
+              </div>
               <div className="recommend-meta-row">
                 <span className={apartment.source === 'rtms' ? 'source-pill live' : 'source-pill'}>
                   {apartment.source === 'rtms' ? '실거래가 기반' : '초기 표본'}
@@ -7440,8 +7748,8 @@ function AiView({
       </div>
 
       <p className="fine-print">
-        추천은 입력값과 공개 실거래가 기반의 참고 정보입니다. 직장 주소를 입력하면 좌표 기준 추정 통근 시간을 먼저 비교하고,
-        카카오맵 경로 링크에서 실제 대중교통 경로를 다시 확인할 수 있습니다.
+        추천은 입력값과 공개 실거래가 기반의 참고 정보입니다. 대출 가능액은 금융위·금감원 DSR/스트레스 DSR 구조를 단순화한
+        추정치이며, 실제 한도와 금리는 은행 심사, KB시세, 보유주택, 신용도, 지역 규제에 따라 달라집니다.
       </p>
     </div>
   )
@@ -7527,15 +7835,18 @@ function ListingView({
   setSalePrice,
   brokerage,
   listingCandidates,
+  initialIntent,
   onCreateListing,
 }: {
   salePrice: number
   setSalePrice: (value: number) => void
   brokerage: { legalCapBothSides: number; jipjigguFee: number; savings: number }
   listingCandidates: ListingApartmentCandidate[]
+  initialIntent?: UserListing['intent']
   onCreateListing: (listing: UserListing) => void
 }) {
   const [registrationOpen, setRegistrationOpen] = useState(false)
+  const [listingIntent, setListingIntent] = useState<UserListing['intent']>(initialIntent ?? 'sell')
   const [aptName, setAptName] = useState('센트럴파크푸르지오써밋')
   const [address, setAddress] = useState('경기 과천시 부림동 96')
   const [buildingDong, setBuildingDong] = useState('101')
@@ -7548,6 +7859,21 @@ function ListingView({
   const [ownerPhone, setOwnerPhone] = useState('')
   const [memo, setMemo] = useState('실거주 관리 상태 양호, 잔금일 협의 가능합니다.')
   const [photos, setPhotos] = useState<UserListing['photos']>([])
+  useEffect(() => {
+    if (!initialIntent) return
+    setListingIntent(initialIntent)
+    setRegistrationOpen(true)
+  }, [initialIntent])
+
+  useEffect(() => {
+    setMemo((currentMemo) => {
+      const saleDefault = '실거주 관리 상태 양호, 잔금일 협의 가능합니다.'
+      const wantDefault = '입주 가능한 매물을 찾고 있습니다. 가격과 잔금일은 협의 가능합니다.'
+      if (listingIntent === 'want' && currentMemo === saleDefault) return wantDefault
+      if (listingIntent === 'sell' && currentMemo === wantDefault) return saleDefault
+      return currentMemo
+    })
+  }, [listingIntent])
   const steps = [
     { icon: LockKeyhole, title: '직접 탐색', detail: '매수인과 매도인이 매물과 조건을 직접 확인' },
     { icon: Building2, title: '위험 확인', detail: '공인중개사가 권리관계와 거래상 위험사항 사전 점검' },
@@ -7617,6 +7943,7 @@ function ListingView({
 
     onCreateListing({
       id: `${Date.now()}`,
+      intent: listingIntent,
       aptName: aptName.trim(),
       address: address.trim(),
       detailAddress: detailAddress.trim(),
@@ -7702,9 +8029,27 @@ function ListingView({
         <span>첫 거래 베타</span>
         <strong>매도인 수수료 0원 검토</strong>
         <p>초기 성공 사례 확보를 위해 서울·경기 검증 가능 매물을 우선 모집합니다.</p>
-        <button className="primary-action" type="button" onClick={() => setRegistrationOpen(true)}>
+        <button
+          className="primary-action"
+          type="button"
+          onClick={() => {
+            setListingIntent('sell')
+            setRegistrationOpen(true)
+          }}
+        >
           매물 등록 시작
           <ChevronRight size={18} />
+        </button>
+        <button
+          className="secondary-action listing-want-action"
+          type="button"
+          onClick={() => {
+            setListingIntent('want')
+            setRegistrationOpen(true)
+          }}
+        >
+          매물 원해요 등록
+          <Plus size={16} />
         </button>
       </section>
 
@@ -7713,9 +8058,25 @@ function ListingView({
           <div className="listing-registration-head">
             <div>
               <span>매물등록</span>
-              <h3>매물 정보 입력 후 실소유자 확인으로 넘어갑니다</h3>
+              <h3>{listingIntent === 'want' ? '원하는 단지와 예산을 등록합니다' : '매물 정보 입력 후 실소유자 확인으로 넘어갑니다'}</h3>
             </div>
-            <strong>허위매물 차단</strong>
+            <strong>{listingIntent === 'want' ? '매수희망' : '허위매물 차단'}</strong>
+          </div>
+          <div className="listing-intent-tabs" aria-label="등록 유형">
+            <button
+              className={listingIntent === 'sell' ? 'active' : ''}
+              type="button"
+              onClick={() => setListingIntent('sell')}
+            >
+              매물 등록
+            </button>
+            <button
+              className={listingIntent === 'want' ? 'active' : ''}
+              type="button"
+              onClick={() => setListingIntent('want')}
+            >
+              매물 원해요
+            </button>
           </div>
 
           <div className="listing-form-grid">
@@ -7787,7 +8148,7 @@ function ListingView({
             </div>
             <div className="listing-form-row">
               <label>
-                <span>희망가</span>
+              <span>{listingIntent === 'want' ? '희망 예산' : '희망가'}</span>
                 <input
                   type="number"
                   min="1"
@@ -7808,7 +8169,7 @@ function ListingView({
                 <em>평</em>
               </label>
               <label>
-                <span>층</span>
+              <span>{listingIntent === 'want' ? '선호 층' : '층'}</span>
                 <input
                   type="number"
                   value={listingFloor}
@@ -7818,26 +8179,28 @@ function ListingView({
               </label>
             </div>
             <label>
-              <span>소유자 성명</span>
-              <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="검증용" />
+              <span>{listingIntent === 'want' ? '이름' : '소유자 성명'}</span>
+              <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder={listingIntent === 'want' ? '연락 받을 이름' : '검증용'} />
             </label>
             <label>
               <span>연락처</span>
               <input value={ownerPhone} onChange={(event) => setOwnerPhone(event.target.value)} placeholder="검증용" />
             </label>
             <label>
-              <span>매물 설명</span>
+              <span>{listingIntent === 'want' ? '원하는 조건' : '매물 설명'}</span>
               <textarea value={memo} onChange={(event) => setMemo(event.target.value)} rows={3} />
             </label>
           </div>
 
-          <label className="photo-uploader">
-            <Camera size={18} />
-            <span>사진 업로드</span>
-            <input type="file" accept="image/*" multiple onChange={(event) => void handlePhotoChange(event.target.files)} />
-          </label>
+          {listingIntent === 'sell' && (
+            <label className="photo-uploader">
+              <Camera size={18} />
+              <span>사진 업로드</span>
+              <input type="file" accept="image/*" multiple onChange={(event) => void handlePhotoChange(event.target.files)} />
+            </label>
+          )}
 
-          {photos.length > 0 && (
+          {listingIntent === 'sell' && photos.length > 0 && (
             <div className="listing-photo-preview" aria-label="업로드 사진 미리보기">
               {photos.map((photo) => (
                 <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
@@ -7848,20 +8211,22 @@ function ListingView({
           <div className="owner-verification-flow">
             <div className="active">
               <strong>1</strong>
-              <span>매물정보 입력</span>
+              <span>{listingIntent === 'want' ? '희망조건 입력' : '매물정보 입력'}</span>
             </div>
             <div className="active">
               <strong>2</strong>
-              <span>등기·실소유자 확인</span>
+              <span>{listingIntent === 'want' ? '연락처 확인' : '등기·실소유자 확인'}</span>
             </div>
             <div>
               <strong>3</strong>
-              <span>지도 매물 노출</span>
+              <span>{listingIntent === 'want' ? '원해요 노출' : '지도 매물 노출'}</span>
             </div>
           </div>
 
           <p className="listing-register-note">
-            등록 즉시 지도에는 노란 매물 박스로 반영하고, 실제 운영에서는 등기부·신분확인·소유자 일치 검증을 통과한 매물만 공개합니다.
+            {listingIntent === 'want'
+              ? '등록된 매수 희망 조건은 직거래 화면의 매물 원해요 목록에 함께 표시됩니다. 실제 운영에서는 연락처 확인 후 공개합니다.'
+              : '등록 즉시 지도에는 노란 매물 박스로 반영하고, 실제 운영에서는 등기부·신분확인·소유자 일치 검증을 통과한 매물만 공개합니다.'}
           </p>
 
           <button
@@ -7870,7 +8235,7 @@ function ListingView({
             disabled={!canSubmitListing}
             onClick={handleSubmitListing}
           >
-            실소유자 확인 단계로 이동
+            {listingIntent === 'want' ? '매물 원해요 등록' : '실소유자 확인 단계로 이동'}
             <ChevronRight size={18} />
           </button>
         </section>
@@ -8082,15 +8447,19 @@ function DirectListingsView({
   userListings,
   liveDeals,
   onRegister,
+  onRegisterWanted,
   onOpenListing,
   onOpenDeal,
 }: {
   userListings: UserListing[]
   liveDeals: LiveRtmsDeal[]
   onRegister: () => void
+  onRegisterWanted: () => void
   onOpenListing: (listing: UserListing) => void
   onOpenDeal: (deal: LiveRtmsDeal) => void
 }) {
+  const saleListings = userListings.filter((listing) => (listing.intent ?? 'sell') === 'sell')
+  const wantedListings = userListings.filter((listing) => listing.intent === 'want')
   const directDeals = useMemo(
     () =>
       liveDeals
@@ -8117,16 +8486,16 @@ function DirectListingsView({
             등록된 매물
           </span>
           <div>
-            <em>{userListings.length ? `${userListings.length}건` : '모집중'}</em>
+            <em>{saleListings.length ? `${saleListings.length}건` : '모집중'}</em>
             <button className="round-add-button" type="button" onClick={onRegister} aria-label="매물 등록하기">
               <Plus size={18} />
             </button>
           </div>
         </div>
 
-        {userListings.length > 0 ? (
+        {saleListings.length > 0 ? (
           <div className="listing-market-list">
-            {userListings.map((listing) => (
+            {saleListings.map((listing) => (
               <button key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
                 <div>
                   <strong>{listing.aptName}</strong>
@@ -8145,6 +8514,47 @@ function DirectListingsView({
             <span>첫 매물을 등록하면 실소유자 확인 후 지도에 노란 매물 박스로 노출됩니다.</span>
             <button className="secondary-action" type="button" onClick={onRegister}>
               첫 매물 등록하기
+              <Plus size={16} />
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="listing-market-section wanted-market-section" aria-label="매물 원해요">
+        <div className="detail-section-head listing-market-head">
+          <span>
+            <Search size={15} />
+            매물 원해요
+          </span>
+          <div>
+            <em>{wantedListings.length ? `${wantedListings.length}건` : '등록 가능'}</em>
+            <button className="round-add-button wanted" type="button" onClick={onRegisterWanted} aria-label="매물 원해요 등록하기">
+              <Plus size={18} />
+            </button>
+          </div>
+        </div>
+
+        {wantedListings.length > 0 ? (
+          <div className="listing-market-list compact">
+            {wantedListings.map((listing) => (
+              <button className="wanted-listing" key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
+                <div>
+                  <strong>{listing.aptName}</strong>
+                  <span>
+                    {listing.address} · {listing.pyeong}평 희망 · {formatEok(listing.priceEok)} 이하
+                  </span>
+                  <em>{listing.memo || '매수 희망 조건을 등록했습니다.'}</em>
+                </div>
+                <b>원해요</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="listing-market-empty">
+            <strong>찾는 매물이 있다면 먼저 등록해보세요</strong>
+            <span>원하는 단지와 예산을 올리면 매도 희망자와 연결할 수 있습니다.</span>
+            <button className="secondary-action" type="button" onClick={onRegisterWanted}>
+              원하는 매물 등록하기
               <Plus size={16} />
             </button>
           </div>

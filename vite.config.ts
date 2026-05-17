@@ -1121,7 +1121,6 @@ type MapMarkerRefreshOptions = {
 
 const getDefaultDealYmd = () => {
   const date = new Date()
-  date.setMonth(date.getMonth() - 1)
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
@@ -1144,16 +1143,20 @@ const findLatestAvailableDealYmd = async (startYmd: string, serviceKey: string) 
   const cached = latestDealYmdCache.get(cacheKey)
   if (cached) return cached
 
-  const [probeDistrict] = seoulDistricts.filter((district) => district.code === '11680')
+  const probeDistricts = ['41173', '41171', '41290', '41430', '11680']
+    .map((code) => capitalAreaDistricts.find((district) => district.code === code))
+    .filter((district): district is TargetDistrict => Boolean(district))
   const probeMonths = getRecentDealYmds(startYmd, 24)
 
   for (const dealYmd of probeMonths) {
-    const result = await fetchDistrictTrades(probeDistrict, serviceKey, dealYmd, '1')
-    if (!result.error && result.totalCount > 0) {
-      latestDealYmdCache.set(cacheKey, dealYmd)
-      return dealYmd
+    for (const probeDistrict of probeDistricts) {
+      const result = await fetchDistrictTrades(probeDistrict, serviceKey, dealYmd, '1')
+      if (!result.error && result.totalCount > 0) {
+        latestDealYmdCache.set(cacheKey, dealYmd)
+        return dealYmd
+      }
+      await sleep(120)
     }
-    await sleep(180)
   }
 
   latestDealYmdCache.set(cacheKey, '202504')
