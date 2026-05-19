@@ -65,6 +65,29 @@ type SubscriptionNotice = {
   updatedAt: string
 }
 
+type StoredUserListing = {
+  id: string
+  intent?: 'sell' | 'want'
+  aptName: string
+  address: string
+  detailAddress: string
+  buildingDong: string
+  unitHo: string
+  priceEok: number
+  pyeong: number
+  floor: number
+  ownerName: string
+  ownerPhone: string
+  memo: string
+  photos: Array<{
+    id: string
+    name: string
+    dataUrl: string
+  }>
+  verificationStatus: 'owner-checking' | 'verified'
+  createdAt: string
+}
+
 const seoulDistricts: TargetDistrict[] = [
   ['11110', '서울 종로구'],
   ['11140', '서울 중구'],
@@ -165,6 +188,7 @@ const rtmsMapMarkerBatchSize = 2
 const rtmsMapMarkerGeocodeBatchLimit = 180
 const rtmsMapMarkerMonthBatchSize = 12
 const rtmsCacheDirectory = path.resolve(process.cwd(), '.cache', 'rtms')
+const listingCacheFilePath = path.resolve(process.cwd(), '.cache', 'listings.json')
 const reportNewsCache = new Map<string, ReportNewsCache>()
 const reportNewsCacheMs = 30 * 60 * 1000
 const districtNameByLawdCd = Object.fromEntries(
@@ -1986,6 +2010,74 @@ const readRequestBody = (request: NodeJS.ReadableStream) =>
     request.on('error', reject)
   })
 
+const sanitizeListingString = (value: unknown, maxLength = 120) =>
+  String(value ?? '')
+    .trim()
+    .slice(0, maxLength)
+
+const sanitizeListingNumber = (value: unknown, fallback = 0) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+const sanitizeStoredListing = (value: unknown): StoredUserListing | null => {
+  if (!value || typeof value !== 'object') return null
+
+  const listing = value as Partial<StoredUserListing>
+  const aptName = sanitizeListingString(listing.aptName, 80)
+  const address = sanitizeListingString(listing.address, 160)
+  if (!aptName || !address) return null
+
+  const photos = Array.isArray(listing.photos)
+    ? listing.photos
+        .map((photo, index) => ({
+          id: sanitizeListingString(photo?.id, 60) || `photo-${index}`,
+          name: sanitizeListingString(photo?.name, 80) || `photo-${index + 1}`,
+          dataUrl: sanitizeListingString(photo?.dataUrl, 600_000),
+        }))
+        .filter((photo) => photo.dataUrl.startsWith('data:image/'))
+        .slice(0, 5)
+    : []
+
+  const createdAt = sanitizeListingString(listing.createdAt, 40)
+  const verificationStatus = listing.verificationStatus === 'verified' ? 'verified' : 'owner-checking'
+
+  return {
+    id: sanitizeListingString(listing.id, 80) || `${Date.now()}`,
+    intent: listing.intent === 'want' ? 'want' : 'sell',
+    aptName,
+    address,
+    detailAddress: sanitizeListingString(listing.detailAddress, 80),
+    buildingDong: sanitizeListingString(listing.buildingDong, 20),
+    unitHo: sanitizeListingString(listing.unitHo, 20),
+    priceEok: Math.max(0, sanitizeListingNumber(listing.priceEok)),
+    pyeong: Math.max(0, sanitizeListingNumber(listing.pyeong)),
+    floor: sanitizeListingNumber(listing.floor),
+    ownerName: sanitizeListingString(listing.ownerName, 40),
+    ownerPhone: sanitizeListingString(listing.ownerPhone, 40),
+    memo: sanitizeListingString(listing.memo, 500),
+    photos,
+    verificationStatus,
+    createdAt: createdAt || new Date().toISOString(),
+  }
+}
+
+const readStoredListings = async () => {
+  try {
+    const rawPayload = await fs.readFile(listingCacheFilePath, 'utf8')
+    const parsedPayload = JSON.parse(rawPayload) as unknown
+    const rawListings = Array.isArray(parsedPayload) ? parsedPayload : []
+    return rawListings.map(sanitizeStoredListing).filter((listing): listing is StoredUserListing => Boolean(listing))
+  } catch {
+    return []
+  }
+}
+
+const writeStoredListings = async (listings: StoredUserListing[]) => {
+  await fs.mkdir(path.dirname(listingCacheFilePath), { recursive: true })
+  await fs.writeFile(listingCacheFilePath, JSON.stringify(listings.slice(0, 300), null, 2), 'utf8')
+}
+
 const telegramLeadTitleByType: Record<string, string> = {
   listing: '직거래 매물 등록',
   appraisal: '상속증여 탁상감정 신청',
@@ -2392,6 +2484,62 @@ const configureRtmsProxyServer = (server: RtmsMiddlewareServer) => {
           updatedAt: new Date().toISOString(),
         }),
       )
+    })
+
+    server.middlewares.use('/api/listings', async (request, response) => {
+      response.setHeader('Content-Type', 'application/json; charset=utf-8')
+      response.setHeader('Cache-Control', 'no-store')
+
+      try {
+        if (request.method === 'GET') {
+          const listings = await readStoredListings()
+          response.statusCode = 200
+          response.end(
+            JSON.stringify({
+              ok: true,
+              listings,
+              updatedAt: new Date().toISOString(),
+            }),
+          )
+          return
+        }
+
+        if (request.method === 'POST') {
+          const rawBody = await readRequestBody(request)
+          const payload = rawBody ? (JSON.parse(rawBody) as { listing?: unknown }) : {}
+          const listing = sanitizeStoredListing(payload.listing)
+
+          if (!listing) {
+            response.statusCode = 400
+            response.end(JSON.stringify({ ok: false, message: '매물 정보가 부족합니다.' }))
+            return
+          }
+
+          const listings = await readStoredListings()
+          const nextListings = [
+            listing,
+            ...listings.filter((currentListing) => currentListing.id !== listing.id),
+          ].slice(0, 300)
+          await writeStoredListings(nextListings)
+
+          response.statusCode = 200
+          response.end(
+            JSON.stringify({
+              ok: true,
+              listing,
+              count: nextListings.length,
+              updatedAt: new Date().toISOString(),
+            }),
+          )
+          return
+        }
+
+        response.statusCode = 405
+        response.end(JSON.stringify({ ok: false, message: 'Method not allowed' }))
+      } catch (error) {
+        response.statusCode = 500
+        response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' }))
+      }
     })
 
     server.middlewares.use('/api/telegram/test', async (_request, response) => {

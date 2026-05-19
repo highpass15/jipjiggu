@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeCheck,
   BarChart3,
+  ArrowLeft,
   Bell,
   Building2,
   BusFront,
@@ -298,6 +299,19 @@ type UserListing = {
   createdAt: string
 }
 
+type ListingsResponse = {
+  ok: boolean
+  listings: UserListing[]
+  updatedAt?: string
+}
+
+type ListingComplexGroup = {
+  key: string
+  aptName: string
+  address: string
+  listings: UserListing[]
+}
+
 type LeadPayload = Record<string, string | number | boolean | null | undefined>
 
 type AppNotification = {
@@ -407,6 +421,7 @@ type BuildingLedgerResponse = {
 type KakaoLatLng = unknown
 type KakaoBounds = {
   extend: (position: KakaoLatLng) => void
+  contain?: (position: KakaoLatLng) => boolean
 }
 type KakaoMapInstance = {
   setBounds: (bounds: KakaoBounds) => void
@@ -414,6 +429,8 @@ type KakaoMapInstance = {
   setLevel: (level: number) => void
   getLevel: () => number
   getCenter: () => KakaoLatLng
+  getBounds?: () => KakaoBounds
+  relayout?: () => void
 }
 type KakaoOverlay = {
   setMap: (map: KakaoMapInstance | null) => void
@@ -1226,6 +1243,28 @@ const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('k
 const formatRate = (value: number) => `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`
 const formatListingStatus = (status: UserListing['verificationStatus']) =>
   status === 'verified' ? '실소유자 확인 완료' : '실소유자 검증 대기'
+const getListingComplexKey = (listing: UserListing) =>
+  normalizeSearchText(`${listing.aptName}-${listing.address}`).slice(0, 120)
+const formatListingArea = (listing: UserListing) => `${listing.pyeong}평 / ${Math.round(listing.pyeong * 3.3058)}m²`
+const formatListingFloor = (floor: number) => {
+  if (!Number.isFinite(floor) || floor <= 0) return '층 확인'
+  if (floor <= 3) return `${floor}층 · 저층`
+  if (floor >= 20) return `${floor}층 · 고층`
+  return `${floor}층`
+}
+const summarizeListingMemo = (listing: UserListing) => {
+  const memo = listing.memo.trim()
+  if (memo) {
+    return memo
+      .split(/[,·\n]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(', ')
+  }
+
+  return listing.intent === 'want' ? '매수 희망 조건 등록' : '입주협의, 실소유자 확인중'
+}
 const getDefaultRtmsDealYmd = () => {
   const date = new Date()
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -4013,6 +4052,27 @@ function App() {
   const unreadNotificationCount = appNotifications.filter((notification) => !notification.read).length
 
   useEffect(() => {
+    let disposed = false
+
+    void fetch('/api/listings', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: ListingsResponse | null) => {
+        if (disposed || !payload?.ok || !Array.isArray(payload.listings)) return
+
+        setUserListings(
+          payload.listings
+            .filter((listing) => listing && listing.id && listing.aptName && listing.address)
+            .slice(0, 300),
+        )
+      })
+      .catch(() => undefined)
+
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  useEffect(() => {
     modeRef.current = mode
   }, [mode])
 
@@ -4342,8 +4402,18 @@ function App() {
   }
 
   const handleListingCreate = (listing: UserListing) => {
-    setUserListings((currentListings) => [listing, ...currentListings])
-    setFocusListing(listing)
+    const normalizedListing = {
+      ...listing,
+      id: listing.id || `${Date.now()}`,
+      createdAt: listing.createdAt || new Date().toISOString(),
+      photos: listing.photos.slice(0, 5),
+    }
+
+    setUserListings((currentListings) => [
+      normalizedListing,
+      ...currentListings.filter((currentListing) => currentListing.id !== normalizedListing.id),
+    ])
+    setFocusListing(normalizedListing)
     setFocusApartment(null)
     setFocusLiveDeal(null)
     setMode('prices')
@@ -4352,19 +4422,24 @@ function App() {
         ? '매물 원해요 등록 완료. 직거래 화면에서 함께 볼 수 있습니다.'
         : '매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.',
     )
-    void sendTelegramLead(listing.intent === 'want' ? '매수 희망 등록' : 'listing', {
-      유형: listing.intent === 'want' ? '매물 원해요' : '매도 매물',
-      아파트: listing.aptName,
-      주소: listing.address,
-      동호수: listing.detailAddress,
-      희망가: formatEok(listing.priceEok),
-      평형: `${listing.pyeong}평`,
-      층: `${listing.floor}층`,
-      소유자: listing.intent === 'want' ? '매수희망자' : listing.ownerName || '미입력',
-      연락처: listing.ownerPhone || '미입력',
-      사진수: `${listing.photos.length}장`,
-      설명: listing.memo || '미입력',
-      접수시각: new Date(listing.createdAt).toLocaleString('ko-KR'),
+    void fetch('/api/listings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listing: normalizedListing }),
+    }).catch(() => undefined)
+    void sendTelegramLead(normalizedListing.intent === 'want' ? '매수 희망 등록' : 'listing', {
+      유형: normalizedListing.intent === 'want' ? '매물 원해요' : '매도 매물',
+      아파트: normalizedListing.aptName,
+      주소: normalizedListing.address,
+      동호수: normalizedListing.detailAddress,
+      희망가: formatEok(normalizedListing.priceEok),
+      평형: `${normalizedListing.pyeong}평`,
+      층: `${normalizedListing.floor}층`,
+      소유자: normalizedListing.intent === 'want' ? '매수희망자' : normalizedListing.ownerName || '미입력',
+      연락처: normalizedListing.ownerPhone || '미입력',
+      사진수: `${normalizedListing.photos.length}장`,
+      설명: normalizedListing.memo || '미입력',
+      접수시각: new Date(normalizedListing.createdAt).toLocaleString('ko-KR'),
     })
 
     window.setTimeout(() => {
@@ -6229,6 +6304,10 @@ function ApartmentMap({
   const [mapError, setMapError] = useState(false)
   const [placeFallbackCount, setPlaceFallbackCount] = useState(0)
   const kakaoKey = getKakaoMapKey()
+  const fallbackLiveDeals = useMemo(
+    () => (serverMarkers.length > 0 ? [] : liveDeals),
+    [liveDeals, serverMarkers.length],
+  )
 
   useEffect(() => {
     selectedMarkerRef.current = selectedMarker
@@ -6264,7 +6343,7 @@ function ApartmentMap({
         kakaoMapRef.current = map
 
         const [baseLiveMarkers, focusedDealMarkers, listingMarkers] = await Promise.all([
-          serverMarkers.length > 0 ? Promise.resolve(serverMarkers) : geocodeDealMarkers(kakao, liveDeals),
+          serverMarkers.length > 0 ? Promise.resolve(serverMarkers) : geocodeDealMarkers(kakao, fallbackLiveDeals),
           focusLiveDeal ? geocodeDealMarkers(kakao, [focusLiveDeal]) : Promise.resolve([]),
           geocodeListingMarkers(kakao, userListings),
         ])
@@ -6290,28 +6369,21 @@ function ApartmentMap({
         const markers = [...displayListingMarkers, ...displayLiveMarkers, ...specMarkers]
 
         const markerNodes: HTMLElement[] = []
-        const overlays = markers.map((marker) => {
+        const markerOverlayModels = markers.map((marker) => {
           const position = new kakao.maps.LatLng(marker.lat, marker.lng)
-          const content = createValueMarkerElement(marker, () => {
-            onSelectMarker(marker)
-            map.setCenter(position)
-            map.setLevel(4)
-          })
-          markerNodes.push(content)
-
-          const overlay = new kakao.maps.CustomOverlay({
+          return {
+            marker,
             position,
-            content,
-            xAnchor: 0.5,
-            yAnchor: 1,
-          })
-          overlay.setMap(map)
-          return overlay
+            content: null as HTMLElement | null,
+            overlay: null as KakaoOverlay | null,
+            visible: false,
+          }
         })
         let placeOverlays: KakaoOverlay[] = []
         let placeMarkerNodes: HTMLElement[] = []
         let placeRefreshTimer: number | null = null
         let activePlaceSearchKey = ''
+        let mapMovingTimer: number | null = null
 
         const focusedListingMarker = focusListing
           ? displayListingMarkers.find((marker) => marker.listing?.id === focusListing.id)
@@ -6336,11 +6408,98 @@ function ApartmentMap({
           onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing || focusLiveDeal) })
         }
 
+        const blurActiveTextInput = () => {
+          const activeElement = document.activeElement
+          if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+            activeElement.blur()
+          }
+        }
+
+        const ensureMarkerOverlay = (model: (typeof markerOverlayModels)[number]) => {
+          if (!model.overlay) {
+            const content = createValueMarkerElement(model.marker, () => {
+              onSelectMarker(model.marker)
+              map.setCenter(model.position)
+              map.setLevel(4)
+            })
+            markerNodes.push(content)
+            model.content = content
+            model.overlay = new kakao.maps.CustomOverlay({
+              position: model.position,
+              content,
+              xAnchor: 0.5,
+              yAnchor: 1,
+            })
+          }
+
+          return model.overlay
+        }
+
+        const setMapMoving = (moving: boolean) => {
+          mapNode.current?.classList.toggle('is-moving', moving)
+          if (mapMovingTimer) window.clearTimeout(mapMovingTimer)
+          if (moving) {
+            mapMovingTimer = window.setTimeout(() => {
+              mapNode.current?.classList.remove('is-moving')
+              mapMovingTimer = null
+            }, 900)
+          } else {
+            mapMovingTimer = null
+          }
+        }
+
         const updateDensity = () => {
           const visibleNodeCount = markerNodes.length + placeMarkerNodes.length
           const compact = map.getLevel() >= 6 || (visibleNodeCount > 45 && map.getLevel() >= 4)
           markerNodes.forEach((node) => node.classList.toggle('compact', compact))
           placeMarkerNodes.forEach((node) => node.classList.toggle('compact', compact))
+        }
+
+        const updateVisibleMainOverlays = () => {
+          const bounds = map.getBounds?.()
+          const level = map.getLevel()
+          const center = map.getCenter()
+          const centerLat = getKakaoLatLngNumber(center, 'getLat')
+          const centerLng = getKakaoLatLngNumber(center, 'getLng')
+          const isMobile = window.matchMedia('(max-width: 860px)').matches
+          const visibleCap = isMobile
+            ? level <= 3
+              ? 110
+              : level <= 4
+                ? 130
+                : 160
+            : level <= 3
+              ? 180
+              : level <= 4
+                ? 240
+                : 320
+          const selectedId = selectedMarkerRef.current?.id
+          const candidates = markerOverlayModels
+            .filter((model) => !bounds?.contain || bounds.contain(model.position))
+            .sort((a, b) => {
+              const aPriority = a.marker.id === selectedId ? -2 : a.marker.listing ? -1 : 0
+              const bPriority = b.marker.id === selectedId ? -2 : b.marker.listing ? -1 : 0
+              if (aPriority !== bPriority) return aPriority - bPriority
+
+              const aDistance = Math.abs(a.marker.lat - centerLat) + Math.abs(a.marker.lng - centerLng)
+              const bDistance = Math.abs(b.marker.lat - centerLat) + Math.abs(b.marker.lng - centerLng)
+              return aDistance - bDistance
+            })
+          const visibleIds = new Set(candidates.slice(0, visibleCap).map((model) => model.marker.id))
+
+          markerOverlayModels.forEach((model) => {
+            const shouldShow = visibleIds.has(model.marker.id)
+            if (model.visible === shouldShow) return
+
+            if (shouldShow) {
+              ensureMarkerOverlay(model).setMap(map)
+            } else {
+              model.overlay?.setMap(null)
+            }
+            model.visible = shouldShow
+          })
+
+          updateDensity()
         }
 
         const clearPlaceOverlays = () => {
@@ -6356,7 +6515,7 @@ function ApartmentMap({
           placeRefreshTimer = window.setTimeout(() => {
             placeRefreshTimer = null
 
-            if (disposed || map.getLevel() > 5) {
+            if (disposed || map.getLevel() > 4 || markerOverlayModels.length > 90) {
               activePlaceSearchKey = ''
               clearPlaceOverlays()
               return
@@ -6394,18 +6553,39 @@ function ApartmentMap({
 
               updateDensity()
             })
-          }, 350)
+          }, window.matchMedia('(max-width: 860px)').matches ? 950 : 500)
         }
 
-        updateDensity()
-        kakao.maps.event?.addListener(map, 'zoom_changed', updateDensity)
-        kakao.maps.event?.addListener(map, 'idle', refreshPlaceFallbackMarkers)
+        const handleMapTouchStart = () => {
+          blurActiveTextInput()
+          setMapMoving(true)
+        }
+        mapNode.current?.addEventListener('touchstart', handleMapTouchStart, { passive: true })
+        mapNode.current?.addEventListener('pointerdown', handleMapTouchStart, { passive: true })
+
+        updateVisibleMainOverlays()
+        kakao.maps.event?.addListener(map, 'dragstart', () => {
+          blurActiveTextInput()
+          setMapMoving(true)
+        })
+        kakao.maps.event?.addListener(map, 'zoom_changed', () => {
+          setMapMoving(true)
+          updateVisibleMainOverlays()
+        })
+        kakao.maps.event?.addListener(map, 'idle', () => {
+          setMapMoving(false)
+          updateVisibleMainOverlays()
+          refreshPlaceFallbackMarkers()
+        })
         refreshPlaceFallbackMarkers()
 
         setMapReady(true)
         cleanup = () => {
           if (placeRefreshTimer) window.clearTimeout(placeRefreshTimer)
-          overlays.forEach((overlay) => overlay.setMap(null))
+          if (mapMovingTimer) window.clearTimeout(mapMovingTimer)
+          mapNode.current?.removeEventListener('touchstart', handleMapTouchStart)
+          mapNode.current?.removeEventListener('pointerdown', handleMapTouchStart)
+          markerOverlayModels.forEach((model) => model.overlay?.setMap(null))
           clearPlaceOverlays()
         }
       })
@@ -6416,7 +6596,7 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, liveDeals, onSelectMarker, serverMarkers, userListings])
+  }, [apartments, fallbackLiveDeals, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, onSelectMarker, serverMarkers, userListings])
 
   const hasDisplayableMarkers =
     serverMarkers.some(hasDisplayableMarkerPrice) ||
@@ -8588,6 +8768,85 @@ function MembershipSignupCard() {
   )
 }
 
+function ComplexListingsPanel({
+  group,
+  onBack,
+  onRegister,
+  onOpenListing,
+}: {
+  group: ListingComplexGroup
+  onBack: () => void
+  onRegister: () => void
+  onOpenListing: (listing: UserListing) => void
+}) {
+  const sortedListings = [...group.listings].sort((a, b) => Number(b.priceEok) - Number(a.priceEok))
+  const hasPhotos = sortedListings.some((listing) => listing.photos.length > 0)
+
+  return (
+    <div className="view-stack complex-listings-view">
+      <header className="complex-listings-header">
+        <button type="button" onClick={onBack} aria-label="직거래 목록으로 돌아가기">
+          <ArrowLeft size={24} />
+        </button>
+        <div>
+          <h2>{group.aptName}</h2>
+          <span>{group.address}</span>
+        </div>
+        <em>{sortedListings.length}건</em>
+      </header>
+
+      <div className="complex-filter-row" aria-label="단지 매물 필터">
+        <button type="button">
+          거래 유형 · 가격
+          <ChevronRight size={16} />
+        </button>
+        <button type="button">
+          면적(공급)
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <p className="complex-listings-caption">
+        단지 안에 접수된 직거래 매물입니다. 실소유자 관계와 허위매물 여부를 확인한 뒤 계약 전 중개사가 함께 점검합니다.
+      </p>
+
+      <div className="complex-listing-list">
+        {sortedListings.map((listing) => {
+          const thumbnail = listing.photos[0]?.dataUrl
+
+          return (
+            <button key={listing.id} className="complex-listing-card" type="button" onClick={() => onOpenListing(listing)}>
+              <div>
+                <strong>{listing.intent === 'want' ? `매수희망 ${formatEok(listing.priceEok)} 이하` : `매매 ${formatEok(listing.priceEok)}`}</strong>
+                <span>
+                  {formatListingArea(listing)}, {listing.buildingDong || '-'}동 {formatListingFloor(listing.floor)}
+                </span>
+                <em>{summarizeListingMemo(listing)}</em>
+              </div>
+              <figure className={thumbnail ? 'complex-listing-thumb' : 'complex-listing-thumb empty'}>
+                {thumbnail ? <img src={thumbnail} alt={`${listing.aptName} 매물 사진`} /> : <Camera size={28} />}
+              </figure>
+            </button>
+          )
+        })}
+      </div>
+
+      {!hasPhotos && (
+        <p className="complex-photo-note">사진이 없는 매물도 등록 후 실소유자 확인을 거쳐 공개됩니다. 사진을 추가하면 노출 신뢰도가 올라갑니다.</p>
+      )}
+
+      <button className="complex-floating-cta" type="button" onClick={onRegister}>
+        <Plus size={20} />
+        집 내놓기
+      </button>
+
+      <button className="complex-contact-button" type="button" onClick={onRegister}>
+        중개사에게 문의하기
+      </button>
+    </div>
+  )
+}
+
 function DirectListingsView({
   userListings,
   liveDeals,
@@ -8603,8 +8862,44 @@ function DirectListingsView({
   onOpenListing: (listing: UserListing) => void
   onOpenDeal: (deal: LiveRtmsDeal) => void
 }) {
-  const saleListings = userListings.filter((listing) => (listing.intent ?? 'sell') === 'sell')
-  const wantedListings = userListings.filter((listing) => listing.intent === 'want')
+  const [selectedComplexKey, setSelectedComplexKey] = useState<string | null>(null)
+  const saleListings = useMemo(
+    () => userListings.filter((listing) => (listing.intent ?? 'sell') === 'sell'),
+    [userListings],
+  )
+  const wantedListings = useMemo(
+    () => userListings.filter((listing) => listing.intent === 'want'),
+    [userListings],
+  )
+  const listingGroups = useMemo(() => {
+    const groups = new Map<string, ListingComplexGroup>()
+
+    saleListings.forEach((listing) => {
+      const key = getListingComplexKey(listing)
+      const currentGroup = groups.get(key)
+      if (currentGroup) {
+        currentGroup.listings.push(listing)
+        return
+      }
+
+      groups.set(key, {
+        key,
+        aptName: listing.aptName,
+        address: listing.address,
+        listings: [listing],
+      })
+    })
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        listings: [...group.listings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      }))
+      .sort((a, b) => new Date(b.listings[0]?.createdAt ?? 0).getTime() - new Date(a.listings[0]?.createdAt ?? 0).getTime())
+  }, [saleListings])
+  const selectedComplexGroup = selectedComplexKey
+    ? listingGroups.find((group) => group.key === selectedComplexKey) ?? null
+    : null
   const directDeals = useMemo(
     () =>
       liveDeals
@@ -8613,6 +8908,17 @@ function DirectListingsView({
         .slice(0, 6),
     [liveDeals],
   )
+
+  if (selectedComplexGroup) {
+    return (
+      <ComplexListingsPanel
+        group={selectedComplexGroup}
+        onBack={() => setSelectedComplexKey(null)}
+        onRegister={onRegister}
+        onOpenListing={onOpenListing}
+      />
+    )
+  }
 
   return (
     <div className="view-stack">
@@ -8638,20 +8944,26 @@ function DirectListingsView({
           </div>
         </div>
 
-        {saleListings.length > 0 ? (
+        {listingGroups.length > 0 ? (
           <div className="listing-market-list">
-            {saleListings.map((listing) => (
-              <button key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
+            {listingGroups.map((group) => {
+              const latestListing = group.listings[0]
+              const minPrice = Math.min(...group.listings.map((listing) => listing.priceEok))
+              const maxPrice = Math.max(...group.listings.map((listing) => listing.priceEok))
+
+              return (
+              <button key={group.key} type="button" onClick={() => setSelectedComplexKey(group.key)}>
                 <div>
-                  <strong>{listing.aptName}</strong>
+                  <strong>{group.aptName}</strong>
                   <span>
-                    {listing.address} · {listing.pyeong}평 · {listing.floor}층
+                    {group.address} · 매물 {group.listings.length}건 · 최근 {latestListing.pyeong}평
                   </span>
-                  <em>{formatListingStatus(listing.verificationStatus)}</em>
+                  <em>{formatListingStatus(latestListing.verificationStatus)}</em>
                 </div>
-                <b>{formatEok(listing.priceEok)}</b>
+                <b>{minPrice === maxPrice ? formatEok(minPrice) : `${formatEok(minPrice)}~`}</b>
               </button>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="listing-market-empty">
