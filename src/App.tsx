@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeCheck,
   BarChart3,
@@ -274,6 +274,11 @@ type SearchSuggestion = {
   subtitle: string
   apartment: Apartment | null
   deal: LiveRtmsDeal | null
+}
+
+type LiveDealSuggestionEntry = {
+  deal: LiveRtmsDeal
+  searchText: string
 }
 
 type UserListing = {
@@ -1270,6 +1275,9 @@ const getDefaultRtmsDealYmd = () => {
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 const getMapRtmsDealYmd = () => 'auto'
+const EMPTY_LATEST_APARTMENT_DEALS: Record<string, LiveRtmsDeal> = Object.freeze({})
+const MAX_BROWSER_LIVE_DEALS = 15000
+const MAX_SEARCH_INDEX_DEALS = 3000
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
 const formatKoreanDateTime = (date: string | number) =>
   new Intl.DateTimeFormat('ko-KR', {
@@ -4044,6 +4052,7 @@ function App() {
       return withCurrentWeeklyReportNotification([])
     }
   })
+  const deferredQuery = useDeferredValue(query)
   const contentPanelRef = useRef<HTMLElement | null>(null)
   const modeRef = useRef<Mode>(mode)
   const historyReadyRef = useRef(false)
@@ -4150,7 +4159,7 @@ function App() {
         mergedDeals.set(deal.id, currentDeal ? { ...currentDeal, ...deal } : deal)
       })
 
-      return dedupeDeals(Array.from(mergedDeals.values())).slice(0, 50000)
+      return dedupeDeals(Array.from(mergedDeals.values())).slice(0, MAX_BROWSER_LIVE_DEALS)
     })
   }, [])
 
@@ -4166,9 +4175,7 @@ function App() {
     setMode('directListings')
   }, [])
 
-  const filteredApartments = useMemo(() => {
-    const normalized = query.trim()
-
+  const regionApartments = useMemo(() => {
     return apartments.filter((apartment) => {
       const regionMatch =
         selectedRegion === '평촌·만안·과천·의왕'
@@ -4193,17 +4200,29 @@ function App() {
                   ? ['분당구', '판교'].some((region) => apartment.region.includes(region))
                   : ['수원시', '광교'].some((region) => apartment.region.includes(region))
 
-      const searchMatch =
-        !normalized ||
-        matchesApartmentQuery(apartment, normalized) ||
-        [apartment.name, apartment.region, apartment.station, ...apartment.tags]
-          .join(' ')
-          .toLowerCase()
-          .includes(normalized.toLowerCase())
-
-      return regionMatch && searchMatch
+      return regionMatch
     })
-  }, [query, selectedRegion])
+  }, [selectedRegion])
+
+  const liveDealSuggestionIndex = useMemo<LiveDealSuggestionEntry[]>(() => {
+    const latestByApartment = new Map<string, LiveRtmsDeal>()
+
+    capitalLiveDeals.forEach((deal) => {
+      const key = deal.aptSeq || `${deal.aptName}-${deal.address}`
+      const current = latestByApartment.get(key)
+      if (!current || dealTimestamp(deal) > dealTimestamp(current)) {
+        latestByApartment.set(key, deal)
+      }
+    })
+
+    return Array.from(latestByApartment.values())
+      .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
+      .slice(0, MAX_SEARCH_INDEX_DEALS)
+      .map((deal) => ({
+        deal,
+        searchText: normalizeSearchText(`${deal.aptName} ${deal.address} ${deal.legalDong} ${deal.district}`),
+      }))
+  }, [capitalLiveDeals])
 
   useEffect(() => {
     if (!appToast) return
@@ -4224,11 +4243,11 @@ function App() {
   }, [])
 
   const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
-    const normalized = query.trim()
+    const normalized = deferredQuery.trim()
 
     if (normalized.length < 2) return []
 
-    const apartmentSuggestions = apartments
+    const apartmentSuggestions = regionApartments
       .filter((apartment) => matchesApartmentQuery(apartment, normalized))
       .slice(0, 3)
       .map((apartment) => ({
@@ -4238,25 +4257,13 @@ function App() {
         apartment,
         deal: null as LiveRtmsDeal | null,
       }))
-    const liveDealSuggestions = Array.from(
-      capitalLiveDeals
-        .reduce((group, deal) => {
-          const key = deal.aptSeq || `${deal.aptName}-${deal.address}`
-          const current = group.get(key)
-          if (!current || dealTimestamp(deal) > dealTimestamp(current)) {
-            group.set(key, deal)
-          }
-          return group
-        }, new Map<string, LiveRtmsDeal>())
-        .values(),
-    )
-      .filter((deal) => {
-        const target = normalizeSearchText(`${deal.aptName} ${deal.address} ${deal.legalDong}`)
+    const liveDealSuggestions = liveDealSuggestionIndex
+      .filter(({ searchText }) => {
         const normalizedQuery = normalizeSearchText(normalized)
-        return target.includes(normalizedQuery) || fuzzyIncludes(target, normalizedQuery)
+        return searchText.includes(normalizedQuery) || fuzzyIncludes(searchText, normalizedQuery)
       })
       .slice(0, 5 - apartmentSuggestions.length)
-      .map((deal) => ({
+      .map(({ deal }) => ({
         id: `live-${deal.aptSeq || deal.id}`,
         title: deal.aptName,
         subtitle: `${deal.address} · ${deal.pyeong}평 · ${formatShortDate(deal.dealDate)}`,
@@ -4265,24 +4272,12 @@ function App() {
       }))
 
     return [...apartmentSuggestions, ...liveDealSuggestions]
-  }, [capitalLiveDeals, query])
+  }, [deferredQuery, liveDealSuggestionIndex, regionApartments])
 
   const defaultSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
-    const latestLiveSuggestions = Array.from(
-      capitalLiveDeals
-        .reduce((group, deal) => {
-          const key = deal.aptSeq || `${deal.aptName}-${deal.address}`
-          const current = group.get(key)
-          if (!current || dealTimestamp(deal) > dealTimestamp(current)) {
-            group.set(key, deal)
-          }
-          return group
-        }, new Map<string, LiveRtmsDeal>())
-        .values(),
-    )
-      .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
+    const latestLiveSuggestions = liveDealSuggestionIndex
       .slice(0, 3)
-      .map((deal) => ({
+      .map(({ deal }) => ({
         id: `popular-live-${deal.aptSeq || deal.id}`,
         title: deal.aptName,
         subtitle: `${deal.address} · 최근 ${formatEok(deal.priceEok)}`,
@@ -4290,7 +4285,7 @@ function App() {
         deal,
       }))
 
-    const fallbackSuggestions = apartments
+    const fallbackSuggestions = regionApartments
       .filter(
         (apartment) =>
           !latestLiveSuggestions.some((suggestion) =>
@@ -4307,16 +4302,14 @@ function App() {
       }))
 
     return [...latestLiveSuggestions, ...fallbackSuggestions]
-  }, [apartments, capitalLiveDeals])
+  }, [liveDealSuggestionIndex, regionApartments])
 
   const visibleSearchSuggestions = query.trim().length < 2 ? defaultSearchSuggestions : searchSuggestions
   const searchHasNoResults = searchFocused && query.trim().length >= 2 && searchSuggestions.length === 0
 
   const listingApartmentCandidates = useMemo<ListingApartmentCandidate[]>(() => {
     const candidates = new Map<string, ListingApartmentCandidate>()
-    const latestDeals = [...capitalLiveDeals].sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
-
-    latestDeals.forEach((deal) => {
+    liveDealSuggestionIndex.forEach(({ deal }) => {
       const key = normalizeSearchText(`${deal.aptName}-${deal.address}`)
       if (candidates.has(key)) return
 
@@ -4353,7 +4346,7 @@ function App() {
     })
 
     return Array.from(candidates.values()).slice(0, 600)
-  }, [capitalLiveDeals])
+  }, [liveDealSuggestionIndex])
 
   const handleSearchChange = (value: string) => {
     setQuery(value)
@@ -4635,7 +4628,7 @@ function App() {
         <section className="content-panel" ref={contentPanelRef}>
           {mode === 'prices' && (
             <PriceView
-              apartments={filteredApartments}
+              apartments={regionApartments}
               selectedRegion={selectedRegion}
               focusApartment={focusApartment}
               userListings={userListings}
@@ -4844,6 +4837,8 @@ function PriceView({
     [mapFilters, serverMapMarkers],
   )
   const latestApartmentDeals = useLatestApartmentDeals(apartments)
+  const mapLatestApartmentDeals =
+    serverMapMarkers.length > 0 ? EMPTY_LATEST_APARTMENT_DEALS : latestApartmentDeals
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
   const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
@@ -4934,7 +4929,7 @@ function PriceView({
     setRtmsError('')
     try {
       const response = await fetch(
-        `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=50000`,
+        `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=12000`,
         signal ? { signal } : undefined,
       )
       const payload = (await response.json()) as RtmsResponse | { error?: string }
@@ -5030,7 +5025,7 @@ function PriceView({
     }, 0)
     const dealsTimer = window.setTimeout(() => {
       void fetchRtmsDeals(controller.signal)
-    }, 1800)
+    }, 4200)
 
     return () => {
       window.clearTimeout(mapTimer)
@@ -5090,7 +5085,7 @@ function PriceView({
           liveDeals={mapDeals}
           serverMarkers={filteredServerMapMarkers}
           apartments={apartments}
-          latestApartmentDeals={latestApartmentDeals}
+          latestApartmentDeals={mapLatestApartmentDeals}
           activeFilterCount={activeFilterCount}
           userListings={userListings}
           focusListing={focusListing}
@@ -6384,6 +6379,7 @@ function ApartmentMap({
         let placeRefreshTimer: number | null = null
         let activePlaceSearchKey = ''
         let mapMovingTimer: number | null = null
+        let visibleOverlayRaf: number | null = null
 
         const focusedListingMarker = focusListing
           ? displayListingMarkers.find((marker) => marker.listing?.id === focusListing.id)
@@ -6464,15 +6460,15 @@ function ApartmentMap({
           const isMobile = window.matchMedia('(max-width: 860px)').matches
           const visibleCap = isMobile
             ? level <= 3
-              ? 110
+              ? 52
               : level <= 4
-                ? 130
-                : 160
+                ? 68
+                : 86
             : level <= 3
-              ? 180
+              ? 140
               : level <= 4
-                ? 240
-                : 320
+                ? 180
+                : 220
           const selectedId = selectedMarkerRef.current?.id
           const candidates = markerOverlayModels
             .filter((model) => !bounds?.contain || bounds.contain(model.position))
@@ -6500,6 +6496,15 @@ function ApartmentMap({
           })
 
           updateDensity()
+        }
+
+        const scheduleVisibleMainOverlayUpdate = () => {
+          if (visibleOverlayRaf !== null) return
+
+          visibleOverlayRaf = window.requestAnimationFrame(() => {
+            visibleOverlayRaf = null
+            updateVisibleMainOverlays()
+          })
         }
 
         const clearPlaceOverlays = () => {
@@ -6570,17 +6575,18 @@ function ApartmentMap({
         })
         kakao.maps.event?.addListener(map, 'zoom_changed', () => {
           setMapMoving(true)
-          updateVisibleMainOverlays()
+          scheduleVisibleMainOverlayUpdate()
         })
         kakao.maps.event?.addListener(map, 'idle', () => {
           setMapMoving(false)
-          updateVisibleMainOverlays()
+          scheduleVisibleMainOverlayUpdate()
           refreshPlaceFallbackMarkers()
         })
         refreshPlaceFallbackMarkers()
 
         setMapReady(true)
         cleanup = () => {
+          if (visibleOverlayRaf !== null) window.cancelAnimationFrame(visibleOverlayRaf)
           if (placeRefreshTimer) window.clearTimeout(placeRefreshTimer)
           if (mapMovingTimer) window.clearTimeout(mapMovingTimer)
           mapNode.current?.removeEventListener('touchstart', handleMapTouchStart)

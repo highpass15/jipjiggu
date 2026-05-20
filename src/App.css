@@ -713,6 +713,9 @@ h1 {
 .kakao-map.is-moving .map-value-marker {
   transition: none;
   filter: none;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
   box-shadow: 0 5px 12px rgba(24, 28, 44, 0.18);
 }
 
@@ -1134,8 +1137,10 @@ h1 {
   background: var(--marker-color);
   color: var(--text-strong);
   box-shadow: 0 8px 18px rgba(24, 28, 44, 0.24);
+  contain: layout paint style;
   cursor: pointer;
   transform-origin: center bottom;
+  will-change: transform;
   transition:
     filter 160ms ease,
     box-shadow 160ms ease,
