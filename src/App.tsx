@@ -4033,6 +4033,8 @@ function App() {
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [focusApartment, setFocusApartment] = useState<Apartment | null>(null)
+  const [focusRequestId, setFocusRequestId] = useState(0)
+  const [focusScrollToDetail, setFocusScrollToDetail] = useState(false)
   const selectedRegion = '평촌·만안·과천·의왕'
   const [salePrice, setSalePrice] = useState(5)
   const [income, setIncome] = useState(9000)
@@ -4364,6 +4366,33 @@ function App() {
     setFocusApartment(null)
   }
 
+  const scrollMapPanelIntoView = useCallback(() => {
+    const tryScroll = (attempt = 0) => {
+      const mapPanel = document.querySelector('.map-panel')
+
+      if (mapPanel instanceof HTMLElement) {
+        const scrollContainer = mapPanel.closest('.content-panel')
+        const offset = window.matchMedia('(max-width: 860px)').matches ? 142 : 12
+
+        if (scrollContainer instanceof HTMLElement) {
+          const containerRect = scrollContainer.getBoundingClientRect()
+          const panelRect = mapPanel.getBoundingClientRect()
+          const targetTop = scrollContainer.scrollTop + panelRect.top - containerRect.top - offset
+          scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' })
+        } else {
+          mapPanel.scrollIntoView({ block: 'start', behavior: 'auto' })
+        }
+        return
+      }
+
+      if (attempt < 8) {
+        window.setTimeout(() => tryScroll(attempt + 1), 60)
+      }
+    }
+
+    window.requestAnimationFrame(() => tryScroll())
+  }, [])
+
   const handleOpenReport = (region?: unknown) => {
     const nextRegion =
       typeof region === 'string' && weeklyReportRegionOptions.includes(region) ? region : activeReportRegion
@@ -4385,14 +4414,13 @@ function App() {
     setFocusApartment(suggestion.apartment)
     setFocusLiveDeal(suggestion.deal)
     setFocusListing(null)
+    setFocusScrollToDetail(false)
+    setFocusRequestId((requestId) => requestId + 1)
     setMode('prices')
-    setAppToast(`${suggestion.title} 실거래 상세를 열었습니다.`)
+    setAppToast(`${suggestion.title} 위치로 지도를 이동했습니다.`)
     setSearchFocused(false)
 
-    window.requestAnimationFrame(() => {
-      contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
-      window.scrollTo({ top: 0, behavior: 'auto' })
-    })
+    scrollMapPanelIntoView()
   }
 
   const handleOpenReportDeal = (deal: LiveRtmsDeal) => {
@@ -4400,6 +4428,8 @@ function App() {
     setFocusApartment(null)
     setFocusLiveDeal(deal)
     setFocusListing(null)
+    setFocusScrollToDetail(true)
+    setFocusRequestId((requestId) => requestId + 1)
     setMode('prices')
     setPriceHeaderMinimized(false)
     setSearchFocused(false)
@@ -4426,6 +4456,8 @@ function App() {
     setFocusListing(normalizedListing)
     setFocusApartment(null)
     setFocusLiveDeal(null)
+    setFocusScrollToDetail(true)
+    setFocusRequestId((requestId) => requestId + 1)
     setMode('prices')
     setAppToast(
       listing.intent === 'want'
@@ -4648,6 +4680,8 @@ function App() {
               apartments={regionApartments}
               selectedRegion={selectedRegion}
               focusApartment={focusApartment}
+              focusRequestId={focusRequestId}
+              focusScrollToDetail={focusScrollToDetail}
               userListings={userListings}
               focusListing={focusListing}
               focusLiveDeal={focusLiveDeal}
@@ -4719,6 +4753,8 @@ function App() {
                 setFocusListing(listing)
                 setFocusApartment(null)
                 setFocusLiveDeal(null)
+                setFocusScrollToDetail(true)
+                setFocusRequestId((requestId) => requestId + 1)
                 setMode('prices')
                 setAppToast(`${listing.aptName} 직거래 매물을 지도에서 열었습니다.`)
               }}
@@ -4726,6 +4762,8 @@ function App() {
                 setFocusLiveDeal(deal)
                 setFocusApartment(null)
                 setFocusListing(null)
+                setFocusScrollToDetail(true)
+                setFocusRequestId((requestId) => requestId + 1)
                 setMode('prices')
                 setAppToast(`${deal.aptName} 직거래 신고 사례를 열었습니다.`)
               }}
@@ -4812,6 +4850,8 @@ function PriceView({
   apartments,
   selectedRegion,
   focusApartment,
+  focusRequestId,
+  focusScrollToDetail,
   userListings,
   focusListing,
   focusLiveDeal,
@@ -4822,6 +4862,8 @@ function PriceView({
   apartments: Apartment[]
   selectedRegion: string
   focusApartment: Apartment | null
+  focusRequestId: number
+  focusScrollToDetail: boolean
   userListings: UserListing[]
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
@@ -4933,11 +4975,11 @@ function PriceView({
 
     const timerId = window.setTimeout(() => {
       setView('map')
-      handleMapMarkerSelect(marker, { scrollToDetail: true })
+      handleMapMarkerSelect(marker, { scrollToDetail: focusScrollToDetail })
     }, 0)
 
     return () => window.clearTimeout(timerId)
-  }, [focusApartment, handleMapMarkerSelect, latestApartmentDeals])
+  }, [focusApartment, focusRequestId, focusScrollToDetail, handleMapMarkerSelect, latestApartmentDeals])
 
   const fetchRtmsDeals = useCallback(async (signal?: AbortSignal) => {
     if (signal?.aborted) return
@@ -5107,6 +5149,8 @@ function PriceView({
           userListings={userListings}
           focusListing={focusListing}
           focusLiveDeal={focusLiveDeal}
+          focusRequestId={focusRequestId}
+          focusScrollToDetail={focusScrollToDetail}
           rtmsStatus={rtmsStatus}
           rtmsError={rtmsError}
           mapMarkerNotice={mapMarkerNotice}
@@ -5967,6 +6011,8 @@ const createValueMarkerElement = (marker: MapValueMarker, onSelect: () => void) 
   button.className = `map-value-marker ${marker.tone}${markerPrice ? '' : ' no-price'}`
   button.setAttribute('aria-label', `${marker.label} ${markerPrice || '거래 없음'} ${marker.subLabel}`)
   button.addEventListener('click', onSelect)
+  button.addEventListener('pointerdown', (event) => event.stopPropagation())
+  button.addEventListener('touchstart', (event) => event.stopPropagation(), { passive: true })
 
   const label = document.createElement('span')
   label.className = 'marker-kind'
@@ -6283,6 +6329,8 @@ function ApartmentMap({
   userListings,
   focusListing,
   focusLiveDeal,
+  focusRequestId,
+  focusScrollToDetail,
   rtmsStatus,
   rtmsError,
   mapMarkerNotice,
@@ -6300,6 +6348,8 @@ function ApartmentMap({
   userListings: UserListing[]
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
+  focusRequestId: number
+  focusScrollToDetail: boolean
   rtmsStatus: RtmsStatus
   rtmsError: string
   mapMarkerNotice: string
@@ -6417,7 +6467,9 @@ function ApartmentMap({
 
         const focusedMarker = focusedListingMarker ?? focusedLiveMarker
         if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
-          onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing || focusLiveDeal) })
+          onSelectMarker(focusedMarker, {
+            scrollToDetail: focusScrollToDetail && Boolean(focusListing || focusLiveDeal),
+          })
         }
 
         const ensureMarkerOverlay = (model: (typeof markerOverlayModels)[number]) => {
@@ -6567,7 +6619,10 @@ function ApartmentMap({
           }, window.matchMedia('(max-width: 860px)').matches ? 950 : 500)
         }
 
-        const handleMapTouchStart = () => {
+        const handleMapTouchStart = (event: Event) => {
+          const target = event.target
+          if (target instanceof Element && target.closest('.map-value-marker')) return
+
           blurActiveTextInput()
           setMapMoving(true)
         }
@@ -6612,7 +6667,19 @@ function ApartmentMap({
       kakaoMapRef.current = null
       cleanup?.()
     }
-  }, [apartments, fallbackLiveDeals, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, onSelectMarker, serverMarkers, userListings])
+  }, [
+    apartments,
+    fallbackLiveDeals,
+    focusListing,
+    focusLiveDeal,
+    focusRequestId,
+    focusScrollToDetail,
+    kakaoKey,
+    latestApartmentDeals,
+    onSelectMarker,
+    serverMarkers,
+    userListings,
+  ])
 
   const shouldShowMapStatus =
     !mapReady && (mapError || rtmsStatus === 'loading' || rtmsStatus === 'refreshing' || Boolean(mapMarkerNotice))
