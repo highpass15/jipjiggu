@@ -229,9 +229,10 @@ type SubscriptionNotice = {
   address: string
   region: '전국' | '서울' | '경기' | '인천' | '부산'
   category: 'private' | 'public' | 'result'
-  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사'
+  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사' | '네이버부동산'
   status: string
   deadlineLabel: string
+  periodLabel?: string
   visitors: number
   alerts: number
   isPopular?: boolean
@@ -281,6 +282,30 @@ type LiveDealSuggestionEntry = {
   searchText: string
 }
 
+type ListingOwnerRelation = 'self' | 'family' | 'tenant' | 'agent' | 'corporate'
+
+type ListingDocumentType = 'id' | 'delegation' | 'family' | 'lease' | 'registry' | 'corporate' | 'other'
+
+type ListingDocument = {
+  id: string
+  name: string
+  type: ListingDocumentType
+  dataUrl: string
+}
+
+type ListingNotificationPreferences = {
+  similarListing: boolean
+  priceChange: boolean
+  buyerLead: boolean
+  weeklyReport: boolean
+}
+
+type ListingVerificationAgreements = {
+  privacy: boolean
+  antiFraud: boolean
+  gov24: boolean
+}
+
 type UserListing = {
   id: string
   intent?: 'sell' | 'want'
@@ -294,12 +319,19 @@ type UserListing = {
   floor: number
   ownerName: string
   ownerPhone: string
+  ownerRelation: ListingOwnerRelation
+  ownerRelationDetail: string
   memo: string
   photos: Array<{
     id: string
     name: string
     dataUrl: string
   }>
+  documents: ListingDocument[]
+  notificationPreferences: ListingNotificationPreferences
+  agreements: ListingVerificationAgreements
+  moveInHouseholdCheckRequested: boolean
+  registryCheckRequested: boolean
   verificationStatus: 'owner-checking' | 'verified'
   createdAt: string
 }
@@ -928,6 +960,37 @@ const subscriptionTabOptions: Array<{
 
 const fallbackSubscriptionNotices: SubscriptionNotice[] = [
   {
+    id: 'applyhome-seoul-private-current',
+    title: '서울 민간분양 공고 모아보기',
+    address: '서울특별시 민간 아파트 입주자모집공고',
+    region: '서울',
+    category: 'private',
+    source: '청약홈',
+    status: '입주자모집공고 확인',
+    deadlineLabel: '서울분양',
+    periodLabel: '청약홈 공고별 특별공급·1순위 일정 확인',
+    visitors: 69200,
+    alerts: 1460,
+    isPopular: true,
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-21',
+  },
+  {
+    id: 'naver-seoul-sale-search',
+    title: '네이버 서울 분양정보',
+    address: '네이버 검색 기준 서울 청약·분양정보',
+    region: '서울',
+    category: 'private',
+    source: '네이버부동산',
+    status: '서울 분양 검색',
+    deadlineLabel: '최신순',
+    periodLabel: '단지별 청약기간은 연결된 검색 결과에서 바로 확인',
+    visitors: 58400,
+    alerts: 1220,
+    url: 'https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=%EC%84%9C%EC%9A%B8+%EC%B2%AD%EC%95%BD%EC%A0%95%EB%B3%B4&ackey=kg6yseoq',
+    updatedAt: '2026-05-21',
+  },
+  {
     id: 'applyhome-suwon-honors',
     title: '수원역아너스빌플라츠',
     address: '경기도 수원시 팔달구 고등동',
@@ -936,9 +999,10 @@ const fallbackSubscriptionNotices: SubscriptionNotice[] = [
     source: '청약홈',
     status: '청약접수',
     deadlineLabel: 'D-2',
+    periodLabel: '청약접수 D-2',
     visitors: 44192,
     alerts: 279,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -950,9 +1014,10 @@ const fallbackSubscriptionNotices: SubscriptionNotice[] = [
     source: '청약홈',
     status: '특별공급',
     deadlineLabel: 'D-2',
+    periodLabel: '특별공급 D-2',
     visitors: 41273,
     alerts: 285,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -964,10 +1029,11 @@ const fallbackSubscriptionNotices: SubscriptionNotice[] = [
     source: '청약홈',
     status: '특별공급',
     deadlineLabel: 'D-10',
+    periodLabel: '특별공급 D-10',
     visitors: 198046,
     alerts: 3157,
     isPopular: true,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -1035,9 +1101,10 @@ const fallbackSubscriptionNotices: SubscriptionNotice[] = [
     source: '청약홈',
     status: '당첨자 발표',
     deadlineLabel: '결과확인',
+    periodLabel: '발표 단지별 일정 확인',
     visitors: 51220,
     alerts: 860,
-    url: 'https://www.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
+    url: 'https://toz.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -4266,7 +4333,7 @@ function App() {
       .map((apartment) => ({
         id: `sample-${apartment.name}`,
         title: apartment.name,
-        subtitle: `${apartment.region} · ${apartment.pyeong}`,
+        subtitle: apartment.region,
         apartment,
         deal: null as LiveRtmsDeal | null,
       }))
@@ -4279,7 +4346,7 @@ function App() {
       .map(({ deal }) => ({
         id: `live-${deal.aptSeq || deal.id}`,
         title: deal.aptName,
-        subtitle: `${deal.address} · ${deal.pyeong}평 · ${formatShortDate(deal.dealDate)}`,
+        subtitle: `${deal.address} · 최근 ${formatShortDate(deal.dealDate)}`,
         apartment: null as Apartment | null,
         deal,
       }))
@@ -4309,7 +4376,7 @@ function App() {
       .map((apartment) => ({
         id: `popular-${apartment.name}`,
         title: apartment.name,
-        subtitle: `${apartment.region} · ${apartment.pyeong}`,
+        subtitle: apartment.region,
         apartment,
         deal: null,
       }))
@@ -4408,11 +4475,65 @@ function App() {
     })
   }
 
+  const findBestLiveDealForSearchTarget = useCallback(
+    (title: string, apartment: Apartment | null = null) => {
+      const normalizedTitle = normalizeSearchText(title)
+      if (!normalizedTitle) return null
+
+      const aliasText = apartment ? apartmentSearchAliases[apartment.name] ?? '' : ''
+      const nameTargets = Array.from(
+        new Set(
+          [title, apartment?.name, aliasText]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .flatMap((value) => value.split(/\s+/))
+            .map(normalizeSearchText)
+            .filter((value) => value.length >= 2),
+        ),
+      )
+      if (!nameTargets.includes(normalizedTitle)) nameTargets.unshift(normalizedTitle)
+
+      const regionTokens = apartment?.region
+        .split(/\s+/)
+        .map(normalizeSearchText)
+        .filter((value) => value.length >= 2) ?? []
+
+      const scoredMatches = liveDealSuggestionIndex
+        .map(({ deal, searchText }) => {
+          const normalizedDealName = normalizeSearchText(deal.aptName)
+          const nameScore = nameTargets.reduce((score, target) => {
+            if (!target) return score
+            if (normalizedDealName === target) return Math.max(score, 120)
+            if (normalizedDealName.includes(target) || target.includes(normalizedDealName)) return Math.max(score, 100)
+            if (searchText.includes(target)) return Math.max(score, 70)
+            if (fuzzyIncludes(normalizedDealName, target) || fuzzyIncludes(target, normalizedDealName)) {
+              return Math.max(score, 45)
+            }
+            return score
+          }, 0)
+          const regionScore =
+            regionTokens.length === 0 || regionTokens.some((token) => searchText.includes(token)) ? 12 : 0
+
+          return {
+            deal,
+            score: nameScore + regionScore,
+          }
+        })
+        .filter((match) => match.score >= 70)
+        .sort((a, b) => b.score - a.score || dealTimestamp(b.deal) - dealTimestamp(a.deal))
+
+      return scoredMatches[0]?.deal ?? null
+    },
+    [liveDealSuggestionIndex],
+  )
+
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
+    const liveDealForSuggestion =
+      suggestion.deal ?? findBestLiveDealForSearchTarget(suggestion.title, suggestion.apartment)
+
     blurActiveTextInput()
     setQuery(suggestion.title)
-    setFocusApartment(suggestion.apartment)
-    setFocusLiveDeal(suggestion.deal)
+    setFocusApartment(liveDealForSuggestion ? null : suggestion.apartment)
+    setFocusLiveDeal(liveDealForSuggestion)
     setFocusListing(null)
     setFocusScrollToDetail(false)
     setFocusRequestId((requestId) => requestId + 1)
@@ -4480,6 +4601,18 @@ function App() {
       소유자: normalizedListing.intent === 'want' ? '매수희망자' : normalizedListing.ownerName || '미입력',
       연락처: normalizedListing.ownerPhone || '미입력',
       사진수: `${normalizedListing.photos.length}장`,
+      실소유자관계: normalizedListing.ownerRelationDetail || normalizedListing.ownerRelation,
+      증빙서류: `${normalizedListing.documents.length}건`,
+      등기부확인: normalizedListing.registryCheckRequested ? '요청' : '미요청',
+      전입세대열람: normalizedListing.moveInHouseholdCheckRequested ? '요청' : '미요청',
+      알림옵션: [
+        normalizedListing.notificationPreferences.buyerLead ? '문의알림' : '',
+        normalizedListing.notificationPreferences.similarListing ? '유사매물' : '',
+        normalizedListing.notificationPreferences.priceChange ? '가격변화' : '',
+        normalizedListing.notificationPreferences.weeklyReport ? '주간리포트' : '',
+      ]
+        .filter(Boolean)
+        .join(', '),
       설명: normalizedListing.memo || '미입력',
       접수시각: new Date(normalizedListing.createdAt).toLocaleString('ko-KR'),
     })
@@ -5140,16 +5273,17 @@ function PriceView({
       </div>
 
       {view === 'map' ? (
-        <ApartmentMap
-          liveDeals={mapDeals}
-          serverMarkers={filteredServerMapMarkers}
-          apartments={apartments}
-          latestApartmentDeals={mapLatestApartmentDeals}
-          activeFilterCount={activeFilterCount}
-          userListings={userListings}
-          focusListing={focusListing}
-          focusLiveDeal={focusLiveDeal}
-          focusRequestId={focusRequestId}
+            <ApartmentMap
+              liveDeals={mapDeals}
+              serverMarkers={filteredServerMapMarkers}
+              apartments={apartments}
+              latestApartmentDeals={mapLatestApartmentDeals}
+              activeFilterCount={activeFilterCount}
+              userListings={userListings}
+              focusApartment={focusApartment}
+              focusListing={focusListing}
+              focusLiveDeal={focusLiveDeal}
+              focusRequestId={focusRequestId}
           focusScrollToDetail={focusScrollToDetail}
           rtmsStatus={rtmsStatus}
           rtmsError={rtmsError}
@@ -5810,6 +5944,7 @@ function NotificationCenterView({
 function SubscriptionView() {
   const [selectedTab, setSelectedTab] = useState<SubscriptionNotice['category']>('private')
   const [selectedRegion, setSelectedRegion] = useState<SubscriptionNotice['region']>('전국')
+  const [sortMode, setSortMode] = useState<'latest' | 'popular'>('latest')
   const [notices, setNotices] = useState<SubscriptionNotice[]>(fallbackSubscriptionNotices)
   const [updatedAt, setUpdatedAt] = useState('')
 
@@ -5842,7 +5977,13 @@ function SubscriptionView() {
     .filter((notice) => notice.category === selectedTab)
     .filter((notice) => selectedRegion === '전국' || notice.region === selectedRegion)
     .sort((a, b) => {
-      if (a.isPopular !== b.isPopular) return a.isPopular ? -1 : 1
+      if (sortMode === 'popular') {
+        if (a.isPopular !== b.isPopular) return a.isPopular ? -1 : 1
+        return b.alerts - a.alerts || b.visitors - a.visitors
+      }
+
+      const latestGap = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      if (latestGap) return latestGap
       return b.alerts - a.alerts || b.visitors - a.visitors
     })
 
@@ -5889,8 +6030,25 @@ function SubscriptionView() {
         ))}
       </section>
 
+      <section className="subscription-sort-tabs" aria-label="청약 정렬">
+        <button
+          className={sortMode === 'latest' ? 'active' : ''}
+          type="button"
+          onClick={() => setSortMode('latest')}
+        >
+          최신순
+        </button>
+        <button
+          className={sortMode === 'popular' ? 'active' : ''}
+          type="button"
+          onClick={() => setSortMode('popular')}
+        >
+          인기순
+        </button>
+      </section>
+
       <section className="subscription-source-strip" aria-label="청약 공식 출처">
-        <a href="https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do" target="_blank" rel="noreferrer">
+        <a href="https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do" target="_blank" rel="noreferrer">
           청약홈 APT분양정보
           <ExternalLink size={13} />
         </a>
@@ -5900,6 +6058,14 @@ function SubscriptionView() {
         </a>
         <a href="https://www.i-sh.co.kr/main/lay2/program/S1T1C220/subMain2.do" target="_blank" rel="noreferrer">
           SH 청약정보
+          <ExternalLink size={13} />
+        </a>
+        <a
+          href="https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=%EC%84%9C%EC%9A%B8+%EC%B2%AD%EC%95%BD%EC%A0%95%EB%B3%B4&ackey=kg6yseoq"
+          target="_blank"
+          rel="noreferrer"
+        >
+          네이버 서울 분양정보
           <ExternalLink size={13} />
         </a>
       </section>
@@ -5925,6 +6091,7 @@ function SubscriptionView() {
                 <b>
                   {notice.status} {notice.deadlineLabel}
                 </b>
+                {notice.periodLabel && <em className="subscription-period">청약기간 {notice.periodLabel}</em>}
                 <small>
                   {notice.visitors.toLocaleString('ko-KR')}회 방문
                   <i />
@@ -6334,6 +6501,7 @@ function ApartmentMap({
   latestApartmentDeals,
   activeFilterCount,
   userListings,
+  focusApartment,
   focusListing,
   focusLiveDeal,
   focusRequestId,
@@ -6353,6 +6521,7 @@ function ApartmentMap({
   latestApartmentDeals: Record<string, LiveRtmsDeal>
   activeFilterCount: number
   userListings: UserListing[]
+  focusApartment: Apartment | null
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
   focusRequestId: number
@@ -6430,11 +6599,26 @@ function ApartmentMap({
         )
         const displayLiveMarkers = liveMarkers.filter(hasDisplayableMarkerPrice)
         const displayListingMarkers = listingMarkers.filter(hasDisplayableMarkerPrice)
+        const focusedApartmentMarkers = focusApartment
+          ? apartmentMarkers([focusApartment], latestApartmentDeals).filter(hasDisplayableMarkerPrice)
+          : []
         const liveMarkerNames = new Set(displayLiveMarkers.map((marker) => normalizeSearchText(marker.aptName)))
         const specMarkers = apartmentMarkers(apartments, latestApartmentDeals).filter(
           (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)) && hasDisplayableMarkerPrice(marker),
         )
-        const markers = [...displayListingMarkers, ...displayLiveMarkers, ...specMarkers]
+        const markers = Array.from(
+          [...focusedApartmentMarkers, ...displayListingMarkers, ...displayLiveMarkers, ...specMarkers]
+            .reduce((group, marker) => {
+              const key = marker.listing
+                ? `listing-${marker.listing.id}`
+                : normalizeSearchText(`${marker.aptName}-${marker.address}`)
+              if (!group.has(key)) {
+                group.set(key, marker)
+              }
+              return group
+            }, new Map<string, MapValueMarker>())
+            .values(),
+        )
 
         const markerNodes: HTMLElement[] = []
         const markerOverlayModels = markers.map((marker) => {
@@ -6466,16 +6650,23 @@ function ApartmentMap({
               ),
             )
           : null
-        const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? markers[0]
+        const focusedApartmentMarker = focusApartment
+          ? markers.find(
+              (marker) =>
+                normalizeSearchText(marker.aptName) === normalizeSearchText(focusApartment.name) ||
+                normalizeSearchText(`${marker.aptName} ${marker.address}`).includes(normalizeSearchText(focusApartment.name)),
+            )
+          : null
+        const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? focusedApartmentMarker ?? selectedMarkerRef.current ?? markers[0]
         if (primaryMarker) {
           map.setCenter(new kakao.maps.LatLng(primaryMarker.lat, primaryMarker.lng))
           map.setLevel(4)
         }
 
-        const focusedMarker = focusedListingMarker ?? focusedLiveMarker
+        const focusedMarker = focusedListingMarker ?? focusedLiveMarker ?? focusedApartmentMarker
         if (focusedMarker && selectedMarkerRef.current?.id !== focusedMarker.id) {
           onSelectMarker(focusedMarker, {
-            scrollToDetail: focusScrollToDetail && Boolean(focusListing || focusLiveDeal),
+            scrollToDetail: focusScrollToDetail && Boolean(focusListing || focusLiveDeal || focusApartment),
           })
         }
 
@@ -6677,6 +6868,7 @@ function ApartmentMap({
   }, [
     apartments,
     fallbackLiveDeals,
+    focusApartment,
     focusListing,
     focusLiveDeal,
     focusRequestId,
@@ -7159,6 +7351,19 @@ function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
             ? '연락처와 희망 조건을 확인한 뒤 매도 희망자에게 연결합니다.'
             : '등기부상 소유자, 연락처, 허위매물 여부를 중개사가 확인한 뒤 공개 상태로 전환합니다.'}
         </p>
+        {listing.intent !== 'want' && (
+          <div className="owner-check-tags">
+            <span>{listing.ownerRelation === 'self' ? '본인 소유' : listing.ownerRelationDetail || '대리 등록 확인'}</span>
+            {listing.registryCheckRequested && <span>등기부 확인 요청</span>}
+            {listing.moveInHouseholdCheckRequested && <span>전입세대 열람 요청</span>}
+            {listing.documents.length > 0 && <span>증빙 {listing.documents.length}건 접수</span>}
+          </div>
+        )}
+        <div className="owner-check-tags muted">
+          {listing.notificationPreferences.buyerLead && <span>문의 알림</span>}
+          {listing.notificationPreferences.similarListing && <span>유사 매물 알림</span>}
+          {listing.notificationPreferences.priceChange && <span>가격 변화 알림</span>}
+        </div>
       </div>
     </section>
   )
@@ -7420,11 +7625,31 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
     () => history.filter((deal) => getTradePyeongBand(deal.pyeong).key === activePyeongBand),
     [activePyeongBand, history],
   )
-  const chartSourceDeals = [...selectedBandHistory]
-    .filter((deal) => deal.dealDate >= '2022-01-01')
-    .sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
-  const latestDeal = selectedBandHistory[0] ?? history[0]
+  const sortedSelectedBandHistory = useMemo(
+    () => [...selectedBandHistory].sort((a, b) => dealTimestamp(b) - dealTimestamp(a)),
+    [selectedBandHistory],
+  )
+  const latestDeal = sortedSelectedBandHistory[0] ?? history[0]
+  const latestBandTime = latestDeal ? dealTimestamp(latestDeal) : 0
+  const recentMonthBandDealCount = latestBandTime
+    ? selectedBandHistory.filter((deal) => latestBandTime - dealTimestamp(deal) <= 31 * 24 * 60 * 60 * 1000).length
+    : 0
+  const expandedTrendDeals = useMemo(() => {
+    const selectedSince2022 = selectedBandHistory.filter((deal) => deal.dealDate >= '2022-01-01')
+
+    if (selectedSince2022.length >= 2) return selectedSince2022
+
+    const selectedSince2021 = selectedBandHistory.filter((deal) => deal.dealDate >= '2021-01-01')
+    if (selectedSince2021.length >= 2) return selectedSince2021
+
+    const sameAptSince2022 = history.filter((deal) => deal.dealDate >= '2022-01-01')
+    if (sameAptSince2022.length >= 2) return sameAptSince2022
+
+    return selectedSince2022.length ? selectedSince2022 : selectedBandHistory
+  }, [history, selectedBandHistory])
+  const chartSourceDeals = [...expandedTrendDeals].sort((a, b) => dealTimestamp(a) - dealTimestamp(b))
   const chartDeals = chartSourceDeals.length ? chartSourceDeals : latestDeal ? [latestDeal] : []
+  const trendExpandedForSparseRecent = recentMonthBandDealCount <= 1 && chartDeals.length >= 2
   const hasTradePrice = Boolean(latestDeal) || (marker.hasPrice !== false && marker.priceEok > 0)
   const prices = chartDeals.map((deal) => deal.priceEok)
   const minPrice = prices.length ? Math.min(...prices) : 0
@@ -7540,6 +7765,9 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
                 ))}
               </div>
             )}
+            {trendExpandedForSparseRecent && (
+              <p className="trend-range-note">최근 1개월 거래가 1건이라 기간을 넓혀 추이를 보여줍니다.</p>
+            )}
 
             {chartDeals.length > 0 ? (
               <svg className="trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="과거 실거래가 추이">
@@ -7579,7 +7807,7 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
 
           {history.length > 0 && (
             <div className="history-list">
-              {selectedBandHistory.slice(0, 5).map((deal) => (
+              {(sortedSelectedBandHistory.length ? sortedSelectedBandHistory : history).slice(0, 5).map((deal) => (
                 <article key={deal.id}>
                   <div>
                     <strong>{formatShortDate(deal.dealDate)}</strong>
@@ -8262,6 +8490,9 @@ function ListingView({
   const [buildingDong, setBuildingDong] = useState('101')
   const [unitHo, setUnitHo] = useState('1103')
   const [aptSearchFocused, setAptSearchFocused] = useState(false)
+  const [addressSearchFocused, setAddressSearchFocused] = useState(false)
+  const [remoteAddressSuggestions, setRemoteAddressSuggestions] = useState<WorkplaceAddressSuggestion[]>([])
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false)
   const [listingPriceEok, setListingPriceEok] = useState(salePrice)
   const [listingPyeong, setListingPyeong] = useState(24)
   const [listingFloor, setListingFloor] = useState(11)
@@ -8269,6 +8500,22 @@ function ListingView({
   const [ownerPhone, setOwnerPhone] = useState('')
   const [memo, setMemo] = useState('실거주 관리 상태 양호, 잔금일 협의 가능합니다.')
   const [photos, setPhotos] = useState<UserListing['photos']>([])
+  const [ownerRelation, setOwnerRelation] = useState<ListingOwnerRelation>('self')
+  const [ownerRelationDetail, setOwnerRelationDetail] = useState('')
+  const [documents, setDocuments] = useState<ListingDocument[]>([])
+  const [moveInHouseholdCheckRequested, setMoveInHouseholdCheckRequested] = useState(true)
+  const [registryCheckRequested, setRegistryCheckRequested] = useState(true)
+  const [notificationPreferences, setNotificationPreferences] = useState<ListingNotificationPreferences>({
+    similarListing: true,
+    priceChange: true,
+    buyerLead: true,
+    weeklyReport: false,
+  })
+  const [agreements, setAgreements] = useState<ListingVerificationAgreements>({
+    privacy: false,
+    antiFraud: false,
+    gov24: false,
+  })
   useEffect(() => {
     if (!initialIntent) return
     setListingIntent(initialIntent)
@@ -8303,15 +8550,86 @@ function ListingView({
       )
       .slice(0, 6)
   }, [aptName, listingCandidates])
+  const addressSuggestions = useMemo(() => {
+    const normalized = normalizeSearchText(address)
+    if (normalized.length < 2) return []
+
+    return listingCandidates
+      .filter((candidate) => {
+        const searchText = normalizeSearchText(`${candidate.address} ${candidate.name} ${candidate.region}`)
+        return searchText.includes(normalized) || fuzzyIncludes(searchText, normalized)
+      })
+      .slice(0, 6)
+  }, [address, listingCandidates])
+  useEffect(() => {
+    const query = address.trim()
+
+    if (!addressSearchFocused || query.length < 2) {
+      setRemoteAddressSuggestions([])
+      setIsSearchingAddress(false)
+      return undefined
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setIsSearchingAddress(true)
+      fetch(`/api/kakao/address-search?query=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((response) => response.json())
+        .then((payload: { ok?: boolean; items?: WorkplaceAddressSuggestion[] }) => {
+          if (controller.signal.aborted) return
+          setRemoteAddressSuggestions(payload.ok ? payload.items?.slice(0, 5) ?? [] : [])
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setRemoteAddressSuggestions([])
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsSearchingAddress(false)
+          }
+        })
+    }, 220)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [address, addressSearchFocused])
   const normalizedBuildingDong = buildingDong.trim().replace(/동$/, '')
   const normalizedUnitHo = unitHo.trim().replace(/호$/, '')
   const detailAddress = `${normalizedBuildingDong}동 ${normalizedUnitHo}호`
+  const ownerRelationOptions: Array<{ value: ListingOwnerRelation; title: string; detail: string }> = [
+    { value: 'self', title: '본인 소유', detail: '등기부 소유자와 등록자가 같아요' },
+    { value: 'family', title: '가족 대리', detail: '가족관계·위임 확인 후 접수' },
+    { value: 'tenant', title: '세입자', detail: '임대차계약서·거주 확인 필요' },
+    { value: 'agent', title: '대리인', detail: '위임장·신분 확인 후 진행' },
+    { value: 'corporate', title: '법인', detail: '사업자등록증·재직/위임 확인' },
+  ]
+  const listingProgressSteps = [
+    { title: '집주인/세입자', complete: listingIntent === 'want' || Boolean(ownerRelation) },
+    { title: '우리집 주소', complete: Boolean(aptName.trim() && address.trim() && normalizedBuildingDong && normalizedUnitHo) },
+    { title: '거래유형·가격', complete: listingPriceEok > 0 && listingPyeong > 0 },
+    { title: '권한확인', complete: listingIntent === 'want' || Boolean(ownerName.trim() && ownerPhone.trim()) },
+    {
+      title: '알림·접수',
+      complete: agreements.privacy && agreements.antiFraud && (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24),
+    },
+  ]
+  const requiresRelationProof = listingIntent === 'sell' && ownerRelation !== 'self'
+  const requiredAgreementsReady =
+    agreements.privacy && agreements.antiFraud && (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24)
+  const hasRequiredProof = !requiresRelationProof || documents.length > 0
   const canSubmitListing = Boolean(
     aptName.trim() &&
       address.trim() &&
       normalizedBuildingDong &&
       normalizedUnitHo &&
-      listingPriceEok > 0,
+      listingPriceEok > 0 &&
+      ownerName.trim() &&
+      ownerPhone.trim() &&
+      requiredAgreementsReady &&
+      hasRequiredProof,
   )
 
   const handleApartmentCandidateSelect = (candidate: ListingApartmentCandidate) => {
@@ -8323,6 +8641,18 @@ function ListingView({
       setSalePrice(Number(candidate.latestPriceEok.toFixed(1)))
     }
     setAptSearchFocused(false)
+    setAddressSearchFocused(false)
+    setRemoteAddressSuggestions([])
+  }
+
+  const handleAddressSuggestionSelect = (suggestion: WorkplaceAddressSuggestion) => {
+    const nextAddress = suggestion.roadAddress || suggestion.address
+    setAddress(nextAddress)
+    if (!aptName.trim()) {
+      setAptName(suggestion.label)
+    }
+    setAddressSearchFocused(false)
+    setRemoteAddressSuggestions([])
   }
 
   const handlePhotoChange = async (files: FileList | null) => {
@@ -8348,6 +8678,44 @@ function ListingView({
     setPhotos(previews)
   }
 
+  const handleDocumentChange = async (files: FileList | null, type: ListingDocumentType) => {
+    if (!files) return
+
+    const selectedFiles = Array.from(files).slice(0, 4)
+    const previews = await Promise.all(
+      selectedFiles.map(
+        (file) =>
+          new Promise<ListingDocument>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () =>
+              resolve({
+                id: `${type}-${file.name}-${file.lastModified}`,
+                name: file.name,
+                type,
+                dataUrl: String(reader.result),
+              })
+            reader.readAsDataURL(file)
+          }),
+      ),
+    )
+
+    setDocuments((currentDocuments) => [...previews, ...currentDocuments].slice(0, 6))
+  }
+
+  const toggleListingNotification = (key: keyof ListingNotificationPreferences) => {
+    setNotificationPreferences((currentPreferences) => ({
+      ...currentPreferences,
+      [key]: !currentPreferences[key],
+    }))
+  }
+
+  const toggleAgreement = (key: keyof ListingVerificationAgreements) => {
+    setAgreements((currentAgreements) => ({
+      ...currentAgreements,
+      [key]: !currentAgreements[key],
+    }))
+  }
+
   const handleSubmitListing = () => {
     if (!canSubmitListing) return
 
@@ -8364,8 +8732,15 @@ function ListingView({
       floor: listingFloor,
       ownerName: ownerName.trim(),
       ownerPhone: ownerPhone.trim(),
+      ownerRelation,
+      ownerRelationDetail: ownerRelationDetail.trim(),
       memo: memo.trim(),
       photos,
+      documents,
+      notificationPreferences,
+      agreements,
+      moveInHouseholdCheckRequested,
+      registryCheckRequested,
       verificationStatus: 'owner-checking',
       createdAt: new Date().toISOString(),
     })
@@ -8489,6 +8864,15 @@ function ListingView({
             </button>
           </div>
 
+          <div className="listing-progress-steps" aria-label="매물 등록 필수 정보">
+            {listingProgressSteps.map((step, index) => (
+              <div className={step.complete ? 'complete' : ''} key={step.title}>
+                <strong>{index + 1}</strong>
+                <span>{step.title}</span>
+              </div>
+            ))}
+          </div>
+
           <div className="listing-form-grid">
             <label className="apartment-suggest-field">
               <span>아파트명</span>
@@ -8526,9 +8910,58 @@ function ListingView({
                 </div>
               )}
             </label>
-            <label>
+            <label className="apartment-suggest-field address-suggest-field">
               <span>주소</span>
-              <input value={address} onChange={(event) => setAddress(event.target.value)} />
+              <div className="apartment-suggest-input">
+                <MapPin size={18} />
+                <input
+                  value={address}
+                  onChange={(event) => {
+                    setAddress(event.target.value)
+                    setAddressSearchFocused(true)
+                  }}
+                  onFocus={() => setAddressSearchFocused(true)}
+                  onBlur={() => window.setTimeout(() => setAddressSearchFocused(false), 140)}
+                  placeholder="도로명, 지번, 단지명으로 검색"
+                />
+              </div>
+              {addressSearchFocused &&
+                (addressSuggestions.length > 0 || remoteAddressSuggestions.length > 0 || isSearchingAddress) && (
+                <div className="listing-apartment-suggestions address-suggestions" role="listbox">
+                  {addressSuggestions.map((candidate) => (
+                    <button
+                      key={`address-${candidate.id}`}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleApartmentCandidateSelect(candidate)}
+                    >
+                      <strong>{candidate.address}</strong>
+                      <span>{candidate.name}</span>
+                      <em>
+                        {candidate.latestPriceEok ? formatEok(candidate.latestPriceEok) : '단지 확인'}
+                        {candidate.latestDealDate ? ` · 최근 ${formatShortDate(candidate.latestDealDate)}` : ''}
+                      </em>
+                    </button>
+                  ))}
+                  {remoteAddressSuggestions.length > 0 && <b className="suggestion-divider">주소 검색 결과</b>}
+                  {remoteAddressSuggestions.map((suggestion) => (
+                    <button
+                      className="remote-address-result"
+                      key={`remote-address-${suggestion.id}`}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleAddressSuggestionSelect(suggestion)}
+                    >
+                      <strong>{suggestion.label}</strong>
+                      <span>{suggestion.roadAddress || suggestion.address}</span>
+                      {suggestion.jibunAddress && suggestion.jibunAddress !== (suggestion.roadAddress || suggestion.address) && (
+                        <em>{suggestion.jibunAddress}</em>
+                      )}
+                    </button>
+                  ))}
+                  {isSearchingAddress && <p className="suggestion-loading">주소를 찾는 중입니다</p>}
+                </div>
+              )}
             </label>
             <div className="listing-address-preview">
               <Building2 size={16} />
@@ -8596,6 +9029,41 @@ function ListingView({
               <span>연락처</span>
               <input value={ownerPhone} onChange={(event) => setOwnerPhone(event.target.value)} placeholder="검증용" />
             </label>
+            {listingIntent === 'sell' && (
+              <div className="listing-section-card owner-relation-card">
+                <div className="listing-section-head">
+                  <span>권한 확인</span>
+                  <strong>필수</strong>
+                </div>
+                <p>
+                  집직구는 매물 등록 전 소유자·세입자·대리권을 먼저 확인합니다. 주민등록번호는 앱에
+                  저장하지 않고, 정부24·인증기관 확인이 필요한 경우 즉시 전달 후 파기하는 구조로 운영합니다.
+                </p>
+                <div className="listing-choice-grid" role="radiogroup" aria-label="실소유자와의 관계">
+                  {ownerRelationOptions.map((option) => (
+                    <button
+                      className={ownerRelation === option.value ? 'active' : ''}
+                      key={option.value}
+                      type="button"
+                      onClick={() => setOwnerRelation(option.value)}
+                    >
+                      <strong>{option.title}</strong>
+                      <span>{option.detail}</span>
+                    </button>
+                  ))}
+                </div>
+                {ownerRelation !== 'self' && (
+                  <label className="owner-relation-detail">
+                    <span>실소유자와의 관계</span>
+                    <input
+                      value={ownerRelationDetail}
+                      onChange={(event) => setOwnerRelationDetail(event.target.value)}
+                      placeholder="예: 배우자, 자녀, 세입자, 위임받은 대리인"
+                    />
+                  </label>
+                )}
+              </div>
+            )}
             <label>
               <span>{listingIntent === 'want' ? '원하는 조건' : '매물 설명'}</span>
               <textarea value={memo} onChange={(event) => setMemo(event.target.value)} rows={3} />
@@ -8617,6 +9085,159 @@ function ListingView({
               ))}
             </div>
           )}
+
+          {listingIntent === 'sell' && (
+            <div className="listing-section-card document-check-card">
+              <div className="listing-section-head">
+                <span>증빙서류</span>
+                <strong>{requiresRelationProof ? '대리 등록 필수' : '확인 자료'}</strong>
+              </div>
+              <p>
+                본인 소유가 아니면 관계를 입증할 자료가 필요합니다. 제출 파일은 관리자 확인용으로만 쓰고,
+                공개 화면에는 노출하지 않습니다.
+              </p>
+              <div className="document-uploader-grid">
+                <label>
+                  <FileText size={18} />
+                  <strong>신분·위임 확인</strong>
+                  <span>신분증, 위임장, 가족관계증명 등</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    multiple
+                    onChange={(event) => void handleDocumentChange(event.target.files, 'delegation')}
+                  />
+                </label>
+                <label>
+                  <Building2 size={18} />
+                  <strong>거주·권리 확인</strong>
+                  <span>임대차계약서, 등기부, 관리비 고지서 등</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    multiple
+                    onChange={(event) => void handleDocumentChange(event.target.files, 'registry')}
+                  />
+                </label>
+              </div>
+              {documents.length > 0 && (
+                <div className="document-chip-list" aria-label="첨부된 증빙서류">
+                  {documents.map((document) => (
+                    <button
+                      key={document.id}
+                      type="button"
+                      onClick={() => setDocuments((currentDocuments) => currentDocuments.filter((item) => item.id !== document.id))}
+                    >
+                      <FileText size={14} />
+                      <span>{document.name}</span>
+                      <em>삭제</em>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="listing-check-list">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={registryCheckRequested}
+                    onChange={(event) => setRegistryCheckRequested(event.target.checked)}
+                  />
+                  <span>등기부·권리관계 간편 확인을 요청합니다</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={moveInHouseholdCheckRequested}
+                    onChange={(event) => setMoveInHouseholdCheckRequested(event.target.checked)}
+                  />
+                  <span>전입세대 열람 등 정부24 확인 절차를 진행합니다</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="listing-section-card listing-alert-card">
+            <div className="listing-section-head">
+              <span>알림 옵션</span>
+              <strong>추천</strong>
+            </div>
+            <div className="listing-option-grid">
+              <button
+                className={notificationPreferences.buyerLead ? 'active' : ''}
+                type="button"
+                onClick={() => toggleListingNotification('buyerLead')}
+              >
+                <MessageCircle size={17} />
+                <strong>{listingIntent === 'want' ? '매도 희망자 알림' : '매수 문의 알림'}</strong>
+                <span>{listingIntent === 'want' ? '조건에 맞는 매물이 등록되면 안내' : '문의가 들어오면 관리자에게 즉시 전달'}</span>
+              </button>
+              <button
+                className={notificationPreferences.similarListing ? 'active' : ''}
+                type="button"
+                onClick={() => toggleListingNotification('similarListing')}
+              >
+                <Bell size={17} />
+                <strong>유사 매물 알림</strong>
+                <span>같은 단지·비슷한 평형이 올라오면 확인</span>
+              </button>
+              <button
+                className={notificationPreferences.priceChange ? 'active' : ''}
+                type="button"
+                onClick={() => toggleListingNotification('priceChange')}
+              >
+                <TrendingUp size={17} />
+                <strong>가격 변화 알림</strong>
+                <span>같은 단지 실거래·등록가 변화를 추적</span>
+              </button>
+              <button
+                className={notificationPreferences.weeklyReport ? 'active' : ''}
+                type="button"
+                onClick={() => toggleListingNotification('weeklyReport')}
+              >
+                <FileText size={17} />
+                <strong>주간 리포트</strong>
+                <span>동네 실거래와 개발 이슈를 함께 확인</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="listing-section-card listing-consent-card">
+            <div className="listing-section-head">
+              <span>필수 동의</span>
+              <strong>가입·등록 전 확인</strong>
+            </div>
+            <div className="listing-check-list consent">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={agreements.privacy}
+                  onChange={() => toggleAgreement('privacy')}
+                />
+                <span>개인정보 수집·이용 및 연락처 확인에 동의합니다</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={agreements.antiFraud}
+                  onChange={() => toggleAgreement('antiFraud')}
+                />
+                <span>허위매물 방지와 실매물 검증을 위한 증빙 확인에 동의합니다</span>
+              </label>
+              {listingIntent === 'sell' && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={agreements.gov24}
+                    onChange={() => toggleAgreement('gov24')}
+                  />
+                  <span>정부24·전입세대 열람 등 필요한 확인 절차 진행에 동의합니다</span>
+                </label>
+              )}
+            </div>
+            {requiresRelationProof && documents.length === 0 && (
+              <p className="listing-warning-note">본인 소유가 아닌 매물은 관계 증빙서류를 1개 이상 첨부해야 접수할 수 있습니다.</p>
+            )}
+          </div>
 
           <div className="owner-verification-flow">
             <div className="active">

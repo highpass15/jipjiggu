@@ -55,9 +55,10 @@ type SubscriptionNotice = {
   address: string
   region: '전국' | '서울' | '경기' | '인천' | '부산'
   category: 'private' | 'public' | 'result'
-  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사'
+  source: '청약홈' | 'LH 청약플러스' | 'SH 서울주택도시공사' | '네이버부동산'
   status: string
   deadlineLabel: string
+  periodLabel?: string
   visitors: number
   alerts: number
   isPopular?: boolean
@@ -78,12 +79,33 @@ type StoredUserListing = {
   floor: number
   ownerName: string
   ownerPhone: string
+  ownerRelation?: 'self' | 'family' | 'tenant' | 'agent' | 'corporate'
+  ownerRelationDetail?: string
   memo: string
   photos: Array<{
     id: string
     name: string
     dataUrl: string
   }>
+  documents?: Array<{
+    id: string
+    name: string
+    type: 'id' | 'delegation' | 'family' | 'lease' | 'registry' | 'corporate' | 'other'
+    dataUrl: string
+  }>
+  notificationPreferences?: {
+    similarListing?: boolean
+    priceChange?: boolean
+    buyerLead?: boolean
+    weeklyReport?: boolean
+  }
+  agreements?: {
+    privacy?: boolean
+    antiFraud?: boolean
+    gov24?: boolean
+  }
+  moveInHouseholdCheckRequested?: boolean
+  registryCheckRequested?: boolean
   verificationStatus: 'owner-checking' | 'verified'
   createdAt: string
 }
@@ -453,6 +475,37 @@ const fallbackReportNewsByRegion: Record<string, ReportNewsItem[]> = {
 
 const subscriptionFallbackItems: SubscriptionNotice[] = [
   {
+    id: 'applyhome-seoul-private-current',
+    title: '서울 민간분양 공고 모아보기',
+    address: '서울특별시 민간 아파트 입주자모집공고',
+    region: '서울',
+    category: 'private',
+    source: '청약홈',
+    status: '입주자모집공고 확인',
+    deadlineLabel: '서울분양',
+    periodLabel: '청약홈 공고별 특별공급·1순위 일정 확인',
+    visitors: 69200,
+    alerts: 1460,
+    isPopular: true,
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    updatedAt: '2026-05-21',
+  },
+  {
+    id: 'naver-seoul-sale-search',
+    title: '네이버 서울 분양정보',
+    address: '네이버 검색 기준 서울 청약·분양정보',
+    region: '서울',
+    category: 'private',
+    source: '네이버부동산',
+    status: '서울 분양 검색',
+    deadlineLabel: '최신순',
+    periodLabel: '단지별 청약기간은 연결된 검색 결과에서 바로 확인',
+    visitors: 58400,
+    alerts: 1220,
+    url: 'https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=%EC%84%9C%EC%9A%B8+%EC%B2%AD%EC%95%BD%EC%A0%95%EB%B3%B4&ackey=kg6yseoq',
+    updatedAt: '2026-05-21',
+  },
+  {
     id: 'applyhome-suwon-honors',
     title: '수원역아너스빌플라츠',
     address: '경기도 수원시 팔달구 고등동',
@@ -461,9 +514,10 @@ const subscriptionFallbackItems: SubscriptionNotice[] = [
     source: '청약홈',
     status: '청약접수',
     deadlineLabel: 'D-2',
+    periodLabel: '청약접수 D-2',
     visitors: 44192,
     alerts: 279,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -475,9 +529,10 @@ const subscriptionFallbackItems: SubscriptionNotice[] = [
     source: '청약홈',
     status: '특별공급',
     deadlineLabel: 'D-2',
+    periodLabel: '특별공급 D-2',
     visitors: 41273,
     alerts: 285,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -489,10 +544,11 @@ const subscriptionFallbackItems: SubscriptionNotice[] = [
     source: '청약홈',
     status: '특별공급',
     deadlineLabel: 'D-10',
+    periodLabel: '특별공급 D-10',
     visitors: 198046,
     alerts: 3157,
     isPopular: true,
-    url: 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
+    url: 'https://toz.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -560,9 +616,10 @@ const subscriptionFallbackItems: SubscriptionNotice[] = [
     source: '청약홈',
     status: '당첨자 발표',
     deadlineLabel: '결과확인',
+    periodLabel: '발표 단지별 일정 확인',
     visitors: 51220,
     alerts: 860,
-    url: 'https://www.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
+    url: 'https://toz.applyhome.co.kr/wa/waa/selectAptPrzwinCnfrmnList.do',
     updatedAt: '2026-05-16',
   },
   {
@@ -581,7 +638,8 @@ const subscriptionFallbackItems: SubscriptionNotice[] = [
   },
 ]
 
-const applyHomeAptListUrl = 'https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do'
+const applyHomeBaseUrl = 'https://toz.applyhome.co.kr'
+const applyHomeAptListUrl = `${applyHomeBaseUrl}/ai/aia/selectAPTLttotPblancListView.do`
 const subscriptionCacheTtlMs = 15 * 60 * 1000
 let subscriptionCache:
   | {
@@ -680,6 +738,12 @@ const parseApplyHomePrivateRows = (html: string, pageIndex: number): Subscriptio
       const seed = `${title}-${noticeDate}-${subscriptionPeriod}-${pblancNo}-${houseManageNo}`
       const visitors = stableNumber(seed, 18000, 120000)
       const alerts = stableNumber(`${seed}-alerts`, 120, 3400)
+      const detailUrl =
+        houseManageNo && pblancNo
+          ? `${applyHomeBaseUrl}/ai/aia/selectAPTLttotPblancDetail.do?houseManageNo=${encodeURIComponent(
+              houseManageNo,
+            )}&pblancNo=${encodeURIComponent(pblancNo)}`
+          : `${applyHomeAptListUrl}?pageIndex=${pageIndex}`
 
       return {
         id: `applyhome-${houseManageNo || 'hm'}-${pblancNo || pageIndex}-${index}`,
@@ -690,10 +754,11 @@ const parseApplyHomePrivateRows = (html: string, pageIndex: number): Subscriptio
         source: '청약홈' as const,
         status: [houseType, supplyType].filter(Boolean).join(' ') || 'APT 분양',
         deadlineLabel: formatApplyHomeDeadline(subscriptionPeriod || winnerDate),
+        periodLabel: subscriptionPeriod || winnerDate || noticeDate || '일정공개',
         visitors,
         alerts,
         isPopular: visitors >= 95000 || alerts >= 2500,
-        url: `${applyHomeAptListUrl}?pageIndex=${pageIndex}`,
+        url: detailUrl,
         updatedAt: noticeDate || new Date().toISOString().slice(0, 10),
       }
     })
@@ -2039,6 +2104,38 @@ const sanitizeStoredListing = (value: unknown): StoredUserListing | null => {
         .slice(0, 5)
     : []
 
+  const allowedOwnerRelations = new Set(['self', 'family', 'tenant', 'agent', 'corporate'])
+  const ownerRelation = allowedOwnerRelations.has(String(listing.ownerRelation))
+    ? (listing.ownerRelation as StoredUserListing['ownerRelation'])
+    : 'self'
+  const allowedDocumentTypes = new Set(['id', 'delegation', 'family', 'lease', 'registry', 'corporate', 'other'])
+  const documents = Array.isArray(listing.documents)
+    ? listing.documents
+        .map((document, index) => {
+          const documentType = allowedDocumentTypes.has(String(document?.type))
+            ? (document?.type as NonNullable<StoredUserListing['documents']>[number]['type'])
+            : 'other'
+          return {
+            id: sanitizeListingString(document?.id, 80) || `document-${index}`,
+            name: sanitizeListingString(document?.name, 100) || `document-${index + 1}`,
+            type: documentType,
+            dataUrl: sanitizeListingString(document?.dataUrl, 900_000),
+          }
+        })
+        .filter((document) => document.dataUrl.startsWith('data:image/') || document.dataUrl.startsWith('data:application/pdf'))
+        .slice(0, 6)
+    : []
+  const notificationPreferences = {
+    similarListing: Boolean(listing.notificationPreferences?.similarListing),
+    priceChange: Boolean(listing.notificationPreferences?.priceChange),
+    buyerLead: listing.notificationPreferences?.buyerLead !== false,
+    weeklyReport: Boolean(listing.notificationPreferences?.weeklyReport),
+  }
+  const agreements = {
+    privacy: Boolean(listing.agreements?.privacy),
+    antiFraud: Boolean(listing.agreements?.antiFraud),
+    gov24: Boolean(listing.agreements?.gov24),
+  }
   const createdAt = sanitizeListingString(listing.createdAt, 40)
   const verificationStatus = listing.verificationStatus === 'verified' ? 'verified' : 'owner-checking'
 
@@ -2055,8 +2152,15 @@ const sanitizeStoredListing = (value: unknown): StoredUserListing | null => {
     floor: sanitizeListingNumber(listing.floor),
     ownerName: sanitizeListingString(listing.ownerName, 40),
     ownerPhone: sanitizeListingString(listing.ownerPhone, 40),
+    ownerRelation,
+    ownerRelationDetail: sanitizeListingString(listing.ownerRelationDetail, 120),
     memo: sanitizeListingString(listing.memo, 500),
     photos,
+    documents,
+    notificationPreferences,
+    agreements,
+    moveInHouseholdCheckRequested: listing.moveInHouseholdCheckRequested !== false,
+    registryCheckRequested: listing.registryCheckRequested !== false,
     verificationStatus,
     createdAt: createdAt || new Date().toISOString(),
   }
