@@ -1354,8 +1354,15 @@ const getDefaultRtmsDealYmd = () => {
 }
 const getMapRtmsDealYmd = () => 'auto'
 const EMPTY_LATEST_APARTMENT_DEALS: Record<string, LiveRtmsDeal> = Object.freeze({})
+const EMPTY_LIVE_RTMS_DEALS: LiveRtmsDeal[] = []
 const MAX_BROWSER_LIVE_DEALS = 15000
 const MAX_SEARCH_INDEX_DEALS = 3000
+const MAP_MARKER_BROWSER_CACHE_TTL_MS = 12 * 60 * 1000
+const RTMS_BROWSER_CACHE_TTL_MS = 10 * 60 * 1000
+const MOBILE_VISIBLE_MARKER_CAP = 44
+const DESKTOP_VISIBLE_MARKER_CAP = 140
+const MOBILE_MARKER_MODEL_CAP = 420
+const DESKTOP_MARKER_MODEL_CAP = 900
 const formatShortDate = (date: string) => date.slice(2).replaceAll('-', '.')
 const formatKoreanDateTime = (date: string | number) =>
   new Intl.DateTimeFormat('ko-KR', {
@@ -1364,6 +1371,49 @@ const formatKoreanDateTime = (date: string | number) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(typeof date === 'number' ? new Date(date) : new Date(date))
+
+type BrowserCacheEnvelope<T> = {
+  updatedAt: number
+  data: T
+}
+
+const readBrowserCache = <T,>(key: string, ttlMs: number): T | null => {
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    if (!raw) return null
+
+    const payload = JSON.parse(raw) as BrowserCacheEnvelope<T>
+    if (!payload?.updatedAt || Date.now() - payload.updatedAt > ttlMs) {
+      window.sessionStorage.removeItem(key)
+      return null
+    }
+
+    return payload.data
+  } catch {
+    return null
+  }
+}
+
+const writeBrowserCache = <T,>(key: string, data: T) => {
+  try {
+    window.sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        updatedAt: Date.now(),
+        data,
+      } satisfies BrowserCacheEnvelope<T>),
+    )
+  } catch {
+    // Browser storage can be unavailable in some in-app browsers. The app should still run normally.
+  }
+}
+
+const getMapMarkerBrowserCacheKey = (scope: string, dealYmd: string) => `jipjiggu:map-markers:${scope}:${dealYmd}`
+const getRtmsBrowserCacheKey = (scope: string, dealYmd: string) => `jipjiggu:rtms:${scope}:${dealYmd}`
+const getMarkerPayloadSignature = (markers: MapValueMarker[]) =>
+  `${markers.length}:${markers[0]?.id ?? ''}:${markers[0]?.dealDate ?? ''}:${markers.at(-1)?.id ?? ''}`
+const getRtmsPayloadSignature = (deals: LiveRtmsDeal[]) =>
+  `${deals.length}:${deals[0]?.id ?? ''}:${deals[0]?.dealDate ?? ''}:${deals.at(-1)?.id ?? ''}`
 const formatReportDateRange = (startTime: number, endTime: number) => {
   const formatter = new Intl.DateTimeFormat('ko-KR', {
     month: '2-digit',
@@ -5015,7 +5065,7 @@ function PriceView({
   const [mapFilters, setMapFilters] = useState<MapFilterState>(defaultMapFilters)
   const [selectedMapMarker, setSelectedMapMarker] = useState<MapValueMarker | null>(null)
   const rtmsScope = rtmsScopeByRegion[selectedRegion] ?? 'capital'
-  const liveDeals = useMemo(() => rtmsData?.deals ?? [], [rtmsData])
+  const liveDeals = useMemo(() => rtmsData?.deals ?? EMPTY_LIVE_RTMS_DEALS, [rtmsData])
   const filteredLiveDeals = useMemo(
     () => liveDeals.filter((deal) => passesMapFilters(deal, mapFilters)),
     [liveDeals, mapFilters],
@@ -5032,15 +5082,57 @@ function PriceView({
   const mapLatestApartmentDeals =
     serverMapMarkers.length > 0 ? EMPTY_LATEST_APARTMENT_DEALS : latestApartmentDeals
   const activeFilterCount = getActiveMapFilterCount(mapFilters)
-  const mapDeals = useMemo(() => filteredLiveDeals, [filteredLiveDeals])
+  const mapDeals = serverMapMarkers.length > 0 ? EMPTY_LIVE_RTMS_DEALS : filteredLiveDeals
   const defaultDealYmd = useMemo(() => getMapRtmsDealYmd(), [])
   const retryTimerRef = useRef<number | null>(null)
   const markerRetryTimerRef = useRef<number | null>(null)
+  const deferredDealsTimerRef = useRef<number | null>(null)
+  const markerSignatureRef = useRef('')
+  const rtmsSignatureRef = useRef('')
   const latestAverage =
     apartments.reduce((sum, apartment) => sum + apartment.priceEok, 0) / Math.max(apartments.length, 1)
   const totalVolume = apartments.reduce((sum, apartment) => sum + apartment.volume, 0)
   const liveAverage =
     filteredLiveDeals.reduce((sum, deal) => sum + deal.priceEok, 0) / Math.max(filteredLiveDeals.length, 1)
+
+  useEffect(() => {
+    const cachedMarkers = readBrowserCache<RtmsMapMarkerResponse>(
+      getMapMarkerBrowserCacheKey(rtmsScope, defaultDealYmd),
+      MAP_MARKER_BROWSER_CACHE_TTL_MS,
+    )
+
+    if (cachedMarkers?.markers?.length) {
+      markerSignatureRef.current = getMarkerPayloadSignature(cachedMarkers.markers)
+      setServerMapMarkers(cachedMarkers.markers)
+      setMapMarkerNotice('')
+      setRtmsStatus('ready')
+
+      const markerDeals = dedupeDeals(
+        cachedMarkers.markers.flatMap((marker) =>
+          (marker.relatedDeals ?? []).map((deal) => ({
+            ...deal,
+            lat: marker.lat,
+            lng: marker.lng,
+          })),
+        ),
+      )
+      if (markerDeals.length > 0) {
+        onLiveDealsChange(markerDeals)
+      }
+    }
+
+    const cachedRtms = readBrowserCache<RtmsResponse>(
+      getRtmsBrowserCacheKey(rtmsScope, defaultDealYmd),
+      RTMS_BROWSER_CACHE_TTL_MS,
+    )
+
+    if (cachedRtms?.deals?.length) {
+      rtmsSignatureRef.current = getRtmsPayloadSignature(cachedRtms.deals)
+      setRtmsData(cachedRtms)
+      setRtmsStatus('ready')
+      onLiveDealsChange(cachedRtms.deals)
+    }
+  }, [defaultDealYmd, onLiveDealsChange, rtmsScope])
 
   const scrollTradeDetailIntoView = useCallback(() => {
     const tryScroll = (attempt = 0) => {
@@ -5114,14 +5206,28 @@ function PriceView({
     return () => window.clearTimeout(timerId)
   }, [focusApartment, focusRequestId, focusScrollToDetail, handleMapMarkerSelect, latestApartmentDeals])
 
+  useEffect(() => {
+    if (!focusLiveDeal?.lat || !focusLiveDeal.lng) return
+
+    const marker = markerFromLiveDealCoordinate(focusLiveDeal)
+    if (!marker) return
+
+    const timerId = window.setTimeout(() => {
+      setView('map')
+      handleMapMarkerSelect(marker, { scrollToDetail: focusScrollToDetail })
+    }, 0)
+
+    return () => window.clearTimeout(timerId)
+  }, [focusLiveDeal, focusRequestId, focusScrollToDetail, handleMapMarkerSelect])
+
   const fetchRtmsDeals = useCallback(async (signal?: AbortSignal) => {
     if (signal?.aborted) return
 
-    setRtmsStatus((current) => (current === 'refreshing' ? 'refreshing' : 'loading'))
+    setRtmsStatus((current) => (current === 'ready' ? 'ready' : current === 'refreshing' ? 'refreshing' : 'loading'))
     setRtmsError('')
     try {
       const response = await fetch(
-        `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=12000`,
+        `/api/rtms/apt-trades?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=3&numOfRows=1000&limit=5000`,
         signal ? { signal } : undefined,
       )
       const payload = (await response.json()) as RtmsResponse | { error?: string }
@@ -5131,8 +5237,13 @@ function PriceView({
       }
 
       const rtmsPayload = payload as RtmsResponse
-      setRtmsData(rtmsPayload)
-      onLiveDealsChange(rtmsPayload.deals)
+      const signature = getRtmsPayloadSignature(rtmsPayload.deals)
+      if (signature !== rtmsSignatureRef.current) {
+        rtmsSignatureRef.current = signature
+        setRtmsData(rtmsPayload)
+        onLiveDealsChange(rtmsPayload.deals)
+        writeBrowserCache(getRtmsBrowserCacheKey(rtmsScope, defaultDealYmd), rtmsPayload)
+      }
       setRtmsStatus(rtmsPayload.meta.resultCode === 'REFRESHING' ? 'refreshing' : 'ready')
 
       if (rtmsPayload.meta.resultCode === 'REFRESHING') {
@@ -5155,7 +5266,7 @@ function PriceView({
 
     try {
       const response = await fetch(
-        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=60&limit=1200&geocodeLimit=180`,
+        `/api/rtms/map-markers?scope=${rtmsScope}&dealYmd=${defaultDealYmd}&monthsBack=60&limit=900&geocodeLimit=140`,
         signal ? { signal } : undefined,
       )
       const payload = (await response.json()) as RtmsMapMarkerResponse | { error?: string }
@@ -5166,7 +5277,12 @@ function PriceView({
 
       if (!('markers' in payload)) return
 
-      setServerMapMarkers(payload.markers)
+      const signature = getMarkerPayloadSignature(payload.markers)
+      if (signature !== markerSignatureRef.current) {
+        markerSignatureRef.current = signature
+        setServerMapMarkers(payload.markers)
+        writeBrowserCache(getMapMarkerBrowserCacheKey(rtmsScope, defaultDealYmd), payload)
+      }
       setMapMarkerNotice(
         payload.markers.length > 0
           ? ''
@@ -5186,6 +5302,11 @@ function PriceView({
       )
       if (markerDeals.length > 0) {
         onLiveDealsChange(markerDeals)
+      } else if (!deferredDealsTimerRef.current) {
+        deferredDealsTimerRef.current = window.setTimeout(() => {
+          deferredDealsTimerRef.current = null
+          void fetchRtmsDeals(signal)
+        }, 5200)
       }
 
       if (payload.meta.resultCode === 'REFRESHING' || payload.meta.resultCode === 'PARTIAL') {
@@ -5215,14 +5336,14 @@ function PriceView({
     const mapTimer = window.setTimeout(() => {
       void fetchServerMapMarkers(controller.signal)
     }, 0)
-    const dealsTimer = window.setTimeout(() => {
-      void fetchRtmsDeals(controller.signal)
-    }, 4200)
 
     return () => {
       window.clearTimeout(mapTimer)
-      window.clearTimeout(dealsTimer)
       controller.abort()
+      if (deferredDealsTimerRef.current) {
+        window.clearTimeout(deferredDealsTimerRef.current)
+        deferredDealsTimerRef.current = null
+      }
       if (retryTimerRef.current) {
         window.clearTimeout(retryTimerRef.current)
         retryTimerRef.current = null
@@ -5232,7 +5353,7 @@ function PriceView({
         markerRetryTimerRef.current = null
       }
     }
-  }, [fetchRtmsDeals, fetchServerMapMarkers, syncTick])
+  }, [fetchServerMapMarkers, syncTick])
 
   useEffect(() => {
     let timerId: number
@@ -5282,7 +5403,7 @@ function PriceView({
               userListings={userListings}
               focusApartment={focusApartment}
               focusListing={focusListing}
-              focusLiveDeal={focusLiveDeal}
+              focusLiveDeal={focusLiveDeal?.lat && focusLiveDeal.lng ? null : focusLiveDeal}
               focusRequestId={focusRequestId}
           focusScrollToDetail={focusScrollToDetail}
           rtmsStatus={rtmsStatus}
@@ -6386,6 +6507,30 @@ const markerFromLatestDeal = (marker: MapValueMarker, latestDeal: LiveRtmsDeal):
   relatedDeals: [latestDeal],
 })
 
+const markerFromLiveDealCoordinate = (deal: LiveRtmsDeal): MapValueMarker | null => {
+  if (!Number.isFinite(deal.lat) || !Number.isFinite(deal.lng)) return null
+
+  return {
+    id: `live-${deal.aptSeq || deal.id}`,
+    label: deal.tradeType === 'direct' ? '직거래' : '매매',
+    aptName: deal.aptName,
+    address: deal.address,
+    lawdCd: deal.lawdCd,
+    aptSeq: deal.aptSeq,
+    dealDate: deal.dealDate,
+    tradeTypeLabel: deal.tradeTypeLabel || '최근 거래',
+    priceEok: deal.priceEok,
+    hasPrice: true,
+    dateLabel: formatMarkerMonth(deal.dealDate),
+    subLabel: `${deal.pyeong}평`,
+    lat: deal.lat as number,
+    lng: deal.lng as number,
+    tone: deal.tradeType === 'direct' ? 'direct' : 'sale',
+    dealCount: 1,
+    relatedDeals: [deal],
+  }
+}
+
 const createEmptyPlaceMarker = (place: KakaoPlaceResult): MapValueMarker | null => {
   const lat = Number(place.y)
   const lng = Number(place.x)
@@ -6541,10 +6686,7 @@ function ApartmentMap({
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState(false)
   const kakaoKey = getKakaoMapKey()
-  const fallbackLiveDeals = useMemo(
-    () => (serverMarkers.length > 0 ? [] : liveDeals),
-    [liveDeals, serverMarkers.length],
-  )
+  const fallbackLiveDeals = serverMarkers.length > 0 ? EMPTY_LIVE_RTMS_DEALS : liveDeals
 
   useEffect(() => {
     selectedMarkerRef.current = selectedMarker
@@ -6606,7 +6748,7 @@ function ApartmentMap({
         const specMarkers = apartmentMarkers(apartments, latestApartmentDeals).filter(
           (marker) => !liveMarkerNames.has(normalizeSearchText(marker.aptName)) && hasDisplayableMarkerPrice(marker),
         )
-        const markers = Array.from(
+        const allMarkers = Array.from(
           [...focusedApartmentMarkers, ...displayListingMarkers, ...displayLiveMarkers, ...specMarkers]
             .reduce((group, marker) => {
               const key = marker.listing
@@ -6619,6 +6761,10 @@ function ApartmentMap({
             }, new Map<string, MapValueMarker>())
             .values(),
         )
+        const markerModelCap = window.matchMedia('(max-width: 860px)').matches
+          ? MOBILE_MARKER_MODEL_CAP
+          : DESKTOP_MARKER_MODEL_CAP
+        const markers = allMarkers.slice(0, markerModelCap)
 
         const markerNodes: HTMLElement[] = []
         const markerOverlayModels = markers.map((marker) => {
@@ -6719,15 +6865,15 @@ function ApartmentMap({
           const isMobile = window.matchMedia('(max-width: 860px)').matches
           const visibleCap = isMobile
             ? level <= 3
-              ? 52
+              ? MOBILE_VISIBLE_MARKER_CAP
               : level <= 4
-                ? 68
-                : 86
+                ? MOBILE_VISIBLE_MARKER_CAP + 10
+                : MOBILE_VISIBLE_MARKER_CAP + 18
             : level <= 3
-              ? 140
+              ? DESKTOP_VISIBLE_MARKER_CAP
               : level <= 4
-                ? 180
-                : 220
+                ? DESKTOP_VISIBLE_MARKER_CAP + 30
+                : DESKTOP_VISIBLE_MARKER_CAP + 60
           const selectedId = selectedMarkerRef.current?.id
           const candidates = markerOverlayModels
             .filter((model) => !bounds?.contain || bounds.contain(model.position))
@@ -6834,7 +6980,6 @@ function ApartmentMap({
         })
         kakao.maps.event?.addListener(map, 'zoom_changed', () => {
           setMapMoving(true)
-          scheduleVisibleMainOverlayUpdate()
         })
         kakao.maps.event?.addListener(map, 'idle', () => {
           setMapMoving(false)

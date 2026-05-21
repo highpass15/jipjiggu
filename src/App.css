@@ -1348,6 +1348,17 @@ h1 {
   transform: translateY(-6px);
 }
 
+.kakao-map.is-moving .map-value-marker {
+  opacity: 0;
+  pointer-events: none;
+  filter: none;
+  box-shadow: none;
+  transform: translateY(-2px) scale(0.94);
+  transition:
+    opacity 90ms linear,
+    transform 90ms linear;
+}
+
 .kakao-map .map-value-marker:hover,
 .kakao-map .map-value-marker:focus-visible,
 .kakao-map .map-value-marker:active {
@@ -6163,8 +6174,10 @@ h1 {
   }
 
   .mode-prices .kakao-map.is-moving .map-value-marker {
-    opacity: 0.92;
-    box-shadow: 0 3px 8px rgba(24, 28, 44, 0.14);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: none;
   }
 
   .mode-prices .map-filter-overlay {
