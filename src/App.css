@@ -5619,16 +5619,27 @@ h1 {
 }
 
 @media (max-width: 860px) {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
   .app {
     display: block;
+    height: 100dvh;
     min-height: 100svh;
+    overflow: hidden;
     padding: 0;
     background: var(--surface);
   }
 
   .mobile-stage {
+    height: 100dvh;
     min-height: 100svh;
     max-height: none;
+    overflow: hidden;
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -5650,7 +5661,7 @@ h1 {
   }
 
   .mode-prices .topbar {
-    position: fixed;
+    position: absolute;
     top: 0;
     left: 0;
     right: 0;
@@ -5666,7 +5677,7 @@ h1 {
   }
 
   .mode-prices .search-hero {
-    position: fixed;
+    position: absolute;
     top: 84px;
     left: 0;
     right: 0;
@@ -5729,6 +5740,8 @@ h1 {
     inset: 0;
     padding: 0 0 90px;
     overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mode-prices .price-view {

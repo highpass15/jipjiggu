@@ -577,6 +577,17 @@ const getKakaoMapKey = () => {
   return !envKey || envKey === LEGACY_KAKAO_MAP_JS_KEY ? KAKAO_MAP_PUBLIC_JS_KEY : envKey
 }
 
+const blurActiveTextInput = () => {
+  const activeElement = document.activeElement
+  if (
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement instanceof HTMLSelectElement
+  ) {
+    activeElement.blur()
+  }
+}
+
 const apartments: Apartment[] = [
   {
     name: '래미안 원베일리',
@@ -4369,6 +4380,7 @@ function App() {
   }
 
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
+    blurActiveTextInput()
     setQuery(suggestion.title)
     setFocusApartment(suggestion.apartment)
     setFocusLiveDeal(suggestion.deal)
@@ -4376,6 +4388,11 @@ function App() {
     setMode('prices')
     setAppToast(`${suggestion.title} 실거래 상세를 열었습니다.`)
     setSearchFocused(false)
+
+    window.requestAnimationFrame(() => {
+      contentPanelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    })
   }
 
   const handleOpenReportDeal = (deal: LiveRtmsDeal) => {
@@ -4916,7 +4933,7 @@ function PriceView({
 
     const timerId = window.setTimeout(() => {
       setView('map')
-      handleMapMarkerSelect(marker, { scrollToDetail: false })
+      handleMapMarkerSelect(marker, { scrollToDetail: true })
     }, 0)
 
     return () => window.clearTimeout(timerId)
@@ -6297,7 +6314,6 @@ function ApartmentMap({
   const selectedMarkerRef = useRef<MapValueMarker | null>(selectedMarker)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState(false)
-  const [placeFallbackCount, setPlaceFallbackCount] = useState(0)
   const kakaoKey = getKakaoMapKey()
   const fallbackLiveDeals = useMemo(
     () => (serverMarkers.length > 0 ? [] : liveDeals),
@@ -6404,13 +6420,6 @@ function ApartmentMap({
           onSelectMarker(focusedMarker, { scrollToDetail: Boolean(focusListing || focusLiveDeal) })
         }
 
-        const blurActiveTextInput = () => {
-          const activeElement = document.activeElement
-          if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-            activeElement.blur()
-          }
-        }
-
         const ensureMarkerOverlay = (model: (typeof markerOverlayModels)[number]) => {
           if (!model.overlay) {
             const content = createValueMarkerElement(model.marker, () => {
@@ -6511,7 +6520,6 @@ function ApartmentMap({
           placeOverlays.forEach((overlay) => overlay.setMap(null))
           placeOverlays = []
           placeMarkerNodes = []
-          if (!disposed) setPlaceFallbackCount(0)
         }
 
         const refreshPlaceFallbackMarkers = () => {
@@ -6554,8 +6562,6 @@ function ApartmentMap({
                 placeOverlays.push(overlay)
                 return content
               })
-              setPlaceFallbackCount(placeMarkers.length)
-
               updateDensity()
             })
           }, window.matchMedia('(max-width: 860px)').matches ? 950 : 500)
@@ -6585,6 +6591,7 @@ function ApartmentMap({
         refreshPlaceFallbackMarkers()
 
         setMapReady(true)
+        setMapError(false)
         cleanup = () => {
           if (visibleOverlayRaf !== null) window.cancelAnimationFrame(visibleOverlayRaf)
           if (placeRefreshTimer) window.clearTimeout(placeRefreshTimer)
@@ -6595,7 +6602,10 @@ function ApartmentMap({
           clearPlaceOverlays()
         }
       })
-      .catch(() => setMapError(true))
+      .catch(() => {
+        setMapReady(false)
+        setMapError(true)
+      })
 
     return () => {
       disposed = true
@@ -6604,13 +6614,8 @@ function ApartmentMap({
     }
   }, [apartments, fallbackLiveDeals, focusListing, focusLiveDeal, kakaoKey, latestApartmentDeals, onSelectMarker, serverMarkers, userListings])
 
-  const hasDisplayableMarkers =
-    serverMarkers.some(hasDisplayableMarkerPrice) ||
-    liveDeals.length > 0 ||
-    userListings.length > 0 ||
-    apartmentMarkers(apartments, latestApartmentDeals).some(hasDisplayableMarkerPrice) ||
-    placeFallbackCount > 0
-  const shouldShowMapStatus = !mapReady || mapError || (!hasDisplayableMarkers && rtmsStatus !== 'loading')
+  const shouldShowMapStatus =
+    !mapReady && (mapError || rtmsStatus === 'loading' || rtmsStatus === 'refreshing' || Boolean(mapMarkerNotice))
 
   return (
     <section className="map-panel">
@@ -6677,7 +6682,7 @@ function MapDataStatus({
         <Building2 size={22} />
         <strong>
           {mapError
-            ? 'Kakao 지도 도메인 등록 필요'
+            ? 'Kakao 지도 연결 확인 중'
             : notice
               ? '지도 좌표 캐시 준비 필요'
             : status === 'loading'
@@ -6688,7 +6693,7 @@ function MapDataStatus({
         </strong>
         <p>
           {mapError
-            ? 'Kakao Developers의 JavaScript 키 Web 도메인에 https://jipjiggu.onrender.com 을 추가하면 지도가 표시됩니다.'
+            ? '지도를 준비하는 동안 실거래 캐시를 먼저 불러오고 있습니다. 잠시 후 자동으로 다시 표시됩니다.'
             : notice
               ? notice
             : status === 'error'

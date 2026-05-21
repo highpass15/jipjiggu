@@ -1,0 +1,40 @@
+{
+  "name": "집직구 - 전국민 안심 직거래",
+  "short_name": "집직구",
+  "description": "실거래가 지도, AI 추천, 안심 직거래를 한 번에 보는 부동산 직거래 플랫폼",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eaf4f1",
+  "theme_color": "#083f3b",
+  "categories": ["business", "finance", "lifestyle"],
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "실거래 지도",
+      "short_name": "지도",
+      "url": "/?mode=prices",
+      "description": "동네 아파트 실거래를 지도에서 바로 확인"
+    },
+    {
+      "name": "우리 동네 리포트",
+      "short_name": "리포트",
+      "url": "/?mode=report",
+      "description": "실거래와 개발 소식을 한 번에 확인"
+    }
+  ]
+}
