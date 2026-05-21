@@ -5907,7 +5907,14 @@ function SubscriptionView() {
       <section className="subscription-list" aria-label="청약 공고 목록">
         {filteredNotices.length > 0 ? (
           filteredNotices.map((notice) => (
-            <article className="subscription-card" key={notice.id}>
+            <a
+              className="subscription-card"
+              href={notice.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${notice.title} 입주자모집정보 열기`}
+              key={notice.id}
+            >
               <div className="subscription-card-main">
                 <span>
                   {notice.source}
@@ -5924,10 +5931,10 @@ function SubscriptionView() {
                   {notice.alerts.toLocaleString('ko-KR')} 알림받는 중
                 </small>
               </div>
-              <a className="subscription-alert-button" href={notice.url} target="_blank" rel="noreferrer" aria-label={`${notice.title} 공식 공고 확인`}>
-                <Bell size={18} />
-              </a>
-            </article>
+              <span className="subscription-alert-button" aria-hidden="true">
+                <ExternalLink size={18} />
+              </span>
+            </a>
           ))
         ) : (
           <div className="subscription-empty">
