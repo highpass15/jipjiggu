@@ -8634,9 +8634,6 @@ function ListingView({
   const [buildingDong, setBuildingDong] = useState('101')
   const [unitHo, setUnitHo] = useState('1103')
   const [aptSearchFocused, setAptSearchFocused] = useState(false)
-  const [addressSearchFocused, setAddressSearchFocused] = useState(false)
-  const [remoteAddressSuggestions, setRemoteAddressSuggestions] = useState<WorkplaceAddressSuggestion[]>([])
-  const [isSearchingAddress, setIsSearchingAddress] = useState(false)
   const [listingPriceEok, setListingPriceEok] = useState(salePrice)
   const [listingPyeong, setListingPyeong] = useState(24)
   const [listingFloor, setListingFloor] = useState(11)
@@ -8694,52 +8691,24 @@ function ListingView({
       )
       .slice(0, 6)
   }, [aptName, listingCandidates])
-  const addressSuggestions = useMemo(() => {
-    const normalized = normalizeSearchText(address)
-    if (normalized.length < 2) return []
+  const selectedApartmentCandidate = useMemo(() => {
+    const normalized = normalizeSearchText(aptName)
+    if (normalized.length < 2) return null
 
-    return listingCandidates
-      .filter((candidate) => {
-        const searchText = normalizeSearchText(`${candidate.address} ${candidate.name} ${candidate.region}`)
-        return searchText.includes(normalized) || fuzzyIncludes(searchText, normalized)
-      })
-      .slice(0, 6)
-  }, [address, listingCandidates])
+    const exactMatch = listingCandidates.find((candidate) => normalizeSearchText(candidate.name) === normalized)
+    return (
+      exactMatch ??
+      listingCandidates.find((candidate) => candidate.searchText.includes(normalized)) ??
+      null
+    )
+  }, [aptName, listingCandidates])
+
   useEffect(() => {
-    const query = address.trim()
-
-    if (!addressSearchFocused || query.length < 2) {
-      setRemoteAddressSuggestions([])
-      setIsSearchingAddress(false)
-      return undefined
+    if (!selectedApartmentCandidate) return
+    if (normalizeSearchText(selectedApartmentCandidate.name) === normalizeSearchText(aptName)) {
+      setAddress(selectedApartmentCandidate.address)
     }
-
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      setIsSearchingAddress(true)
-      fetch(`/api/kakao/address-search?query=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then((response) => response.json())
-        .then((payload: { ok?: boolean; items?: WorkplaceAddressSuggestion[] }) => {
-          if (controller.signal.aborted) return
-          setRemoteAddressSuggestions(payload.ok ? payload.items?.slice(0, 5) ?? [] : [])
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setRemoteAddressSuggestions([])
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) {
-            setIsSearchingAddress(false)
-          }
-        })
-    }, 220)
-
-    return () => {
-      controller.abort()
-      window.clearTimeout(timer)
-    }
-  }, [address, addressSearchFocused])
+  }, [selectedApartmentCandidate])
   const normalizedBuildingDong = buildingDong.trim().replace(/동$/, '')
   const normalizedUnitHo = unitHo.trim().replace(/호$/, '')
   const detailAddress = `${normalizedBuildingDong}동 ${normalizedUnitHo}호`
@@ -8751,13 +8720,16 @@ function ListingView({
     { value: 'corporate', title: '법인', detail: '사업자등록증·재직/위임 확인' },
   ]
   const listingProgressSteps = [
-    { title: '집주인/세입자', complete: listingIntent === 'want' || Boolean(ownerRelation) },
-    { title: '우리집 주소', complete: Boolean(aptName.trim() && address.trim() && normalizedBuildingDong && normalizedUnitHo) },
-    { title: '거래유형·가격', complete: listingPriceEok > 0 && listingPyeong > 0 },
-    { title: '권한확인', complete: listingIntent === 'want' || Boolean(ownerName.trim() && ownerPhone.trim()) },
+    { title: '단지 선택', complete: Boolean(aptName.trim() && address.trim()) },
+    { title: listingIntent === 'want' ? '희망 조건' : '가격·조건', complete: listingPriceEok > 0 && listingPyeong > 0 },
+    { title: listingIntent === 'want' ? '연락처' : '동호수·사진', complete: listingIntent === 'want' || Boolean(normalizedBuildingDong && normalizedUnitHo) },
     {
-      title: '알림·접수',
-      complete: agreements.privacy && agreements.antiFraud && (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24),
+      title: listingIntent === 'want' ? '알림 등록' : '소유자 확인',
+      complete:
+        Boolean(ownerName.trim() && ownerPhone.trim()) &&
+        agreements.privacy &&
+        agreements.antiFraud &&
+        (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24),
     },
   ]
   const requiresRelationProof = listingIntent === 'sell' && ownerRelation !== 'self'
@@ -8767,8 +8739,7 @@ function ListingView({
   const canSubmitListing = Boolean(
     aptName.trim() &&
       address.trim() &&
-      normalizedBuildingDong &&
-      normalizedUnitHo &&
+      (listingIntent === 'want' || (normalizedBuildingDong && normalizedUnitHo)) &&
       listingPriceEok > 0 &&
       ownerName.trim() &&
       ownerPhone.trim() &&
@@ -8785,18 +8756,7 @@ function ListingView({
       setSalePrice(Number(candidate.latestPriceEok.toFixed(1)))
     }
     setAptSearchFocused(false)
-    setAddressSearchFocused(false)
-    setRemoteAddressSuggestions([])
-  }
-
-  const handleAddressSuggestionSelect = (suggestion: WorkplaceAddressSuggestion) => {
-    const nextAddress = suggestion.roadAddress || suggestion.address
-    setAddress(nextAddress)
-    if (!aptName.trim()) {
-      setAptName(suggestion.label)
-    }
-    setAddressSearchFocused(false)
-    setRemoteAddressSuggestions([])
+    setAddress(candidate.address)
   }
 
   const handlePhotoChange = async (files: FileList | null) => {
@@ -8896,18 +8856,17 @@ function ListingView({
       <div className="section-title">
         <div>
           <span>직거래</span>
-          <h2>검증형 직거래로 안전하게 연결</h2>
+          <h2>매물 등록과 매수 희망을 한 곳에서</h2>
         </div>
         <ShieldCheck size={22} />
       </div>
 
       <section className="service-model">
         <span>집직구 모델</span>
-        <strong>직접 찾고, 공인중개사가 계약 전 위험을 확인합니다</strong>
+        <strong>직접 찾고, 계약 전에는 전문가가 위험을 확인합니다</strong>
         <p>
-          매수인과 매도인이 직접 물건을 알아보고 계약하되, 계약 전 공인중개사가 거래 시 위험사항,
-          실소유자 일치 여부, 허위매물 여부 등을 확인합니다. 계약서는 공인중개사와 함께 작성하고
-          수수료는 중개보수 상한 대비 20% 수준으로 설계합니다.
+          매도인은 매물을 올리고, 매수인은 원하는 조건을 남깁니다. 계약 전에는 공인중개사가
+          권리관계, 실소유자 일치 여부, 허위매물 여부를 확인한 뒤 계약서를 함께 작성합니다.
         </p>
       </section>
 
@@ -8954,32 +8913,48 @@ function ListingView({
         </div>
       </div>
 
-      <section className="listing-cta">
-        <span>첫 거래 베타</span>
-        <strong>매도인 수수료 0원 검토</strong>
-        <p>초기 성공 사례 확보를 위해 서울·경기 검증 가능 매물을 우선 모집합니다.</p>
-        <button
-          className="primary-action"
-          type="button"
-          onClick={() => {
-            setListingIntent('sell')
-            setRegistrationOpen(true)
-          }}
-        >
-          매물 등록 시작
-          <ChevronRight size={18} />
-        </button>
-        <button
-          className="secondary-action listing-want-action"
-          type="button"
-          onClick={() => {
-            setListingIntent('want')
-            setRegistrationOpen(true)
-          }}
-        >
-          매물 원해요 등록
-          <Plus size={16} />
-        </button>
+      <section className="listing-start-card" aria-label="직거래 시작">
+        <div>
+          <span>직거래 시작</span>
+          <strong>{listingIntent === 'want' ? '원하는 매물을 남겨두세요' : '내 매물을 간단히 올리세요'}</strong>
+          <p>아파트명만 선택하면 주소는 자동으로 채워지고, 필요한 정보만 빠르게 입력합니다.</p>
+        </div>
+        <div className="listing-start-actions">
+          <button
+            className={listingIntent === 'sell' ? 'active' : ''}
+            type="button"
+            onClick={() => {
+              setListingIntent('sell')
+              setRegistrationOpen(true)
+            }}
+          >
+            <Building2 size={18} />
+            <strong>매물 등록</strong>
+            <span>집을 내놓기</span>
+          </button>
+          <button
+            className={listingIntent === 'want' ? 'active wanted' : 'wanted'}
+            type="button"
+            onClick={() => {
+              setListingIntent('want')
+              setRegistrationOpen(true)
+            }}
+          >
+            <Plus size={18} />
+            <strong>매물 원해요</strong>
+            <span>조건 남기기</span>
+          </button>
+        </div>
+        {!registrationOpen && (
+          <button
+            className="primary-action"
+            type="button"
+            onClick={() => setRegistrationOpen(true)}
+          >
+            {listingIntent === 'want' ? '매물 원해요 등록' : '매물 등록 시작'}
+            <ChevronRight size={18} />
+          </button>
+        )}
       </section>
 
       {registrationOpen && (
@@ -8987,7 +8962,7 @@ function ListingView({
           <div className="listing-registration-head">
             <div>
               <span>매물등록</span>
-              <h3>{listingIntent === 'want' ? '원하는 단지와 예산을 등록합니다' : '매물 정보 입력 후 실소유자 확인으로 넘어갑니다'}</h3>
+              <h3>{listingIntent === 'want' ? '원하는 단지와 예산만 남기면 됩니다' : '단지 선택 후 가격과 권한만 확인합니다'}</h3>
             </div>
             <strong>{listingIntent === 'want' ? '매수희망' : '허위매물 차단'}</strong>
           </div>
@@ -9026,11 +9001,12 @@ function ListingView({
                   value={aptName}
                   onChange={(event) => {
                     setAptName(event.target.value)
+                    setAddress('')
                     setAptSearchFocused(true)
                   }}
                   onFocus={() => setAptSearchFocused(true)}
                   onBlur={() => window.setTimeout(() => setAptSearchFocused(false), 140)}
-                  placeholder="아파트명을 입력하세요"
+                  placeholder="예: 인덕원센트럴자이"
                 />
               </div>
               {aptSearchFocused && apartmentSuggestions.length > 0 && (
@@ -9054,85 +9030,34 @@ function ListingView({
                 </div>
               )}
             </label>
-            <label className="apartment-suggest-field address-suggest-field">
-              <span>주소</span>
-              <div className="apartment-suggest-input">
-                <MapPin size={18} />
-                <input
-                  value={address}
-                  onChange={(event) => {
-                    setAddress(event.target.value)
-                    setAddressSearchFocused(true)
-                  }}
-                  onFocus={() => setAddressSearchFocused(true)}
-                  onBlur={() => window.setTimeout(() => setAddressSearchFocused(false), 140)}
-                  placeholder="도로명, 지번, 단지명으로 검색"
-                />
-              </div>
-              {addressSearchFocused &&
-                (addressSuggestions.length > 0 || remoteAddressSuggestions.length > 0 || isSearchingAddress) && (
-                <div className="listing-apartment-suggestions address-suggestions" role="listbox">
-                  {addressSuggestions.map((candidate) => (
-                    <button
-                      key={`address-${candidate.id}`}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleApartmentCandidateSelect(candidate)}
-                    >
-                      <strong>{candidate.address}</strong>
-                      <span>{candidate.name}</span>
-                      <em>
-                        {candidate.latestPriceEok ? formatEok(candidate.latestPriceEok) : '단지 확인'}
-                        {candidate.latestDealDate ? ` · 최근 ${formatShortDate(candidate.latestDealDate)}` : ''}
-                      </em>
-                    </button>
-                  ))}
-                  {remoteAddressSuggestions.length > 0 && <b className="suggestion-divider">주소 검색 결과</b>}
-                  {remoteAddressSuggestions.map((suggestion) => (
-                    <button
-                      className="remote-address-result"
-                      key={`remote-address-${suggestion.id}`}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleAddressSuggestionSelect(suggestion)}
-                    >
-                      <strong>{suggestion.label}</strong>
-                      <span>{suggestion.roadAddress || suggestion.address}</span>
-                      {suggestion.jibunAddress && suggestion.jibunAddress !== (suggestion.roadAddress || suggestion.address) && (
-                        <em>{suggestion.jibunAddress}</em>
-                      )}
-                    </button>
-                  ))}
-                  {isSearchingAddress && <p className="suggestion-loading">주소를 찾는 중입니다</p>}
-                </div>
-              )}
-            </label>
             <div className="listing-address-preview">
               <Building2 size={16} />
-              <span>{address || '아파트를 선택하면 주소가 자동으로 들어갑니다'}</span>
+              <span>{address || selectedApartmentCandidate?.address || '아파트명을 선택하면 주소가 자동 입력됩니다'}</span>
             </div>
-            <div className="listing-form-row compact">
-              <label>
-                <span>동</span>
-                <input
-                  inputMode="numeric"
-                  value={buildingDong}
-                  onChange={(event) => setBuildingDong(event.target.value)}
-                  placeholder="101"
-                />
-                <em>동</em>
-              </label>
-              <label>
-                <span>호수</span>
-                <input
-                  inputMode="numeric"
-                  value={unitHo}
-                  onChange={(event) => setUnitHo(event.target.value)}
-                  placeholder="1103"
-                />
-                <em>호</em>
-              </label>
-            </div>
+            {listingIntent === 'sell' && (
+              <div className="listing-form-row compact">
+                <label>
+                  <span>동</span>
+                  <input
+                    inputMode="numeric"
+                    value={buildingDong}
+                    onChange={(event) => setBuildingDong(event.target.value)}
+                    placeholder="101"
+                  />
+                  <em>동</em>
+                </label>
+                <label>
+                  <span>호수</span>
+                  <input
+                    inputMode="numeric"
+                    value={unitHo}
+                    onChange={(event) => setUnitHo(event.target.value)}
+                    placeholder="1103"
+                  />
+                  <em>호</em>
+                </label>
+              </div>
+            )}
             <div className="listing-form-row">
               <label>
               <span>{listingIntent === 'want' ? '희망 예산' : '희망가'}</span>
