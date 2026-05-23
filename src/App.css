@@ -2624,6 +2624,48 @@ h1 {
   gap: 10px;
 }
 
+.first-home-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid rgba(12, 181, 155, 0.18);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(12, 181, 155, 0.12), rgba(255, 255, 255, 0.96)),
+    #ffffff;
+  box-shadow: 0 12px 26px rgba(10, 80, 86, 0.07);
+}
+
+.first-home-toggle input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+
+.first-home-toggle span,
+.first-home-toggle strong,
+.first-home-toggle em {
+  display: block;
+}
+
+.first-home-toggle strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.first-home-toggle em {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  font-style: normal;
+  font-weight: 850;
+  word-break: keep-all;
+}
+
 .preference-panel {
   padding: 14px;
   background:

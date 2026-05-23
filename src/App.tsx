@@ -117,6 +117,8 @@ type MortgageRuleProfile = {
   ltvRatio: number
   priceCapEok: number
   isRegulatedArea: boolean
+  isCapitalRegion: boolean
+  isFirstTimeHomeBuyer: boolean
 }
 
 type FinancingPlan = {
@@ -133,6 +135,7 @@ type FinancingPlan = {
   termYears: number
   assumedRegionLabel: string
   assumedRule: MortgageRuleProfile
+  isFirstTimeHomeBuyer: boolean
   baseMonthlyPaymentManwon: number
   stressMonthlyPaymentManwon: number
 }
@@ -147,6 +150,7 @@ type CandidateMortgagePlan = {
   dsrPercent: number
   ltvPercent: number
   rule: MortgageRuleProfile
+  isFirstTimeHomeBuyer: boolean
 }
 
 type RecommendedApartment = {
@@ -3325,16 +3329,32 @@ const calculateLoanLimitEokFromMonthlyPayment = (
   return (monthlyPaymentManwon * (1 - (1 + monthlyRate) ** -months) / monthlyRate) / 10000
 }
 
-const getMortgageRuleProfile = (regionText: string, priceEok: number): MortgageRuleProfile => {
+const isCapitalRegionText = (regionText: string) => {
+  const normalized = normalizeSearchText(regionText)
+  return ['서울', '경기', '인천', '수도권'].some((keyword) => normalized.includes(normalizeSearchText(keyword)))
+}
+
+const isSeoulRegionText = (regionText: string) => normalizeSearchText(regionText).includes(normalizeSearchText('서울'))
+
+const getMortgageRuleProfile = (
+  regionText: string,
+  priceEok: number,
+  options: { isFirstTimeHomeBuyer?: boolean } = {},
+): MortgageRuleProfile => {
   const normalized = normalizeSearchText(regionText)
   const isRegulatedArea = ['강남구', '서초구', '송파구', '용산구'].some((district) =>
     normalized.includes(normalizeSearchText(district)),
   )
+  const isCapitalRegion = isCapitalRegionText(regionText)
+  const isFirstTimeHomeBuyer = Boolean(options.isFirstTimeHomeBuyer)
+  const firstTimeLtvRatio = isCapitalRegion ? 0.7 : 0.8
 
   return {
-    ltvRatio: isRegulatedArea ? 0.4 : 0.7,
+    ltvRatio: isFirstTimeHomeBuyer ? firstTimeLtvRatio : isRegulatedArea ? 0.4 : 0.7,
     priceCapEok: priceEok <= 15 ? 6 : priceEok <= 25 ? 4 : 2,
     isRegulatedArea,
+    isCapitalRegion,
+    isFirstTimeHomeBuyer,
   }
 }
 
@@ -3350,9 +3370,12 @@ const calculateCandidateMortgagePlan = (
     | 'baseRatePercent'
     | 'stressRatePercent'
     | 'termYears'
+    | 'isFirstTimeHomeBuyer'
   >,
 ): CandidateMortgagePlan => {
-  const rule = getMortgageRuleProfile(regionText, priceEok)
+  const rule = getMortgageRuleProfile(regionText, priceEok, {
+    isFirstTimeHomeBuyer: financingPlan.isFirstTimeHomeBuyer,
+  })
   const assetsEok = financingPlan.assetsManwon / 10000
   const ltvLimitEok = priceEok * rule.ltvRatio
   const loanEok = Math.max(0, Math.min(priceEok, financingPlan.dsrLimitLoanEok, ltvLimitEok, rule.priceCapEok))
@@ -3385,6 +3408,7 @@ const calculateCandidateMortgagePlan = (
     dsrPercent,
     ltvPercent: rule.ltvRatio * 100,
     rule,
+    isFirstTimeHomeBuyer: financingPlan.isFirstTimeHomeBuyer,
   }
 }
 
@@ -3398,6 +3422,7 @@ const calculateDisplayMaxPurchaseEok = (
     | 'baseRatePercent'
     | 'stressRatePercent'
     | 'termYears'
+    | 'isFirstTimeHomeBuyer'
   >,
 ) => {
   let low = 0
@@ -3421,10 +3446,12 @@ const calculateFinancingPlan = ({
   incomeManwon,
   assetsManwon,
   debtManwon,
+  isFirstTimeHomeBuyer,
 }: {
   incomeManwon: number
   assetsManwon: number
   debtManwon: number
+  isFirstTimeHomeBuyer: boolean
 }): FinancingPlan => {
   const baseRatePercent = mortgageAssumptions.baseRatePercent
   const stressRatePercent = mortgageAssumptions.baseRatePercent + mortgageAssumptions.stressAddRatePercent
@@ -3449,9 +3476,10 @@ const calculateFinancingPlan = ({
     baseRatePercent,
     stressRatePercent,
     termYears: mortgageAssumptions.termYears,
+    isFirstTimeHomeBuyer,
   }
   const displayMaxPurchaseEok = calculateDisplayMaxPurchaseEok(planBase)
-  const assumedRule = getMortgageRuleProfile('수도권 비규제', displayMaxPurchaseEok)
+  const assumedRule = getMortgageRuleProfile('수도권 비규제', displayMaxPurchaseEok, { isFirstTimeHomeBuyer })
   const displayLoanEok = Math.min(
     dsrLimitLoanEok,
     assumedRule.priceCapEok,
@@ -3466,6 +3494,7 @@ const calculateFinancingPlan = ({
     dsrCapPercent: mortgageAssumptions.dsrCapPercent,
     assumedRegionLabel: '수도권 비규제·무주택/처분조건부 1주택 기준',
     assumedRule,
+    isFirstTimeHomeBuyer,
     baseMonthlyPaymentManwon: calculateMonthlyPaymentManwon(
       displayLoanEok,
       baseRatePercent,
@@ -3743,12 +3772,10 @@ const transitDevelopmentHubs = [
 ]
 
 const getRegionPreferenceBonus = (regionText: string) => {
-  const normalized = normalizeSearchText(regionText)
-
-  if (normalized.includes('서울')) {
+  if (isSeoulRegionText(regionText)) {
     return {
-      score: 8,
-      label: '서울 입지 가점',
+      score: 18,
+      label: '서울 입지 우선 반영',
     }
   }
 
@@ -4183,6 +4210,7 @@ function App() {
   const [income, setIncome] = useState(9000)
   const [assets, setAssets] = useState(30000)
   const [debt, setDebt] = useState(7000)
+  const [isFirstTimeHomeBuyer, setIsFirstTimeHomeBuyer] = useState(false)
   const [preferredPyeong, setPreferredPyeong] = useState(34)
   const [maxSubwayMinutes, setMaxSubwayMinutes] = useState(10)
   const [officeArea, setOfficeArea] = useState<OfficeArea>('강남')
@@ -4716,8 +4744,9 @@ function App() {
         incomeManwon: Math.max(0, income),
         assetsManwon: Math.max(0, assets),
         debtManwon: Math.max(0, debt),
+        isFirstTimeHomeBuyer,
       }),
-    [assets, debt, income],
+    [assets, debt, income, isFirstTimeHomeBuyer],
   )
   const recommendationBudgetEok = Math.max(0, financingPlan.displayMaxPurchaseEok)
   const recommendationStretchEok = recommendationBudgetEok
@@ -4760,6 +4789,10 @@ function App() {
     return Array.from(candidatesByName.values()).sort((a, b) => {
       const scoreGap = b.recommendationScore - a.recommendationScore
       if (Math.abs(scoreGap) > 3) return scoreGap
+
+      const aIsSeoul = isSeoulRegionText(a.region)
+      const bIsSeoul = isSeoulRegionText(b.region)
+      if (aIsSeoul !== bIsSeoul) return bIsSeoul ? 1 : -1
 
       return (
         b.upsideScore - a.upsideScore ||
@@ -4933,9 +4966,11 @@ function App() {
               income={income}
               assets={assets}
               debt={debt}
+              isFirstTimeHomeBuyer={isFirstTimeHomeBuyer}
               setIncome={setIncome}
               setAssets={setAssets}
               setDebt={setDebt}
+              setIsFirstTimeHomeBuyer={setIsFirstTimeHomeBuyer}
               preferredPyeong={preferredPyeong}
               maxSubwayMinutes={maxSubwayMinutes}
               officeArea={officeArea}
@@ -8152,6 +8187,7 @@ function AiView({
   income,
   assets,
   debt,
+  isFirstTimeHomeBuyer,
   preferredPyeong,
   maxSubwayMinutes,
   officeArea,
@@ -8161,6 +8197,7 @@ function AiView({
   setIncome,
   setAssets,
   setDebt,
+  setIsFirstTimeHomeBuyer,
   setPreferredPyeong,
   setMaxSubwayMinutes,
   setOfficeArea,
@@ -8180,6 +8217,7 @@ function AiView({
   income: number
   assets: number
   debt: number
+  isFirstTimeHomeBuyer: boolean
   preferredPyeong: number
   maxSubwayMinutes: number
   officeArea: OfficeArea
@@ -8189,6 +8227,7 @@ function AiView({
   setIncome: (value: number) => void
   setAssets: (value: number) => void
   setDebt: (value: number) => void
+  setIsFirstTimeHomeBuyer: (value: boolean) => void
   setPreferredPyeong: (value: number) => void
   setMaxSubwayMinutes: (value: number) => void
   setOfficeArea: (value: OfficeArea) => void
@@ -8366,6 +8405,17 @@ function AiView({
         <EokNumberField label="가용자산" valueManwon={assets} onChangeManwon={setAssets} />
         <NumberField label="기존부채" value={debt} unit="만원" onChange={setDebt} />
       </div>
+      <label className="first-home-toggle">
+        <input
+          type="checkbox"
+          checked={isFirstTimeHomeBuyer}
+          onChange={(event) => setIsFirstTimeHomeBuyer(event.target.checked)}
+        />
+        <span>
+          <strong>생애최초 주택구입</strong>
+          <em>체크 시 수도권 LTV 70%와 융자상한 6억/4억/2억을 우선 적용해 가용 대출을 계산합니다.</em>
+        </span>
+      </label>
 
       <section className="preference-panel" aria-label="아파트 추천 선호 조건">
         <div className="preference-head">
@@ -8373,8 +8423,8 @@ function AiView({
           <strong>1~4순위 기준으로 점수화</strong>
         </div>
         <p className="ai-ranking-note">
-          예산은 DSR·스트레스 DSR·LTV·수도권 대출한도를 먼저 통과 조건으로 적용합니다. 순위는 상승여력·관심도·직장
-          접근성을 중심으로 보고, 점수가 비슷하면 평형별 실거래 추이, 단지 내 상승률, 서울 입지와 교통 호재를 더 반영합니다.
+          예산은 DSR·스트레스 DSR·LTV·수도권 대출한도를 먼저 통과 조건으로 적용합니다. 서울 단지도 1~5순위 경쟁군에
+          포함하고, 점수가 비슷하면 서울 입지와 교통 호재, 평형별 실거래 추이, 단지 내 상승률을 더 반영합니다.
         </p>
         <div className="preference-rank-grid" aria-label="추천 우선순위">
           {rankedPreferences.map((rank, index) => (
@@ -8505,8 +8555,9 @@ function AiView({
         </div>
       </section>
       <p className="loan-assumption-note">
-        {financingPlan.assumedRegionLabel} · {financingPlan.termYears}년 원리금균등 · 금리 {formatRate(financingPlan.baseRatePercent)}
-        · 스트레스 {formatRate(financingPlan.stressRatePercent)}로 보수 계산
+        {financingPlan.isFirstTimeHomeBuyer ? '생애최초 수도권 LTV 70% 우선 적용' : financingPlan.assumedRegionLabel} ·{' '}
+        {financingPlan.termYears}년 원리금균등 · 금리 {formatRate(financingPlan.baseRatePercent)}
+        · 스트레스 {formatRate(financingPlan.stressRatePercent)} · 융자상한 {formatEok(financingPlan.assumedRule.priceCapEok)} 기준
       </p>
 
       <div className="recommend-list" aria-label="AI 집추천 결과">
@@ -8578,7 +8629,7 @@ function AiView({
                 <span>대출 추정</span>
                 <strong>{formatEok(apartment.mortgage.loanEok)}</strong>
                 <em>
-                  월 {formatManwon(apartment.mortgage.monthlyPaymentManwon)} · 현금필요{' '}
+                  LTV {formatRate(apartment.mortgage.ltvPercent)} · 월 {formatManwon(apartment.mortgage.monthlyPaymentManwon)} · 현금필요{' '}
                   {formatEok(apartment.mortgage.cashNeededEok)} · DSR {formatRate(apartment.mortgage.dsrPercent)}
                 </em>
               </div>
