@@ -29,7 +29,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
-  Store,
   TrendingUp,
   WalletCards,
 } from 'lucide-react'
@@ -347,6 +346,11 @@ type ListingComplexGroup = {
   aptName: string
   address: string
   listings: UserListing[]
+}
+
+type ListingComplexTarget = {
+  aptName: string
+  address: string
 }
 
 type LeadPayload = Record<string, string | number | boolean | null | undefined>
@@ -1328,6 +1332,28 @@ const formatListingStatus = (status: UserListing['verificationStatus']) =>
   status === 'verified' ? '실소유자 확인 완료' : '실소유자 검증 대기'
 const getListingComplexKey = (listing: UserListing) =>
   normalizeSearchText(`${listing.aptName}-${listing.address}`).slice(0, 120)
+const getListingNameKey = (value: string) =>
+  normalizeSearchText(value)
+    .replace(/아파트$/g, '')
+    .replace(/단지$/g, '')
+    .replace(/[()（）]/g, '')
+const listingMatchesComplexTarget = (listing: UserListing, target: ListingComplexTarget) => {
+  const listingName = getListingNameKey(listing.aptName)
+  const targetName = getListingNameKey(target.aptName)
+  const listingAddress = normalizeSearchText(listing.address)
+  const targetAddress = normalizeSearchText(target.address)
+
+  const nameMatches =
+    listingName.length > 0 &&
+    targetName.length > 0 &&
+    (listingName === targetName || listingName.includes(targetName) || targetName.includes(listingName))
+  const addressMatches =
+    listingAddress.length > 0 &&
+    targetAddress.length > 0 &&
+    (listingAddress.includes(targetAddress) || targetAddress.includes(listingAddress))
+
+  return nameMatches || addressMatches
+}
 const formatListingArea = (listing: UserListing) => `${listing.pyeong}평 / ${Math.round(listing.pyeong * 3.3058)}m²`
 const formatListingFloor = (floor: number) => {
   if (!Number.isFinite(floor) || floor <= 0) return '층 확인'
@@ -4169,6 +4195,7 @@ function App() {
   const [userListings, setUserListings] = useState<UserListing[]>([])
   const [listingFormIntent, setListingFormIntent] = useState<UserListing['intent']>('sell')
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
+  const [listingFocusTarget, setListingFocusTarget] = useState<ListingComplexTarget | null>(null)
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
   const [appToast, setAppToast] = useState('')
@@ -4302,6 +4329,7 @@ function App() {
 
   const handleOpenListingRegistration = useCallback((intent: UserListing['intent'] = 'sell') => {
     setListingFormIntent(intent)
+    setListingFocusTarget(null)
     setMode('directListings')
   }, [])
 
@@ -4871,6 +4899,13 @@ function App() {
               onLiveDealsChange={mergeCapitalLiveDeals}
               filterOpenRequest={filterOpenRequest}
               onOpenReport={handleOpenReport}
+              onOpenComplexListings={(target) => {
+                setListingFocusTarget(target)
+                setFocusListing(null)
+                setFocusLiveDeal(null)
+                setMode('listing')
+                setAppToast(`${target.aptName} 단지 내 등록매물을 열었습니다.`)
+              }}
             />
           )}
 
@@ -4930,6 +4965,7 @@ function App() {
             <DirectListingsView
               userListings={userListings}
               liveDeals={capitalLiveDeals}
+              initialComplexTarget={listingFocusTarget}
               onRegister={() => handleOpenListingRegistration('sell')}
               onRegisterWanted={() => handleOpenListingRegistration('want')}
               onOpenListing={(listing) => {
@@ -4976,6 +5012,9 @@ function App() {
                 key={item.id}
                 className={isActive ? 'active' : ''}
                 onClick={() => {
+                  if (item.id === 'listing') {
+                    setListingFocusTarget(null)
+                  }
                   setMode(item.id)
                   if (item.id === 'prices') {
                     setPriceHeaderMinimized(false)
@@ -5041,6 +5080,7 @@ function PriceView({
   onLiveDealsChange,
   filterOpenRequest,
   onOpenReport,
+  onOpenComplexListings,
 }: {
   apartments: Apartment[]
   selectedRegion: string
@@ -5053,6 +5093,7 @@ function PriceView({
   onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
   filterOpenRequest: number
   onOpenReport: (region?: string) => void
+  onOpenComplexListings: (target: ListingComplexTarget) => void
 }) {
   const [view, setView] = useState<'map' | 'list'>('map')
   const [rtmsData, setRtmsData] = useState<RtmsResponse | null>(null)
@@ -5414,6 +5455,7 @@ function PriceView({
           onSelectMarker={handleMapMarkerSelect}
           onClearMarker={() => setSelectedMapMarker(null)}
           onReportClick={onOpenReport}
+          onOpenComplexListings={onOpenComplexListings}
         />
       ) : (
         <div className="apartment-list">
@@ -6659,6 +6701,7 @@ function ApartmentMap({
   onSelectMarker,
   onClearMarker,
   onReportClick,
+  onOpenComplexListings,
 }: {
   liveDeals: LiveRtmsDeal[]
   serverMarkers: MapValueMarker[]
@@ -6679,6 +6722,7 @@ function ApartmentMap({
   onSelectMarker: (marker: MapValueMarker, options?: { scrollToDetail?: boolean }) => void
   onClearMarker: () => void
   onReportClick: () => void
+  onOpenComplexListings: (target: ListingComplexTarget) => void
 }) {
   const mapNode = useRef<HTMLDivElement | null>(null)
   const kakaoMapRef = useRef<KakaoMapInstance | null>(null)
@@ -7064,7 +7108,14 @@ function ApartmentMap({
         </button>
       </div>
 
-      {selectedMarker && <TradeInsightCard marker={selectedMarker} onClose={onClearMarker} />}
+      {selectedMarker && (
+        <TradeInsightCard
+          marker={selectedMarker}
+          userListings={userListings}
+          onOpenComplexListings={onOpenComplexListings}
+          onClose={onClearMarker}
+        />
+      )}
     </section>
   )
 }
@@ -7733,13 +7784,35 @@ function ReviewsPanel({ marker }: { marker: MapValueMarker }) {
   )
 }
 
-function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose: () => void }) {
+function TradeInsightCard({
+  marker,
+  userListings,
+  onOpenComplexListings,
+  onClose,
+}: {
+  marker: MapValueMarker
+  userListings: UserListing[]
+  onOpenComplexListings: (target: ListingComplexTarget) => void
+  onClose: () => void
+}) {
   const { history, status } = useMarkerHistory(marker)
   const [pyeongSelection, setPyeongSelection] = useState<{ markerId: string; band: TradePyeongBandKey }>({
     markerId: marker.id,
     band: 'p34',
   })
   const listing = marker.listing
+  const complexSaleListings = useMemo(
+    () =>
+      userListings.filter(
+        (userListing) =>
+          (userListing.intent ?? 'sell') === 'sell' &&
+          listingMatchesComplexTarget(userListing, {
+            aptName: marker.aptName,
+            address: marker.address,
+          }),
+      ),
+    [marker.address, marker.aptName, userListings],
+  )
   const isSpecMarker = Boolean(marker.apartment) && marker.tradeTypeLabel === '기본 스펙'
   const availablePyeongBands = useMemo(() => {
     const bandMap = new Map<TradePyeongBandKey, { key: TradePyeongBandKey; label: string; count: number }>()
@@ -7883,6 +7956,17 @@ function TradeInsightCard({ marker, onClose }: { marker: MapValueMarker; onClose
           <strong>{listing ? formatListingStatus(listing.verificationStatus) : latestDeal?.tradeTypeLabel ?? marker.tradeTypeLabel ?? marker.label}</strong>
         </div>
       </div>
+
+      {!listing && (
+        <button
+          className="complex-listing-link"
+          type="button"
+          onClick={() => onOpenComplexListings({ aptName: marker.aptName, address: marker.address })}
+        >
+          <span>단지 내 등록매물 {complexSaleListings.length}개 보기</span>
+          <ChevronRight size={18} />
+        </button>
+      )}
 
       {!listing && (
         <>
@@ -9625,6 +9709,7 @@ function ComplexListingsPanel({
 function DirectListingsView({
   userListings,
   liveDeals,
+  initialComplexTarget,
   onRegister,
   onRegisterWanted,
   onOpenListing,
@@ -9632,6 +9717,7 @@ function DirectListingsView({
 }: {
   userListings: UserListing[]
   liveDeals: LiveRtmsDeal[]
+  initialComplexTarget?: ListingComplexTarget | null
   onRegister: () => void
   onRegisterWanted: () => void
   onOpenListing: (listing: UserListing) => void
@@ -9645,6 +9731,10 @@ function DirectListingsView({
   const wantedListings = useMemo(
     () => userListings.filter((listing) => listing.intent === 'want'),
     [userListings],
+  )
+  const sortedSaleListings = useMemo(
+    () => [...saleListings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [saleListings],
   )
   const listingGroups = useMemo(() => {
     const groups = new Map<string, ListingComplexGroup>()
@@ -9675,6 +9765,16 @@ function DirectListingsView({
   const selectedComplexGroup = selectedComplexKey
     ? listingGroups.find((group) => group.key === selectedComplexKey) ?? null
     : null
+
+  useEffect(() => {
+    if (!initialComplexTarget) return
+
+    const matchingGroup = listingGroups.find((group) =>
+      group.listings.some((listing) => listingMatchesComplexTarget(listing, initialComplexTarget)),
+    )
+    setSelectedComplexKey(matchingGroup?.key ?? null)
+  }, [initialComplexTarget, listingGroups])
+
   const directDeals = useMemo(
     () =>
       liveDeals
@@ -9696,54 +9796,61 @@ function DirectListingsView({
   }
 
   return (
-    <div className="view-stack">
-      <div className="section-title">
+    <div className="view-stack direct-listings-stack">
+      <section className="listing-entry-hero" aria-label="직거래 매물 등록">
         <div>
-          <span>직거래</span>
-          <h2>등록 매물부터 바로 확인</h2>
+          <span>집직구 안심 직거래</span>
+          <h2>매물 등록하기</h2>
+          <p>아파트명만 고르면 주소는 자동 입력됩니다. 등록 후 실소유자와 허위매물 확인을 거쳐 공개됩니다.</p>
         </div>
-        <Store size={22} />
-      </div>
+        <button className="primary-action" type="button" onClick={onRegister}>
+          매물 등록하기
+          <ChevronRight size={18} />
+        </button>
+        <button className="secondary-action listing-want-inline" type="button" onClick={onRegisterWanted}>
+          매물 원해요 등록
+          <Plus size={16} />
+        </button>
+      </section>
 
-      <section className="listing-market-section listing-market-primary" aria-label="등록된 직거래 매물">
-        <div className="detail-section-head listing-market-head">
-          <span>
-            <ShieldCheck size={15} />
-            등록된 매물
-          </span>
+      <section className="listing-feed-section" aria-label="등록된 직거래 매물">
+        <div className="listing-feed-head">
           <div>
-            <em>{saleListings.length ? `${saleListings.length}건` : '모집중'}</em>
-            <button className="round-add-button" type="button" onClick={onRegister} aria-label="매물 등록하기">
-              <Plus size={18} />
-            </button>
+            <span>등록 매물</span>
+            <h2>매물 {sortedSaleListings.length}</h2>
           </div>
+          <button type="button" onClick={onRegister}>
+            집 내놓기
+            <Plus size={16} />
+          </button>
         </div>
 
-        {listingGroups.length > 0 ? (
-          <div className="listing-market-list">
-            {listingGroups.map((group) => {
-              const latestListing = group.listings[0]
-              const minPrice = Math.min(...group.listings.map((listing) => listing.priceEok))
-              const maxPrice = Math.max(...group.listings.map((listing) => listing.priceEok))
-
+        {sortedSaleListings.length > 0 ? (
+          <div className="listing-feed-list">
+            {sortedSaleListings.map((listing) => {
+              const photo = listing.photos[0]?.dataUrl
               return (
-              <button key={group.key} type="button" onClick={() => setSelectedComplexKey(group.key)}>
-                <div>
-                  <strong>{group.aptName}</strong>
-                  <span>
-                    {group.address} · 매물 {group.listings.length}건 · 최근 {latestListing.pyeong}평
-                  </span>
-                  <em>{formatListingStatus(latestListing.verificationStatus)}</em>
-                </div>
-                <b>{minPrice === maxPrice ? formatEok(minPrice) : `${formatEok(minPrice)}~`}</b>
-              </button>
+                <button className="listing-feed-card" key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
+                  <div className="listing-feed-copy">
+                    {listing.verificationStatus === 'verified' && <span className="listing-verify-chip">실매물 확인</span>}
+                    <strong>매매 {formatEok(listing.priceEok)}</strong>
+                    <em>
+                      {formatListingArea(listing)}, {listing.buildingDong || '-'}동 {formatListingFloor(listing.floor)}
+                    </em>
+                    <p>{summarizeListingMemo(listing)}</p>
+                    <small>{listing.aptName}</small>
+                  </div>
+                  <figure className="listing-feed-thumb">
+                    {photo ? <img src={photo} alt={`${listing.aptName} 매물 사진`} loading="lazy" /> : <Camera size={24} />}
+                  </figure>
+                </button>
               )
             })}
           </div>
         ) : (
-          <div className="listing-market-empty">
+          <div className="listing-market-empty listing-feed-empty">
             <strong>아직 공개된 직거래 매물이 없습니다</strong>
-            <span>첫 매물을 등록하면 실소유자 확인 후 지도에 노란 매물 박스로 노출됩니다.</span>
+            <span>첫 매물을 등록하면 실소유자 확인 후 지도와 매물 목록에 함께 노출됩니다.</span>
             <button className="secondary-action" type="button" onClick={onRegister}>
               첫 매물 등록하기
               <Plus size={16} />
@@ -9752,60 +9859,22 @@ function DirectListingsView({
         )}
       </section>
 
-      <section className="listing-market-section wanted-market-section" aria-label="매물 원해요">
-        <div className="detail-section-head listing-market-head">
-          <span>
-            <Search size={15} />
-            매물 원해요
-          </span>
+      {wantedListings.length > 0 && (
+        <section className="listing-wanted-strip" aria-label="매수 희망 등록">
           <div>
-            <em>{wantedListings.length ? `${wantedListings.length}건` : '등록 가능'}</em>
-            <button className="round-add-button wanted" type="button" onClick={onRegisterWanted} aria-label="매물 원해요 등록하기">
-              <Plus size={18} />
-            </button>
+            <span>매물 원해요</span>
+            <strong>{wantedListings.length}명이 원하는 단지를 기다리는 중</strong>
           </div>
-        </div>
-
-        {wantedListings.length > 0 ? (
-          <div className="listing-market-list compact">
-            {wantedListings.map((listing) => (
-              <button className="wanted-listing" key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
-                <div>
-                  <strong>{listing.aptName}</strong>
-                  <span>
-                    {listing.address} · {listing.pyeong}평 희망 · {formatEok(listing.priceEok)} 이하
-                  </span>
-                  <em>{listing.memo || '매수 희망 조건을 등록했습니다.'}</em>
-                </div>
-                <b>원해요</b>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="listing-market-empty">
-            <strong>찾는 매물이 있다면 먼저 등록해보세요</strong>
-            <span>원하는 단지와 예산을 올리면 매도 희망자와 연결할 수 있습니다.</span>
-            <button className="secondary-action" type="button" onClick={onRegisterWanted}>
-              원하는 매물 등록하기
-              <Plus size={16} />
-            </button>
-          </div>
-        )}
-      </section>
-
-      <section className="listing-market-hero">
-        <span>집직구 안심 직거래</span>
-        <strong>매도인이 올리고, 중개사가 실소유자와 허위매물을 확인합니다</strong>
-        <p>등록 매물은 지도에 노란색 매물 박스로 표시되고, 확인 단계가 끝나면 공개 매물로 전환됩니다.</p>
-        <button className="primary-action" type="button" onClick={onRegister}>
-          매물 등록하기
-          <ChevronRight size={18} />
-        </button>
-      </section>
+          <button type="button" onClick={onRegisterWanted}>
+            등록
+            <Plus size={15} />
+          </button>
+        </section>
+      )}
 
       <MembershipSignupCard />
 
-      <section className="listing-market-section" aria-label="최근 직거래 신고 사례">
+      <section className="listing-market-section direct-deal-slim" aria-label="최근 직거래 신고 사례">
         <div className="detail-section-head">
           <span>
             <BarChart3 size={15} />
