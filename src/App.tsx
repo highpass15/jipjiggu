@@ -7025,8 +7025,7 @@ function ApartmentMap({
     userListings,
   ])
 
-  const shouldShowMapStatus =
-    !mapReady && (mapError || rtmsStatus === 'loading' || rtmsStatus === 'refreshing' || Boolean(mapMarkerNotice))
+  const shouldShowMapStatus = !mapReady && rtmsStatus === 'error' && Boolean(rtmsError)
 
   return (
     <section className="map-panel">
