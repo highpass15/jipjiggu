@@ -47,6 +47,8 @@ import {
   findListingApartmentCandidate,
   getListingComplexKey,
   listingMatchesComplexTarget,
+  mergeUserListings,
+  seedUserListings,
   summarizeListingMemo,
 } from './listings'
 import type {
@@ -3869,7 +3871,7 @@ function App() {
   const [minTradePriceEok, setMinTradePriceEok] = useState(0)
   const [maxTradePriceEok, setMaxTradePriceEok] = useState(80)
   const [aiPreferenceRanks, setAiPreferenceRanks] = useState<AiPreferenceKey[]>(['growth', 'commute', 'subway', 'pyeong'])
-  const [userListings, setUserListings] = useState<UserListing[]>([])
+  const [userListings, setUserListings] = useState<UserListing[]>(seedUserListings)
   const [listingFormIntent, setListingFormIntent] = useState<UserListing['intent']>('sell')
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [listingFocusTarget, setListingFocusTarget] = useState<ListingComplexTarget | null>(null)
@@ -3918,11 +3920,11 @@ function App() {
       .then((payload: ListingsResponse | null) => {
         if (disposed || !payload?.ok || !Array.isArray(payload.listings)) return
 
-        setUserListings(
-          payload.listings
-            .filter((listing) => listing && listing.id && listing.aptName && listing.address)
-            .slice(0, 300),
-        )
+        const remoteListings = payload.listings
+          .filter((listing) => listing && listing.id && listing.aptName && listing.address)
+          .slice(0, 300)
+
+        setUserListings(mergeUserListings(seedUserListings, remoteListings))
       })
       .catch(() => undefined)
 
@@ -4345,12 +4347,13 @@ function App() {
   )
 
   const handleSearchSuggestionClick = (suggestion: SearchSuggestion) => {
-    const liveDealForSuggestion =
-      suggestion.deal ?? findBestLiveDealForSearchTarget(suggestion.title, suggestion.apartment)
+    const liveDealForSuggestion = suggestion.apartment
+      ? null
+      : suggestion.deal ?? findBestLiveDealForSearchTarget(suggestion.title, null)
 
     blurActiveTextInput()
     setQuery(suggestion.title)
-    setFocusApartment(liveDealForSuggestion ? null : suggestion.apartment)
+    setFocusApartment(suggestion.apartment)
     setFocusLiveDeal(liveDealForSuggestion)
     setFocusListing(null)
     setFocusScrollToDetail(false)
@@ -6730,10 +6733,23 @@ function ApartmentMap({
                 normalizeSearchText(`${marker.aptName} ${marker.address}`).includes(normalizeSearchText(focusApartment.name)),
             )
           : null
-        const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? focusedApartmentMarker ?? selectedMarkerRef.current ?? markers[0]
+        const focusApartmentPosition =
+          focusApartment && Number.isFinite(focusApartment.lat) && Number.isFinite(focusApartment.lng)
+            ? new kakao.maps.LatLng(focusApartment.lat, focusApartment.lng)
+            : null
+        const primaryMarker = focusedListingMarker ?? focusedLiveMarker ?? focusedApartmentMarker
         if (primaryMarker) {
           map.setCenter(new kakao.maps.LatLng(primaryMarker.lat, primaryMarker.lng))
           map.setLevel(4)
+        } else if (focusApartmentPosition) {
+          map.setCenter(focusApartmentPosition)
+          map.setLevel(3)
+        } else {
+          const fallbackMarker = selectedMarkerRef.current ?? markers[0]
+          if (fallbackMarker) {
+            map.setCenter(new kakao.maps.LatLng(fallbackMarker.lat, fallbackMarker.lng))
+            map.setLevel(4)
+          }
         }
 
         const focusedMarker = focusedListingMarker ?? focusedLiveMarker ?? focusedApartmentMarker

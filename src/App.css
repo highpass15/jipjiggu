@@ -7101,7 +7101,7 @@ h1 {
   .mode-prices .content-panel {
     position: absolute;
     inset: 0;
-    padding: 0 0 90px;
+    padding: 0 0 calc(112px + env(safe-area-inset-bottom));
     overflow: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -7198,20 +7198,32 @@ h1 {
 
   .mode-prices .bottom-nav {
     position: fixed;
-    left: 0;
-    right: 0;
+    left: 50%;
+    right: auto;
     bottom: 0;
-    z-index: 50;
+    width: min(100vw, 430px);
+    height: calc(76px + env(safe-area-inset-bottom));
+    padding: 6px 10px max(8px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 260;
+    border-radius: 18px 18px 0 0;
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.12);
   }
 
   .mobile-stage:not(.mode-prices) .bottom-nav {
     position: fixed;
-    left: 0;
-    right: 0;
+    left: 50%;
+    right: auto;
     bottom: 0;
-    z-index: 50;
+    width: min(100vw, 430px);
+    height: calc(76px + env(safe-area-inset-bottom));
+    padding: 6px 10px max(8px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 260;
+    border-radius: 18px 18px 0 0;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 -16px 34px rgba(15, 23, 42, 0.14);
   }
 
   .topbar,
@@ -7221,7 +7233,7 @@ h1 {
   }
 
   .content-panel {
-    padding-bottom: 96px;
+    padding-bottom: calc(112px + env(safe-area-inset-bottom));
   }
 
   .bottom-nav {

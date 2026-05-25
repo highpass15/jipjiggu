@@ -79,6 +79,75 @@ export type ListingsResponse = {
   updatedAt?: string
 }
 
+export const seedUserListings: UserListing[] = [
+  {
+    id: 'seed-indegwon-central-xi-106-404',
+    intent: 'sell',
+    aptName: '인덕원센트럴자이',
+    address: '경기 의왕시 내손동',
+    lat: 37.3939,
+    lng: 126.9778,
+    detailAddress: '106동 404호',
+    buildingDong: '106',
+    unitHo: '404',
+    priceEok: 14,
+    pyeong: 34,
+    floor: 4,
+    exclusiveAreaM2: 84.98,
+    supplyAreaM2: 112,
+    rooms: 3,
+    bathrooms: 2,
+    maintenanceFeeManwon: 20,
+    loanAvailability: 'check',
+    moveInType: 'negotiable',
+    hasJeonseTenant: false,
+    ownerName: '등록자',
+    ownerPhone: '010-0000-0000',
+    ownerRelation: 'self',
+    ownerRelationDetail: '',
+    verificationMethod: 'owner-request',
+    ownerVerificationPhone: '010-0000-0000',
+    verificationRelation: '',
+    memo: '인테리어 6개월 전 약 8천만원-1억 정도 들여서 바닥, 샷시, 에어컨',
+    photos: [],
+    documents: [],
+    notificationPreferences: {
+      similarListing: true,
+      priceChange: true,
+      buyerLead: true,
+      weeklyReport: true,
+    },
+    agreements: {
+      privacy: true,
+      antiFraud: true,
+      gov24: true,
+    },
+    moveInHouseholdCheckRequested: true,
+    registryCheckRequested: true,
+    verificationStatus: 'owner-checking',
+    createdAt: '2026-05-23T00:00:00.000Z',
+  },
+]
+
+export const mergeUserListings = (...groups: UserListing[][]) => {
+  const merged = new Map<string, UserListing>()
+
+  groups.flat().forEach((listing) => {
+    if (!listing?.id || !listing.aptName || !listing.address) return
+
+    merged.set(listing.id, {
+      ...listing,
+      intent: listing.intent ?? 'sell',
+      photos: listing.photos ?? [],
+      documents: listing.documents ?? [],
+    })
+  })
+
+  return Array.from(merged.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+}
+
 export type ListingComplexGroup = {
   key: string
   aptName: string
