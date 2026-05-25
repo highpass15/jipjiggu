@@ -11,26 +11,24 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
-  ClipboardCheck,
   Eye,
   ExternalLink,
   FileText,
   Heart,
   Home,
-  Landmark,
   LineChart,
-  LockKeyhole,
   MapPin,
   MapPinned,
   MessageCircle,
-  Plus,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Star,
   TrendingUp,
+  UserRound,
   WalletCards,
+  X,
 } from 'lucide-react'
 import './App.css'
 import {
@@ -39,6 +37,33 @@ import {
   isSeoulRegionText,
 } from './finance'
 import type { CandidateMortgagePlan, FinancingPlan } from './finance'
+import {
+  formatListingArea,
+  formatListingFloor,
+  formatListingLoanAvailability,
+  formatListingMoveIn,
+  formatListingStatus,
+  formatListingVerificationBadge,
+  findListingApartmentCandidate,
+  getListingComplexKey,
+  listingMatchesComplexTarget,
+  summarizeListingMemo,
+} from './listings'
+import type {
+  ListingApartmentCandidate,
+  ListingComplexGroup,
+  ListingComplexTarget,
+  ListingDocument,
+  ListingDocumentType,
+  ListingLoanAvailability,
+  ListingMoveInType,
+  ListingNotificationPreferences,
+  ListingOwnerRelation,
+  ListingVerificationMethod,
+  ListingVerificationAgreements,
+  ListingsResponse,
+  UserListing,
+} from './listings'
 
 type Mode =
   | 'prices'
@@ -49,6 +74,7 @@ type Mode =
   | 'report'
   | 'subscription'
   | 'notifications'
+  | 'mypage'
 const appModes: Mode[] = [
   'prices',
   'ai',
@@ -58,6 +84,7 @@ const appModes: Mode[] = [
   'report',
   'subscription',
   'notifications',
+  'mypage',
 ]
 const isAppMode = (value: unknown): value is Mode => typeof value === 'string' && appModes.includes(value as Mode)
 type OfficeArea = '강남' | '여의도' | '광화문' | '판교'
@@ -251,78 +278,6 @@ type LiveDealSuggestionEntry = {
   searchText: string
 }
 
-type ListingOwnerRelation = 'self' | 'family' | 'tenant' | 'agent' | 'corporate'
-
-type ListingDocumentType = 'id' | 'delegation' | 'family' | 'lease' | 'registry' | 'corporate' | 'other'
-
-type ListingDocument = {
-  id: string
-  name: string
-  type: ListingDocumentType
-  dataUrl: string
-}
-
-type ListingNotificationPreferences = {
-  similarListing: boolean
-  priceChange: boolean
-  buyerLead: boolean
-  weeklyReport: boolean
-}
-
-type ListingVerificationAgreements = {
-  privacy: boolean
-  antiFraud: boolean
-  gov24: boolean
-}
-
-type UserListing = {
-  id: string
-  intent?: 'sell' | 'want'
-  aptName: string
-  address: string
-  detailAddress: string
-  buildingDong: string
-  unitHo: string
-  priceEok: number
-  pyeong: number
-  floor: number
-  ownerName: string
-  ownerPhone: string
-  ownerRelation: ListingOwnerRelation
-  ownerRelationDetail: string
-  memo: string
-  photos: Array<{
-    id: string
-    name: string
-    dataUrl: string
-  }>
-  documents: ListingDocument[]
-  notificationPreferences: ListingNotificationPreferences
-  agreements: ListingVerificationAgreements
-  moveInHouseholdCheckRequested: boolean
-  registryCheckRequested: boolean
-  verificationStatus: 'owner-checking' | 'verified'
-  createdAt: string
-}
-
-type ListingsResponse = {
-  ok: boolean
-  listings: UserListing[]
-  updatedAt?: string
-}
-
-type ListingComplexGroup = {
-  key: string
-  aptName: string
-  address: string
-  listings: UserListing[]
-}
-
-type ListingComplexTarget = {
-  aptName: string
-  address: string
-}
-
 type LeadPayload = Record<string, string | number | boolean | null | undefined>
 
 type AppNotification = {
@@ -333,18 +288,6 @@ type AppNotification = {
   region?: string
   createdAt: string
   read: boolean
-}
-
-type ListingApartmentCandidate = {
-  id: string
-  name: string
-  address: string
-  region: string
-  pyeong?: number
-  latestPriceEok?: number
-  latestDealDate?: string
-  source: 'rtms' | 'curated'
-  searchText: string
 }
 
 type RtmsMeta = {
@@ -862,11 +805,11 @@ const navItems: Array<{
   label: string
   icon: typeof BarChart3
 }> = [
+  { id: 'listing', label: '직거래', icon: ShieldCheck },
   { id: 'prices', label: '지도', icon: MapPinned },
   { id: 'ai', label: 'AI추천', icon: Sparkles },
-  { id: 'listing', label: '직거래', icon: ShieldCheck },
-  { id: 'report', label: '리포트', icon: FileText },
   { id: 'subscription', label: '청약', icon: CalendarDays },
+  { id: 'mypage', label: '마이페이지', icon: UserRound },
 ]
 
 const seoulReportRegionOptions = [
@@ -1298,52 +1241,6 @@ const formatMarkerPrice = (marker: MapValueMarker) =>
 const hasDisplayableMarkerPrice = (marker: MapValueMarker) => formatMarkerPrice(marker).length > 0
 const formatManwon = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}만원`
 const formatRate = (value: number) => `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`
-const formatListingStatus = (status: UserListing['verificationStatus']) =>
-  status === 'verified' ? '실소유자 확인 완료' : '실소유자 검증 대기'
-const getListingComplexKey = (listing: UserListing) =>
-  normalizeSearchText(`${listing.aptName}-${listing.address}`).slice(0, 120)
-const getListingNameKey = (value: string) =>
-  normalizeSearchText(value)
-    .replace(/아파트$/g, '')
-    .replace(/단지$/g, '')
-    .replace(/[()（）]/g, '')
-const listingMatchesComplexTarget = (listing: UserListing, target: ListingComplexTarget) => {
-  const listingName = getListingNameKey(listing.aptName)
-  const targetName = getListingNameKey(target.aptName)
-  const listingAddress = normalizeSearchText(listing.address)
-  const targetAddress = normalizeSearchText(target.address)
-
-  const nameMatches =
-    listingName.length > 0 &&
-    targetName.length > 0 &&
-    (listingName === targetName || listingName.includes(targetName) || targetName.includes(listingName))
-  const addressMatches =
-    listingAddress.length > 0 &&
-    targetAddress.length > 0 &&
-    (listingAddress.includes(targetAddress) || targetAddress.includes(listingAddress))
-
-  return nameMatches || addressMatches
-}
-const formatListingArea = (listing: UserListing) => `${listing.pyeong}평 / ${Math.round(listing.pyeong * 3.3058)}m²`
-const formatListingFloor = (floor: number) => {
-  if (!Number.isFinite(floor) || floor <= 0) return '층 확인'
-  if (floor <= 3) return `${floor}층 · 저층`
-  if (floor >= 20) return `${floor}층 · 고층`
-  return `${floor}층`
-}
-const summarizeListingMemo = (listing: UserListing) => {
-  const memo = listing.memo.trim()
-  if (memo) {
-    return memo
-      .split(/[,·\n]/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(', ')
-  }
-
-  return listing.intent === 'want' ? '매수 희망 조건 등록' : '입주협의, 실소유자 확인중'
-}
 const getDefaultRtmsDealYmd = () => {
   const date = new Date()
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -3949,7 +3846,7 @@ const passesMapFilters = (deal: LiveRtmsDeal, filters: MapFilterState) => {
 }
 
 function App() {
-  const [mode, setMode] = useState<Mode>('prices')
+  const [mode, setMode] = useState<Mode>('listing')
   const [priceHeaderMinimized, setPriceHeaderMinimized] = useState(false)
   const [activeReportRegion, setActiveReportRegion] = useState(weeklyReportRegionOptions[0])
   const [query, setQuery] = useState('')
@@ -3976,6 +3873,22 @@ function App() {
   const [listingFormIntent, setListingFormIntent] = useState<UserListing['intent']>('sell')
   const [focusListing, setFocusListing] = useState<UserListing | null>(null)
   const [listingFocusTarget, setListingFocusTarget] = useState<ListingComplexTarget | null>(null)
+  const [memberSignedUp, setMemberSignedUp] = useState(() => {
+    try {
+      return window.localStorage.getItem('jipjiggu-member-signed-up') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [pendingListingIntent, setPendingListingIntent] = useState<UserListing['intent'] | null>(null)
+  const [favoriteListingIds, setFavoriteListingIds] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('jipjiggu-favorite-listings') ?? '[]') as unknown
+      return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []
+    } catch {
+      return []
+    }
+  })
   const [capitalLiveDeals, setCapitalLiveDeals] = useState<LiveRtmsDeal[]>([])
   const [focusLiveDeal, setFocusLiveDeal] = useState<LiveRtmsDeal | null>(null)
   const [appToast, setAppToast] = useState('')
@@ -4064,8 +3977,8 @@ function App() {
   const handleHomeClick = useCallback(() => {
     setPriceHeaderMinimized(false)
 
-    if (mode !== 'prices') {
-      setMode('prices')
+    if (mode !== 'listing') {
+      setMode('listing')
     }
 
     window.setTimeout(() => {
@@ -4108,9 +4021,36 @@ function App() {
   }, [mode])
 
   const handleOpenListingRegistration = useCallback((intent: UserListing['intent'] = 'sell') => {
+    if (!memberSignedUp) {
+      setPendingListingIntent(intent)
+      setMode('mypage')
+      setAppToast('회원가입 후 매물 등록을 이어갈 수 있어요.')
+      return
+    }
+
     setListingFormIntent(intent)
     setListingFocusTarget(null)
     setMode('directListings')
+  }, [memberSignedUp])
+
+  const handleSignupComplete = useCallback(() => {
+    setMemberSignedUp(true)
+    setAppToast('회원가입이 완료됐습니다.')
+
+    if (pendingListingIntent) {
+      setListingFormIntent(pendingListingIntent)
+      setPendingListingIntent(null)
+      setListingFocusTarget(null)
+      setMode('directListings')
+    }
+  }, [pendingListingIntent])
+
+  const handleToggleFavoriteListing = useCallback((listingId: string) => {
+    setFavoriteListingIds((currentIds) =>
+      currentIds.includes(listingId)
+        ? currentIds.filter((id) => id !== listingId)
+        : [listingId, ...currentIds],
+    )
   }, [])
 
   const regionApartments = useMemo(() => {
@@ -4168,6 +4108,22 @@ function App() {
     const timerId = window.setTimeout(() => setAppToast(''), 4200)
     return () => window.clearTimeout(timerId)
   }, [appToast])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('jipjiggu-member-signed-up', memberSignedUp ? '1' : '0')
+    } catch {
+      // localStorage가 막힌 브라우저에서는 이번 세션 상태만 유지합니다.
+    }
+  }, [memberSignedUp])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('jipjiggu-favorite-listings', JSON.stringify(favoriteListingIds))
+    } catch {
+      // localStorage가 막힌 브라우저에서는 이번 세션 상태만 유지합니다.
+    }
+  }, [favoriteListingIds])
 
   useEffect(() => {
     window.localStorage.setItem('jipjiggu-app-notifications', JSON.stringify(appNotifications.slice(0, 30)))
@@ -4255,6 +4211,8 @@ function App() {
         id: `rtms-${deal.aptSeq || deal.id}`,
         name: deal.aptName,
         address: deal.address,
+        lat: deal.lat,
+        lng: deal.lng,
         region: `${deal.district} ${deal.legalDong}`.trim(),
         pyeong: Math.round(deal.pyeong),
         latestPriceEok: deal.priceEok,
@@ -4272,6 +4230,8 @@ function App() {
         id: `curated-${apartment.name}`,
         name: apartment.name,
         address: apartment.region,
+        lat: apartment.lat,
+        lng: apartment.lng,
         region: apartment.region,
         pyeong: Number.parseInt(apartment.pyeong, 10),
         latestPriceEok: apartment.priceEok,
@@ -4421,11 +4381,26 @@ function App() {
   }
 
   const handleListingCreate = (listing: UserListing) => {
-    const normalizedListing = {
+    const matchedApartment = findListingApartmentCandidate(listing.aptName, listing.address, listingApartmentCandidates)
+    const matchedCoordinate =
+      typeof matchedApartment?.lat === 'number' && typeof matchedApartment.lng === 'number'
+        ? { lat: matchedApartment.lat, lng: matchedApartment.lng }
+        : null
+    const listingCoordinate =
+      typeof listing.lat === 'number' && typeof listing.lng === 'number'
+        ? { lat: listing.lat, lng: listing.lng }
+        : null
+
+    const normalizedListing: UserListing = {
       ...listing,
+      intent: 'sell',
+      aptName: matchedApartment?.name ?? listing.aptName.trim(),
+      address: matchedApartment?.address ?? listing.address.trim(),
+      lat: matchedCoordinate?.lat ?? listingCoordinate?.lat,
+      lng: matchedCoordinate?.lng ?? listingCoordinate?.lng,
       id: listing.id || `${Date.now()}`,
       createdAt: listing.createdAt || new Date().toISOString(),
-      photos: listing.photos.slice(0, 5),
+      photos: (listing.photos ?? []).slice(0, 5),
     }
 
     setUserListings((currentListings) => [
@@ -4438,25 +4413,21 @@ function App() {
     setFocusScrollToDetail(true)
     setFocusRequestId((requestId) => requestId + 1)
     setMode('prices')
-    setAppToast(
-      listing.intent === 'want'
-        ? '매물 원해요 등록 완료. 직거래 화면에서 함께 볼 수 있습니다.'
-        : '매물 등록 접수 완료. 지도에 노란 매물 박스로 반영했습니다.',
-    )
+    setAppToast('매물 등록 접수 완료. 실제 단지 위치에 매물 박스로 반영했습니다.')
     void fetch('/api/listings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ listing: normalizedListing }),
     }).catch(() => undefined)
-    void sendTelegramLead(normalizedListing.intent === 'want' ? '매수 희망 등록' : 'listing', {
-      유형: normalizedListing.intent === 'want' ? '매물 원해요' : '매도 매물',
+    void sendTelegramLead('listing', {
+      유형: '매도 매물',
       아파트: normalizedListing.aptName,
       주소: normalizedListing.address,
       동호수: normalizedListing.detailAddress,
       희망가: formatEok(normalizedListing.priceEok),
       평형: `${normalizedListing.pyeong}평`,
       층: `${normalizedListing.floor}층`,
-      소유자: normalizedListing.intent === 'want' ? '매수희망자' : normalizedListing.ownerName || '미입력',
+      소유자: normalizedListing.ownerName || '미입력',
       연락처: normalizedListing.ownerPhone || '미입력',
       사진수: `${normalizedListing.photos.length}장`,
       실소유자관계: normalizedListing.ownerRelationDetail || normalizedListing.ownerRelation,
@@ -4679,6 +4650,7 @@ function App() {
               focusRequestId={focusRequestId}
               focusScrollToDetail={focusScrollToDetail}
               userListings={userListings}
+              listingApartmentCandidates={listingApartmentCandidates}
               focusListing={focusListing}
               focusLiveDeal={focusLiveDeal}
               onLiveDealsChange={mergeCapitalLiveDeals}
@@ -4751,10 +4723,10 @@ function App() {
           {mode === 'listing' && (
             <DirectListingsView
               userListings={userListings}
-              liveDeals={capitalLiveDeals}
               initialComplexTarget={listingFocusTarget}
+              favoriteListingIds={favoriteListingIds}
               onRegister={() => handleOpenListingRegistration('sell')}
-              onRegisterWanted={() => handleOpenListingRegistration('want')}
+              onToggleFavoriteListing={handleToggleFavoriteListing}
               onOpenListing={(listing) => {
                 setFocusListing(listing)
                 setFocusApartment(null)
@@ -4763,15 +4735,6 @@ function App() {
                 setFocusRequestId((requestId) => requestId + 1)
                 setMode('prices')
                 setAppToast(`${listing.aptName} 직거래 매물을 지도에서 열었습니다.`)
-              }}
-              onOpenDeal={(deal) => {
-                setFocusLiveDeal(deal)
-                setFocusApartment(null)
-                setFocusListing(null)
-                setFocusScrollToDetail(true)
-                setFocusRequestId((requestId) => requestId + 1)
-                setMode('prices')
-                setAppToast(`${deal.aptName} 직거래 신고 사례를 열었습니다.`)
               }}
             />
           )}
@@ -4782,8 +4745,19 @@ function App() {
               setSalePrice={setSalePrice}
               brokerage={brokerage}
               listingCandidates={listingApartmentCandidates}
+              userListings={userListings}
               initialIntent={listingFormIntent}
               onCreateListing={handleListingCreate}
+            />
+          )}
+
+          {mode === 'mypage' && (
+            <MyPageView
+              favoriteCount={favoriteListingIds.length}
+              isMemberSignedUp={memberSignedUp}
+              onSignupComplete={handleSignupComplete}
+              onOpenReport={() => setMode('report')}
+              onOpenListingRegistration={() => handleOpenListingRegistration('sell')}
             />
           )}
 
@@ -4862,6 +4836,7 @@ function PriceView({
   focusRequestId,
   focusScrollToDetail,
   userListings,
+  listingApartmentCandidates,
   focusListing,
   focusLiveDeal,
   onLiveDealsChange,
@@ -4875,6 +4850,7 @@ function PriceView({
   focusRequestId: number
   focusScrollToDetail: boolean
   userListings: UserListing[]
+  listingApartmentCandidates: ListingApartmentCandidate[]
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
   onLiveDealsChange: (deals: LiveRtmsDeal[]) => void
@@ -5229,6 +5205,7 @@ function PriceView({
               latestApartmentDeals={mapLatestApartmentDeals}
               activeFilterCount={activeFilterCount}
               userListings={userListings}
+              listingApartmentCandidates={listingApartmentCandidates}
               focusApartment={focusApartment}
               focusListing={focusListing}
               focusLiveDeal={focusLiveDeal?.lat && focusLiveDeal.lng ? null : focusLiveDeal}
@@ -6243,45 +6220,162 @@ const geocodeDealMarkers = async (
   return markers
 }
 
+const pickListingPlaceResult = (listing: UserListing, results: KakaoPlaceResult[]) => {
+  const listingName = normalizeSearchText(listing.aptName)
+  const listingAddress = normalizeSearchText(listing.address)
+
+  return (
+    results.find((result) => {
+      const placeText = normalizeSearchText(
+        `${result.place_name} ${result.address_name} ${result.road_address_name ?? ''}`,
+      )
+      return placeText.includes(listingName) && (!listingAddress || placeText.includes(listingAddress))
+    }) ??
+    results.find((result) => normalizeSearchText(result.place_name).includes(listingName)) ??
+    results[0] ??
+    null
+  )
+}
+
+const searchListingPlace = (
+  places: KakaoPlaces,
+  statusOk: string,
+  listing: UserListing,
+  keyword: string,
+) =>
+  new Promise<KakaoPlaceResult | null>((resolve) => {
+    places.keywordSearch(
+      keyword,
+      (result, status) => {
+        resolve(status === statusOk ? pickListingPlaceResult(listing, result) : null)
+      },
+      { size: 5 },
+    )
+  })
+
+const searchListingAddress = (geocoder: KakaoGeocoder, statusOk: string, address: string) =>
+  new Promise<KakaoGeocoderResult | null>((resolve) => {
+    geocoder.addressSearch(address, (result, status) => {
+      resolve(status === statusOk ? (result[0] ?? null) : null)
+    })
+  })
+
+const getKnownListingCoordinate = (item?: { lat?: number; lng?: number } | null) => {
+  const lat = item?.lat
+  const lng = item?.lng
+  if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return {
+    lat,
+    lng,
+  }
+}
+
+const resolveListingMarkerPosition = async (
+  kakao: KakaoNamespace,
+  geocoder: KakaoGeocoder,
+  listing: UserListing,
+  listingApartmentCandidates: ListingApartmentCandidate[],
+): Promise<{ lat: number; lng: number; address: string; aptName: string } | null> => {
+  const services = kakao.maps.services
+  const statusOk = services?.Status.OK ?? ''
+  const places = services?.Places ? new services.Places() : null
+  const matchedApartment = findListingApartmentCandidate(listing.aptName, listing.address, listingApartmentCandidates)
+  const aptName = matchedApartment?.name ?? listing.aptName
+  const address = matchedApartment?.address ?? listing.address
+  const knownCoordinate = getKnownListingCoordinate(matchedApartment) ?? getKnownListingCoordinate(listing)
+
+  if (knownCoordinate) {
+    return {
+      ...knownCoordinate,
+      address,
+      aptName,
+    }
+  }
+
+  const lookupListing = {
+    ...listing,
+    aptName,
+    address,
+  }
+  const keywordQueries = Array.from(
+    new Set(
+      [
+        `${aptName} ${address}`.trim(),
+        `${address} ${aptName}`.trim(),
+        `${listing.aptName} ${listing.address}`.trim(),
+        aptName.trim(),
+        listing.aptName.trim(),
+      ].filter((query) => query.length > 1),
+    ),
+  )
+
+  if (places) {
+    for (const query of keywordQueries) {
+      const place = await searchListingPlace(places, statusOk, lookupListing, query)
+      if (place) {
+        return {
+          lat: Number(place.y),
+          lng: Number(place.x),
+          address: place.road_address_name || place.address_name || address,
+          aptName,
+        }
+      }
+    }
+  }
+
+  const addressQueries = Array.from(new Set([address, listing.address].filter(Boolean)))
+
+  for (const addressQuery of addressQueries) {
+    const addressResult = await searchListingAddress(geocoder, statusOk, addressQuery)
+    if (!addressResult) continue
+
+    return {
+      lat: Number(addressResult.y),
+      lng: Number(addressResult.x),
+      address: addressQuery,
+      aptName,
+    }
+  }
+
+  return null
+}
+
 const geocodeListingMarkers = async (
   kakao: KakaoNamespace,
   listings: UserListing[],
+  listingApartmentCandidates: ListingApartmentCandidate[],
 ): Promise<MapValueMarker[]> => {
-  if (!kakao.maps.services || listings.length === 0) {
+  const visibleListings = listings.filter((listing) => (listing.intent ?? 'sell') === 'sell')
+
+  if (!kakao.maps.services || visibleListings.length === 0) {
     return []
   }
 
   const geocoder = new kakao.maps.services.Geocoder()
-  const statusOk = kakao.maps.services.Status.OK
   const markers = await Promise.all(
-    listings.map(
-      (listing) =>
-        new Promise<MapValueMarker | null>((resolve) => {
-          geocoder.addressSearch(listing.address, (result, status) => {
-            if (status !== statusOk || !result[0]) {
-              resolve(null)
-              return
-            }
+    visibleListings.map(async (listing): Promise<MapValueMarker | null> => {
+      const position = await resolveListingMarkerPosition(kakao, geocoder, listing, listingApartmentCandidates)
+      if (!position) return null
 
-            resolve({
-              id: `listing-${listing.id}`,
-              label: listing.intent === 'want' ? '원해요' : '매물',
-              aptName: listing.aptName,
-              address: listing.address,
-            tradeTypeLabel: listing.intent === 'want' ? '매수 희망' : formatListingStatus(listing.verificationStatus),
-            priceEok: listing.priceEok,
-            hasPrice: true,
-            dateLabel: listing.intent === 'want' ? '희망' : '매물',
-            subLabel: listing.intent === 'want' ? `${listing.pyeong}평 희망` : `${listing.pyeong}평`,
-            lat: Number(result[0].y),
-            lng: Number(result[0].x),
-              tone: 'listing',
-              relatedDeals: [],
-              listing,
-            })
-          })
-        }),
-    ),
+      const marker: MapValueMarker = {
+        id: `listing-${listing.id}`,
+        label: '매물',
+        aptName: position.aptName || listing.aptName,
+        address: position.address,
+        tradeTypeLabel: formatListingVerificationBadge(listing.verificationStatus),
+        priceEok: listing.priceEok,
+        hasPrice: true,
+        dateLabel: '매물',
+        subLabel: `${listing.pyeong}평`,
+        lat: position.lat,
+        lng: position.lng,
+        tone: 'listing' as const,
+        relatedDeals: [],
+        listing,
+      }
+
+      return marker
+    }),
   )
 
   return markers.filter((marker): marker is MapValueMarker => Boolean(marker))
@@ -6475,6 +6569,7 @@ function ApartmentMap({
   latestApartmentDeals,
   activeFilterCount,
   userListings,
+  listingApartmentCandidates,
   focusApartment,
   focusListing,
   focusLiveDeal,
@@ -6496,6 +6591,7 @@ function ApartmentMap({
   latestApartmentDeals: Record<string, LiveRtmsDeal>
   activeFilterCount: number
   userListings: UserListing[]
+  listingApartmentCandidates: ListingApartmentCandidate[]
   focusApartment: Apartment | null
   focusListing: UserListing | null
   focusLiveDeal: LiveRtmsDeal | null
@@ -6555,7 +6651,7 @@ function ApartmentMap({
         const [baseLiveMarkers, focusedDealMarkers, listingMarkers] = await Promise.all([
           serverMarkers.length > 0 ? Promise.resolve(serverMarkers) : geocodeDealMarkers(kakao, fallbackLiveDeals),
           focusLiveDeal ? geocodeDealMarkers(kakao, [focusLiveDeal]) : Promise.resolve([]),
-          geocodeListingMarkers(kakao, userListings),
+          geocodeListingMarkers(kakao, userListings, listingApartmentCandidates),
         ])
         if (disposed) return
 
@@ -6851,12 +6947,13 @@ function ApartmentMap({
     focusScrollToDetail,
     kakaoKey,
     latestApartmentDeals,
+    listingApartmentCandidates,
     onSelectMarker,
     serverMarkers,
     userListings,
   ])
 
-  const shouldShowMapStatus = !mapReady && rtmsStatus === 'error' && Boolean(rtmsError)
+  const shouldShowMapStatus = !mapReady && !mapError && rtmsStatus === 'error' && Boolean(rtmsError)
 
   return (
     <section className="map-panel">
@@ -6918,6 +7015,8 @@ function MapDataStatus({
   mapError: boolean
   notice: string
 }) {
+  if (mapError) return null
+
   return (
     <div className="map-data-status" aria-live="polite">
       <div className="map-river" />
@@ -6929,20 +7028,16 @@ function MapDataStatus({
       <div className="map-data-message">
         <Building2 size={22} />
         <strong>
-          {mapError
-            ? 'Kakao 지도 연결 확인 중'
-            : notice
+          {notice
               ? '지도 좌표 캐시 준비 필요'
-            : status === 'loading'
+              : status === 'loading'
               ? '서울·경기·인천 실거래 API 불러오는 중'
               : status === 'refreshing'
                 ? '서울·경기·인천 실거래 캐시 갱신 중'
                 : '표시할 실제 실거래가 없습니다'}
         </strong>
         <p>
-          {mapError
-            ? '지도를 준비하는 동안 실거래 캐시를 먼저 불러오고 있습니다. 잠시 후 자동으로 다시 표시됩니다.'
-            : notice
+          {notice
               ? notice
             : status === 'error'
             ? error || '공공데이터포털 응답을 다시 확인하고 있습니다.'
@@ -7275,31 +7370,94 @@ function RoadviewPanel({ marker }: { marker: MapValueMarker }) {
   )
 }
 
+type ListingPhotoItem = UserListing['photos'][number]
+
+const isDisplayableListingPhotoSrc = (value?: string) => {
+  const src = value?.trim()
+  return Boolean(src && /^(data:image\/|blob:|https?:\/\/|\/)/i.test(src))
+}
+
+const createListingPlaceholderPhoto = (listing: Pick<UserListing, 'id' | 'aptName'>): ListingPhotoItem => {
+  const safePhotoLabel = (listing.aptName || '집직구').replace(/[<>&]/g, '')
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ecfffb"/>
+          <stop offset="1" stop-color="#bff6ea"/>
+        </linearGradient>
+      </defs>
+      <rect width="900" height="700" rx="52" fill="url(#bg)"/>
+      <rect x="92" y="112" width="716" height="438" rx="42" fill="#ffffff" opacity="0.84"/>
+      <path d="M232 428V286l218-158 218 158v142" fill="none" stroke="#0aa894" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M334 430V326h232v104" fill="none" stroke="#06332f" stroke-width="28" stroke-linecap="round"/>
+      <text x="450" y="592" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="800" fill="#06332f">${safePhotoLabel}</text>
+      <text x="450" y="640" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0aa894">매물 사진 준비중</text>
+    </svg>
+  `
+
+  return {
+    id: `${listing.id}-placeholder`,
+    name: `${safePhotoLabel} 매물 사진`,
+    dataUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+  }
+}
+
+const getListingPhotoSrc = (photo?: ListingPhotoItem | null) => {
+  if (!photo) return ''
+
+  const candidates = [
+    photo.dataUrl,
+    (photo as ListingPhotoItem & { url?: string }).url,
+    (photo as ListingPhotoItem & { src?: string }).src,
+    (photo as ListingPhotoItem & { previewUrl?: string }).previewUrl,
+  ]
+
+  return candidates.map((value) => value?.trim() ?? '').find(isDisplayableListingPhotoSrc) ?? ''
+}
+
+const handleListingImageError = (event: { currentTarget: HTMLImageElement }, fallbackSrc: string) => {
+  const image = event.currentTarget
+  if (image.src !== fallbackSrc) image.src = fallbackSrc
+}
+
 function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
   const listing = marker.listing
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0)
 
   if (!listing) return null
+
+  const placeholderPhoto = createListingPlaceholderPhoto(listing)
+  const uploadedPhotos = (listing.photos ?? []).filter((photo) => getListingPhotoSrc(photo))
+  const listingPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : [placeholderPhoto]
+  const getPhotoSource = (photo?: ListingPhotoItem | null) => getListingPhotoSrc(photo) || placeholderPhoto.dataUrl
+  const isVerified = listing.verificationStatus === 'verified'
+  const openGallery = (index: number) => {
+    setActivePhotoIndex(index)
+    setGalleryOpen(true)
+  }
 
   return (
     <section className="detail-section listing-detail-card" aria-label={`${marker.aptName} 등록 매물 정보`}>
       <div className="detail-section-head">
         <span>
           <ShieldCheck size={15} />
-          {listing.intent === 'want' ? '매물 원해요' : '안심 직거래 매물'}
+          직거래 매물
         </span>
-        <em>{listing.intent === 'want' ? '매수 희망' : formatListingStatus(listing.verificationStatus)}</em>
+        <em className={`listing-verification-pill ${isVerified ? 'verified' : 'pending'}`}>
+          {formatListingVerificationBadge(listing.verificationStatus)}
+        </em>
       </div>
 
       <div className="listing-detail-price">
         <div>
-          <span>{listing.intent === 'want' ? '희망 예산' : '희망가'}</span>
+          <span>희망가</span>
           <strong>{formatEok(listing.priceEok)}</strong>
         </div>
         <div>
-          <span>{listing.intent === 'want' ? '희망 평형' : '평형·층'}</span>
-          <strong>
-            {listing.intent === 'want' ? `${listing.pyeong}평` : `${listing.pyeong}평 · ${listing.floor}층`}
-          </strong>
+          <span>평형·층</span>
+          <strong>{listing.pyeong}평 · {listing.floor}층</strong>
         </div>
       </div>
 
@@ -7307,46 +7465,75 @@ function ListingMediaPanel({ marker }: { marker: MapValueMarker }) {
         {listing.address} · {listing.detailAddress}
       </p>
       <p className="listing-detail-memo">
-        {listing.memo ||
-          (listing.intent === 'want'
-            ? '매수 희망자가 원하는 조건을 등록했습니다.'
-            : '매도인이 사진과 설명을 등록한 직거래 매물입니다.')}
+        {listing.memo || '매도인이 사진과 설명을 등록한 직거래 매물입니다.'}
       </p>
 
-      {listing.intent !== 'want' && listing.photos.length > 0 ? (
+      <div className="listing-detail-specs" aria-label="매물 주요 정보">
+        <span>{listing.maintenanceFeeManwon ? `관리비 ${listing.maintenanceFeeManwon}만원` : '관리비 확인'}</span>
+        <span>{listing.rooms && listing.bathrooms ? `방 ${listing.rooms} · 욕실 ${listing.bathrooms}` : '구조 확인'}</span>
+        <span>{formatListingMoveIn(listing)}</span>
+        <span>{formatListingLoanAvailability(listing.loanAvailability)}</span>
+      </div>
+
+      {listingPhotos.length > 0 ? (
         <div className="listing-detail-photos" aria-label="매물 사진">
-          {listing.photos.map((photo) => (
-            <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
+          {listingPhotos.map((photo, index) => (
+            <button
+              className="listing-photo-button"
+              key={photo.id}
+              type="button"
+              onClick={() => openGallery(index)}
+            >
+              <img
+                src={getPhotoSource(photo)}
+                alt={photo.name || `${listing.aptName} 매물 사진 ${index + 1}`}
+                onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+              />
+              {index === 0 && <span>{listingPhotos.length}장 전체보기</span>}
+            </button>
           ))}
         </div>
-      ) : listing.intent !== 'want' ? (
+      ) : (
         <div className="listing-photo-empty">
           <Camera size={18} />
           <span>사진 등록 대기</span>
         </div>
-      ) : null}
+      )}
 
-      <div className="owner-check-card">
-        <strong>{listing.intent === 'want' ? '매수 희망 확인 단계' : '실소유자 확인 단계'}</strong>
-        <p>
-          {listing.intent === 'want'
-            ? '연락처와 희망 조건을 확인한 뒤 매도 희망자에게 연결합니다.'
-            : '등기부상 소유자, 연락처, 허위매물 여부를 중개사가 확인한 뒤 공개 상태로 전환합니다.'}
-        </p>
-        {listing.intent !== 'want' && (
-          <div className="owner-check-tags">
-            <span>{listing.ownerRelation === 'self' ? '본인 소유' : listing.ownerRelationDetail || '대리 등록 확인'}</span>
-            {listing.registryCheckRequested && <span>등기부 확인 요청</span>}
-            {listing.moveInHouseholdCheckRequested && <span>전입세대 열람 요청</span>}
-            {listing.documents.length > 0 && <span>증빙 {listing.documents.length}건 접수</span>}
+      {galleryOpen && listingPhotos.length > 0 && (
+        <div className="listing-photo-gallery-overlay" role="dialog" aria-label="매물 사진 전체보기">
+          <div className="listing-gallery-toolbar">
+            <button type="button" onClick={() => setGalleryOpen(false)} aria-label="사진 닫기">
+              <X size={22} />
+            </button>
+            <span>
+              {activePhotoIndex + 1} / {listingPhotos.length} 전체보기
+            </span>
           </div>
-        )}
-        <div className="owner-check-tags muted">
-          {listing.notificationPreferences.buyerLead && <span>문의 알림</span>}
-          {listing.notificationPreferences.similarListing && <span>유사 매물 알림</span>}
-          {listing.notificationPreferences.priceChange && <span>가격 변화 알림</span>}
+          <img
+            className="listing-gallery-main"
+            src={getPhotoSource(listingPhotos[activePhotoIndex])}
+            alt={listingPhotos[activePhotoIndex]?.name || `${listing.aptName} 매물 사진`}
+            onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+          />
+          <div className="listing-gallery-strip" aria-label="사진 목록">
+            {listingPhotos.map((photo, index) => (
+              <button
+                className={index === activePhotoIndex ? 'active' : ''}
+                key={photo.id}
+                type="button"
+                onClick={() => setActivePhotoIndex(index)}
+              >
+                <img
+                  src={getPhotoSource(photo)}
+                  alt={photo.name || `${listing.aptName} 사진 ${index + 1}`}
+                  onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+                />
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   )
 }
@@ -8003,6 +8190,7 @@ function AiView({
   const [workplaceMessage, setWorkplaceMessage] = useState('')
   const [workplaceSuggestions, setWorkplaceSuggestions] = useState<WorkplaceAddressSuggestion[]>([])
   const [workplaceSuggestionOpen, setWorkplaceSuggestionOpen] = useState(false)
+  const [showFirstHomeInfo, setShowFirstHomeInfo] = useState(false)
   const searchResults = useMemo(() => (hasSearched ? apartments.slice(0, 5) : []), [apartments, hasSearched])
   const rankedPreferences = uniqueAiPreferenceRanks(aiPreferenceRanks)
 
@@ -8157,17 +8345,29 @@ function AiView({
         <EokNumberField label="가용자산" valueManwon={assets} onChangeManwon={setAssets} />
         <NumberField label="기존부채" value={debt} unit="만원" onChange={setDebt} />
       </div>
-      <label className="first-home-toggle">
-        <input
-          type="checkbox"
-          checked={isFirstTimeHomeBuyer}
-          onChange={(event) => setIsFirstTimeHomeBuyer(event.target.checked)}
-        />
-        <span>
+      <div className="first-home-toggle compact">
+        <label>
+          <input
+            type="checkbox"
+            checked={isFirstTimeHomeBuyer}
+            onChange={(event) => setIsFirstTimeHomeBuyer(event.target.checked)}
+          />
           <strong>생애최초 주택구입</strong>
-          <em>체크 시 수도권 LTV 70%와 융자상한 6억/4억/2억을 우선 적용해 가용 대출을 계산합니다.</em>
-        </span>
-      </label>
+        </label>
+        <button
+          className="help-dot"
+          type="button"
+          aria-label="생애최초 주택구입 안내"
+          onClick={() => setShowFirstHomeInfo((open) => !open)}
+        >
+          ?
+        </button>
+      </div>
+      {showFirstHomeInfo && (
+        <div className="first-home-info">
+          수도권 생애최초는 LTV 70%를 우선 적용하고, 주택가격에 따라 대출 상한을 함께 계산합니다.
+        </div>
+      )}
 
       <section className="preference-panel" aria-label="아파트 추천 선호 조건">
         <div className="preference-head">
@@ -8504,6 +8704,7 @@ function ListingView({
   setSalePrice,
   brokerage,
   listingCandidates,
+  userListings,
   initialIntent,
   onCreateListing,
 }: {
@@ -8511,28 +8712,71 @@ function ListingView({
   setSalePrice: (value: number) => void
   brokerage: { legalCapBothSides: number; jipjigguFee: number; savings: number }
   listingCandidates: ListingApartmentCandidate[]
+  userListings: UserListing[]
   initialIntent?: UserListing['intent']
   onCreateListing: (listing: UserListing) => void
 }) {
-  const [registrationOpen, setRegistrationOpen] = useState(false)
-  const [listingIntent, setListingIntent] = useState<UserListing['intent']>(initialIntent ?? 'sell')
-  const [aptName, setAptName] = useState('센트럴파크푸르지오써밋')
-  const [address, setAddress] = useState('경기 과천시 부림동 96')
+  return (
+    <CompactListingView
+      salePrice={salePrice}
+      setSalePrice={setSalePrice}
+      brokerage={brokerage}
+      listingCandidates={listingCandidates}
+      userListings={userListings}
+      initialIntent={initialIntent}
+      onCreateListing={onCreateListing}
+    />
+  )
+}
+
+function CompactListingView({
+  salePrice,
+  setSalePrice,
+  brokerage,
+  listingCandidates,
+  userListings,
+  initialIntent,
+  onCreateListing,
+}: {
+  salePrice: number
+  setSalePrice: (value: number) => void
+  brokerage: { legalCapBothSides: number; jipjigguFee: number; savings: number }
+  listingCandidates: ListingApartmentCandidate[]
+  userListings: UserListing[]
+  initialIntent?: UserListing['intent']
+  onCreateListing: (listing: UserListing) => void
+}) {
+  const [registrationOpen, setRegistrationOpen] = useState(true)
+  const [listingStep, setListingStep] = useState(0)
+  const [listingIntent, setListingIntent] = useState<UserListing['intent']>('sell')
+  const [aptName, setAptName] = useState('인덕원센트럴자이')
+  const [address, setAddress] = useState('경기 의왕시 내손동')
   const [buildingDong, setBuildingDong] = useState('101')
   const [unitHo, setUnitHo] = useState('1103')
   const [aptSearchFocused, setAptSearchFocused] = useState(false)
   const [listingPriceEok, setListingPriceEok] = useState(salePrice)
-  const [listingPyeong, setListingPyeong] = useState(24)
-  const [listingFloor, setListingFloor] = useState(11)
+  const [listingPyeong, setListingPyeong] = useState(34)
+  const [listingFloor, setListingFloor] = useState(4)
+  const [exclusiveAreaM2, setExclusiveAreaM2] = useState(84.9)
+  const [supplyAreaM2, setSupplyAreaM2] = useState(112)
+  const [rooms, setRooms] = useState(3)
+  const [bathrooms, setBathrooms] = useState(2)
+  const [maintenanceFeeManwon, setMaintenanceFeeManwon] = useState(22)
+  const [loanAvailability, setLoanAvailability] = useState<ListingLoanAvailability>('check')
+  const [moveInType, setMoveInType] = useState<ListingMoveInType>('negotiable')
+  const [moveInDate, setMoveInDate] = useState('')
+  const [hasJeonseTenant, setHasJeonseTenant] = useState(false)
+  const [jeonseDepositEok, setJeonseDepositEok] = useState(0)
   const [ownerName, setOwnerName] = useState('')
   const [ownerPhone, setOwnerPhone] = useState('')
-  const [memo, setMemo] = useState('실거주 관리 상태 양호, 잔금일 협의 가능합니다.')
-  const [photos, setPhotos] = useState<UserListing['photos']>([])
   const [ownerRelation, setOwnerRelation] = useState<ListingOwnerRelation>('self')
   const [ownerRelationDetail, setOwnerRelationDetail] = useState('')
+  const [verificationMethod, setVerificationMethod] = useState<ListingVerificationMethod>('owner-request')
+  const [ownerVerificationPhone, setOwnerVerificationPhone] = useState('')
+  const [verificationRelation, setVerificationRelation] = useState('')
+  const [memo, setMemo] = useState('입주일 협의 가능, 실거주 관리 상태 양호합니다.')
+  const [photos, setPhotos] = useState<UserListing['photos']>([])
   const [documents, setDocuments] = useState<ListingDocument[]>([])
-  const [moveInHouseholdCheckRequested, setMoveInHouseholdCheckRequested] = useState(true)
-  const [registryCheckRequested, setRegistryCheckRequested] = useState(true)
   const [notificationPreferences, setNotificationPreferences] = useState<ListingNotificationPreferences>({
     similarListing: true,
     priceChange: true,
@@ -8544,112 +8788,104 @@ function ListingView({
     antiFraud: false,
     gov24: false,
   })
-  useEffect(() => {
-    if (!initialIntent) return
-    setListingIntent(initialIntent)
-    setRegistrationOpen(true)
-  }, [initialIntent])
+  const [moveInHouseholdCheckRequested, setMoveInHouseholdCheckRequested] = useState(true)
+  const [registryCheckRequested, setRegistryCheckRequested] = useState(true)
+  const [submittedListing, setSubmittedListing] = useState<UserListing | null>(null)
+
+  const visibleSaleListings = useMemo(() => {
+    const listingsById = new Map<string, UserListing>()
+    if (submittedListing && (submittedListing.intent ?? 'sell') === 'sell') {
+      listingsById.set(submittedListing.id, submittedListing)
+    }
+    userListings
+      .filter((listing) => (listing.intent ?? 'sell') === 'sell')
+      .forEach((listing) => listingsById.set(listing.id, listing))
+
+    return [...listingsById.values()]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 8)
+  }, [submittedListing, userListings])
 
   useEffect(() => {
-    setMemo((currentMemo) => {
-      const saleDefault = '실거주 관리 상태 양호, 잔금일 협의 가능합니다.'
-      const wantDefault = '입주 가능한 매물을 찾고 있습니다. 가격과 잔금일은 협의 가능합니다.'
-      if (listingIntent === 'want' && currentMemo === saleDefault) return wantDefault
-      if (listingIntent === 'sell' && currentMemo === wantDefault) return saleDefault
-      return currentMemo
-    })
-  }, [listingIntent])
-  const steps = [
-    { icon: LockKeyhole, title: '직접 탐색', detail: '매수인과 매도인이 매물과 조건을 직접 확인' },
-    { icon: Building2, title: '위험 확인', detail: '공인중개사가 권리관계와 거래상 위험사항 사전 점검' },
-    { icon: ClipboardCheck, title: '진위 검증', detail: '실소유자 일치 여부와 허위매물 여부 확인' },
-    { icon: Landmark, title: '계약서 작성', detail: '중개상한 20% 수수료로 공인중개사와 계약서 작성' },
-  ]
+    if (!initialIntent) return
+    setListingIntent('sell')
+    setRegistrationOpen(true)
+    setListingStep(0)
+  }, [initialIntent])
+
+  const steps = ['단지', '세부', '사진', '소개', '검토', '검증']
+  const reviewStepIndex = 4
+  const verificationStepIndex = steps.length - 1
+
+  const estimateAreas = (pyeong: number) => {
+    const supply = Math.round(pyeong * 3.3058 * 10) / 10
+    const exclusive = Math.round(supply * 0.74 * 10) / 10
+    return { supply, exclusive }
+  }
+
+  const updatePyeong = (nextPyeong: number) => {
+    setListingPyeong(nextPyeong)
+    const areas = estimateAreas(nextPyeong)
+    setSupplyAreaM2(areas.supply)
+    setExclusiveAreaM2(areas.exclusive)
+  }
+
   const apartmentSuggestions = useMemo(() => {
     const normalized = normalizeSearchText(aptName)
     if (normalized.length < 2) return []
 
-    return listingCandidates
+    const uniqueCandidates = new Map<string, ListingApartmentCandidate>()
+    listingCandidates
       .filter(
         (candidate) =>
           candidate.searchText.includes(normalized) ||
           fuzzyIncludes(candidate.searchText, normalized) ||
           normalizeSearchText(candidate.name).includes(normalized),
       )
-      .slice(0, 6)
-  }, [aptName, listingCandidates])
-  const selectedApartmentCandidate = useMemo(() => {
-    const normalized = normalizeSearchText(aptName)
-    if (normalized.length < 2) return null
+      .forEach((candidate) => {
+        const key = normalizeSearchText(`${candidate.name}-${candidate.address}`)
+        if (!uniqueCandidates.has(key)) uniqueCandidates.set(key, candidate)
+      })
 
-    const exactMatch = listingCandidates.find((candidate) => normalizeSearchText(candidate.name) === normalized)
-    return (
-      exactMatch ??
-      listingCandidates.find((candidate) => candidate.searchText.includes(normalized)) ??
-      null
-    )
+    return [...uniqueCandidates.values()].slice(0, 7)
   }, [aptName, listingCandidates])
 
-  useEffect(() => {
-    if (!selectedApartmentCandidate) return
-    if (normalizeSearchText(selectedApartmentCandidate.name) === normalizeSearchText(aptName)) {
-      setAddress(selectedApartmentCandidate.address)
-    }
-  }, [selectedApartmentCandidate])
   const normalizedBuildingDong = buildingDong.trim().replace(/동$/, '')
   const normalizedUnitHo = unitHo.trim().replace(/호$/, '')
   const detailAddress = `${normalizedBuildingDong}동 ${normalizedUnitHo}호`
-  const ownerRelationOptions: Array<{ value: ListingOwnerRelation; title: string; detail: string }> = [
-    { value: 'self', title: '본인 소유', detail: '등기부 소유자와 등록자가 같아요' },
-    { value: 'family', title: '가족 대리', detail: '가족관계·위임 확인 후 접수' },
-    { value: 'tenant', title: '세입자', detail: '임대차계약서·거주 확인 필요' },
-    { value: 'agent', title: '대리인', detail: '위임장·신분 확인 후 진행' },
-    { value: 'corporate', title: '법인', detail: '사업자등록증·재직/위임 확인' },
+
+  const ownerRelationOptions: Array<{ value: ListingOwnerRelation; title: string }> = [
+    { value: 'self', title: '본인' },
+    { value: 'tenant', title: '세입자' },
+    { value: 'family', title: '가족' },
+    { value: 'agent', title: '대리인' },
+    { value: 'corporate', title: '법인' },
+    { value: 'other', title: '기타' },
   ]
-  const listingProgressSteps = [
-    { title: '단지 선택', complete: Boolean(aptName.trim() && address.trim()) },
-    { title: listingIntent === 'want' ? '희망 조건' : '가격·조건', complete: listingPriceEok > 0 && listingPyeong > 0 },
-    { title: listingIntent === 'want' ? '연락처' : '동호수·사진', complete: listingIntent === 'want' || Boolean(normalizedBuildingDong && normalizedUnitHo) },
-    {
-      title: listingIntent === 'want' ? '알림 등록' : '소유자 확인',
-      complete:
-        Boolean(ownerName.trim() && ownerPhone.trim()) &&
-        agreements.privacy &&
-        agreements.antiFraud &&
-        (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24),
-    },
+
+  const verificationOptions: Array<{ value: ListingVerificationMethod; title: string; detail: string }> = [
+    { value: 'resident', title: '실거주 인증하기', detail: '네이버·카카오·토스' },
+    { value: 'lease', title: '임대차계약서로 인증하기', detail: '계약서 첨부' },
+    { value: 'owner-request', title: '집주인에게 인증요청하기', detail: '휴대폰 번호 입력' },
+    { value: 'other', title: '기타방법', detail: '관계와 연락처 입력' },
   ]
-  const requiresRelationProof = listingIntent === 'sell' && ownerRelation !== 'self'
-  const requiredAgreementsReady =
-    agreements.privacy && agreements.antiFraud && (listingIntent === 'want' || !moveInHouseholdCheckRequested || agreements.gov24)
-  const hasRequiredProof = !requiresRelationProof || documents.length > 0
-  const canSubmitListing = Boolean(
-    aptName.trim() &&
-      address.trim() &&
-      (listingIntent === 'want' || (normalizedBuildingDong && normalizedUnitHo)) &&
-      listingPriceEok > 0 &&
-      ownerName.trim() &&
-      ownerPhone.trim() &&
-      requiredAgreementsReady &&
-      hasRequiredProof,
-  )
 
   const handleApartmentCandidateSelect = (candidate: ListingApartmentCandidate) => {
     setAptName(candidate.name)
     setAddress(candidate.address)
-    if (candidate.pyeong) setListingPyeong(candidate.pyeong)
+    if (candidate.pyeong) updatePyeong(candidate.pyeong)
     if (candidate.latestPriceEok) {
-      setListingPriceEok(Number(candidate.latestPriceEok.toFixed(1)))
-      setSalePrice(Number(candidate.latestPriceEok.toFixed(1)))
+      const nextPrice = Number(candidate.latestPriceEok.toFixed(1))
+      setListingPriceEok(nextPrice)
+      setSalePrice(nextPrice)
     }
     setAptSearchFocused(false)
-    setAddress(candidate.address)
   }
 
   const handlePhotoChange = async (files: FileList | null) => {
     if (!files) return
 
-    const selectedFiles = Array.from(files).slice(0, 6)
+    const selectedFiles = Array.from(files).slice(0, 8)
     const previews = await Promise.all(
       selectedFiles.map(
         (file) =>
@@ -8665,7 +8901,6 @@ function ListingView({
           }),
       ),
     )
-
     setPhotos(previews)
   }
 
@@ -8689,42 +8924,72 @@ function ListingView({
           }),
       ),
     )
-
-    setDocuments((currentDocuments) => [...previews, ...currentDocuments].slice(0, 6))
+    setDocuments((currentDocuments) => [...previews, ...currentDocuments].slice(0, 8))
   }
 
-  const toggleListingNotification = (key: keyof ListingNotificationPreferences) => {
-    setNotificationPreferences((currentPreferences) => ({
-      ...currentPreferences,
-      [key]: !currentPreferences[key],
-    }))
-  }
+  const baseReady = Boolean(aptName.trim() && address.trim())
+  const detailReady = Boolean(normalizedBuildingDong && normalizedUnitHo && listingPriceEok > 0 && listingPyeong > 0 && rooms > 0 && bathrooms > 0)
+  const contactReady = Boolean(ownerName.trim() && ownerPhone.trim())
+  const verificationReady =
+    agreements.privacy &&
+    agreements.antiFraud &&
+    (verificationMethod === 'resident'
+      ? agreements.gov24
+      : verificationMethod === 'lease'
+        ? documents.length > 0
+        : verificationMethod === 'owner-request'
+          ? ownerVerificationPhone.trim().length >= 8
+          : Boolean(verificationRelation.trim() && ownerVerificationPhone.trim().length >= 8))
+  const sellStepReady = [
+    baseReady,
+    detailReady,
+    true,
+    contactReady && Boolean(memo.trim()),
+    baseReady && detailReady && contactReady,
+    verificationReady,
+  ][listingStep]
+  const stepReady = sellStepReady
+  const canSubmitListing = Boolean(baseReady && detailReady && contactReady && verificationReady)
 
-  const toggleAgreement = (key: keyof ListingVerificationAgreements) => {
-    setAgreements((currentAgreements) => ({
-      ...currentAgreements,
-      [key]: !currentAgreements[key],
-    }))
-  }
+  const nextStep = () => setListingStep((current) => Math.min(current + 1, steps.length - 1))
+  const previousStep = () => setListingStep((current) => Math.max(current - 1, 0))
 
   const handleSubmitListing = () => {
     if (!canSubmitListing) return
+    const resolvedCandidate = findListingApartmentCandidate(aptName, address, listingCandidates)
+    const resolvedAptName = resolvedCandidate?.name ?? aptName.trim()
+    const resolvedAddress = resolvedCandidate?.address ?? address.trim()
 
-    onCreateListing({
+    const listing: UserListing = {
       id: `${Date.now()}`,
-      intent: listingIntent,
-      aptName: aptName.trim(),
-      address: address.trim(),
+      intent: 'sell',
+      aptName: resolvedAptName,
+      address: resolvedAddress,
+      lat: resolvedCandidate?.lat,
+      lng: resolvedCandidate?.lng,
       detailAddress: detailAddress.trim(),
       buildingDong: normalizedBuildingDong,
       unitHo: normalizedUnitHo,
       priceEok: listingPriceEok,
       pyeong: listingPyeong,
       floor: listingFloor,
+      exclusiveAreaM2,
+      supplyAreaM2,
+      rooms,
+      bathrooms,
+      maintenanceFeeManwon,
+      loanAvailability,
+      moveInType,
+      moveInDate,
+      hasJeonseTenant,
+      jeonseDepositEok,
       ownerName: ownerName.trim(),
       ownerPhone: ownerPhone.trim(),
       ownerRelation,
       ownerRelationDetail: ownerRelationDetail.trim(),
+      verificationMethod,
+      ownerVerificationPhone: ownerVerificationPhone.trim(),
+      verificationRelation: verificationRelation.trim(),
       memo: memo.trim(),
       photos,
       documents,
@@ -8732,524 +8997,618 @@ function ListingView({
       agreements,
       moveInHouseholdCheckRequested,
       registryCheckRequested,
-      verificationStatus: 'owner-checking',
+      verificationStatus: verificationMethod === 'resident' && agreements.gov24 ? 'verified' : 'owner-checking',
       createdAt: new Date().toISOString(),
-    })
+    }
+
+    onCreateListing(listing)
+    setSubmittedListing(listing)
     setRegistrationOpen(false)
+    void sendTelegramLead('listing', {
+      유형: '매물 등록',
+      아파트: listing.aptName,
+      주소: `${listing.address} ${listing.detailAddress}`,
+      가격: formatEok(listing.priceEok),
+      연락처: listing.ownerPhone,
+      검증상태: formatListingVerificationBadge(listing.verificationStatus),
+    })
   }
 
   return (
-    <div className="view-stack">
-      <div className="section-title">
-        <div>
-          <span>직거래</span>
-          <h2>매물 등록과 매수 희망을 한 곳에서</h2>
-        </div>
-        <ShieldCheck size={22} />
-      </div>
+    <div className="view-stack compact-listing-view">
+      {!registrationOpen && (
+        <button
+          className="listing-register-only-button"
+          type="button"
+          onClick={() => {
+            setListingIntent('sell')
+            setRegistrationOpen(true)
+            setListingStep(0)
+          }}
+        >
+          매물 등록하기
+          <ChevronRight size={18} />
+        </button>
+      )}
 
-      <section className="service-model">
-        <span>집직구 모델</span>
-        <strong>직접 찾고, 계약 전에는 전문가가 위험을 확인합니다</strong>
-        <p>
-          매도인은 매물을 올리고, 매수인은 원하는 조건을 남깁니다. 계약 전에는 공인중개사가
-          권리관계, 실소유자 일치 여부, 허위매물 여부를 확인한 뒤 계약서를 함께 작성합니다.
-        </p>
-      </section>
+      {visibleSaleListings.length > 0 && (
+        <section className="compact-listing-list" aria-label="등록 매물 목록">
+          {visibleSaleListings.map((listing) => {
+            const placeholderPhoto = createListingPlaceholderPhoto(listing)
+            const photo = getListingPhotoSrc(listing.photos[0]) || placeholderPhoto.dataUrl
 
-      <section className="calculator-panel">
-        <label htmlFor="direct-sale-price">거래금액</label>
-        <div className="price-input-row">
-          <input
-            id="direct-sale-price"
-            type="number"
-            min="3"
-            max="30"
-            step="0.5"
-            value={salePrice}
-            onChange={(event) => setSalePrice(Number(event.target.value))}
-          />
-          <span>억원</span>
-        </div>
-        <input
-          className="range"
-          type="range"
-          min="3"
-          max="30"
-          step="0.5"
-          value={salePrice}
-          onChange={(event) => setSalePrice(Number(event.target.value))}
-          aria-label="거래금액 조절"
-        />
-      </section>
-
-      <div className="savings-hero direct">
-        <span>중개상한 대비 20% 계약 수수료</span>
-        <strong>{formatManwon(brokerage.savings)}</strong>
-        <p>{formatEok(salePrice)} 기준, 기존 중개보수 상한 대비 예상 절약액</p>
-      </div>
-
-      <div className="compare-grid">
-        <div>
-          <span>기존 중개</span>
-          <strong>{formatManwon(brokerage.legalCapBothSides)}</strong>
-        </div>
-        <div>
-          <span>집직구 계약</span>
-          <strong>{formatManwon(brokerage.jipjigguFee)}</strong>
-        </div>
-      </div>
-
-      <section className="listing-start-card" aria-label="직거래 시작">
-        <div>
-          <span>직거래 시작</span>
-          <strong>{listingIntent === 'want' ? '원하는 매물을 남겨두세요' : '내 매물을 간단히 올리세요'}</strong>
-          <p>아파트명만 선택하면 주소는 자동으로 채워지고, 필요한 정보만 빠르게 입력합니다.</p>
-        </div>
-        <div className="listing-start-actions">
-          <button
-            className={listingIntent === 'sell' ? 'active' : ''}
-            type="button"
-            onClick={() => {
-              setListingIntent('sell')
-              setRegistrationOpen(true)
-            }}
-          >
-            <Building2 size={18} />
-            <strong>매물 등록</strong>
-            <span>집을 내놓기</span>
-          </button>
-          <button
-            className={listingIntent === 'want' ? 'active wanted' : 'wanted'}
-            type="button"
-            onClick={() => {
-              setListingIntent('want')
-              setRegistrationOpen(true)
-            }}
-          >
-            <Plus size={18} />
-            <strong>매물 원해요</strong>
-            <span>조건 남기기</span>
-          </button>
-        </div>
-        {!registrationOpen && (
-          <button
-            className="primary-action"
-            type="button"
-            onClick={() => setRegistrationOpen(true)}
-          >
-            {listingIntent === 'want' ? '매물 원해요 등록' : '매물 등록 시작'}
-            <ChevronRight size={18} />
-          </button>
-        )}
-      </section>
+            return (
+              <button className="compact-listing-card" type="button" key={listing.id}>
+                <div>
+                  <em>{formatListingVerificationBadge(listing.verificationStatus)}</em>
+                  <strong>매매 {formatEok(listing.priceEok)}</strong>
+                  <span>
+                    {formatListingArea(listing)}, {listing.buildingDong}동 {formatListingFloor(listing.floor)}
+                  </span>
+                  <p>{summarizeListingMemo(listing)}</p>
+                  <small>{listing.aptName}</small>
+                </div>
+                <figure>
+                  <img
+                    src={photo}
+                    alt={`${listing.aptName} 매물 사진`}
+                    loading="lazy"
+                    onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+                  />
+                </figure>
+              </button>
+            )
+          })}
+        </section>
+      )}
 
       {registrationOpen && (
-        <section className="listing-registration" aria-label="직거래 매물 등록">
-          <div className="listing-registration-head">
+        <section className="listing-wizard" aria-label="매물 등록">
+          <div className="listing-wizard-head">
             <div>
-              <span>매물등록</span>
-              <h3>{listingIntent === 'want' ? '원하는 단지와 예산만 남기면 됩니다' : '단지 선택 후 가격과 권한만 확인합니다'}</h3>
+              <span>매물 등록</span>
+              <strong>{steps[listingStep]}</strong>
             </div>
-            <strong>{listingIntent === 'want' ? '매수희망' : '허위매물 차단'}</strong>
-          </div>
-          <div className="listing-intent-tabs" aria-label="등록 유형">
-            <button
-              className={listingIntent === 'sell' ? 'active' : ''}
-              type="button"
-              onClick={() => setListingIntent('sell')}
-            >
-              매물 등록
-            </button>
-            <button
-              className={listingIntent === 'want' ? 'active' : ''}
-              type="button"
-              onClick={() => setListingIntent('want')}
-            >
-              매물 원해요
+            <button type="button" onClick={() => setRegistrationOpen(false)} aria-label="등록 닫기">
+              <X size={20} />
             </button>
           </div>
 
-          <div className="listing-progress-steps" aria-label="매물 등록 필수 정보">
-            {listingProgressSteps.map((step, index) => (
-              <div className={step.complete ? 'complete' : ''} key={step.title}>
-                <strong>{index + 1}</strong>
-                <span>{step.title}</span>
-              </div>
+          <div className="listing-step-track">
+            {steps.map((step, index) => (
+              <button
+                className={index === listingStep ? 'active' : index < listingStep ? 'done' : ''}
+                key={step}
+                type="button"
+                onClick={() => setListingStep(index)}
+              >
+                <span>{index + 1}</span>
+                {step}
+              </button>
             ))}
           </div>
 
-          <div className="listing-form-grid">
-            <label className="apartment-suggest-field">
-              <span>아파트명</span>
-              <div className="apartment-suggest-input">
-                <Search size={18} />
-                <input
-                  value={aptName}
-                  onChange={(event) => {
-                    setAptName(event.target.value)
-                    setAddress('')
-                    setAptSearchFocused(true)
-                  }}
-                  onFocus={() => setAptSearchFocused(true)}
-                  onBlur={() => window.setTimeout(() => setAptSearchFocused(false), 140)}
-                  placeholder="예: 인덕원센트럴자이"
-                />
-              </div>
-              {aptSearchFocused && apartmentSuggestions.length > 0 && (
-                <div className="listing-apartment-suggestions" role="listbox">
-                  {apartmentSuggestions.map((candidate) => (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleApartmentCandidateSelect(candidate)}
-                    >
-                      <strong>{candidate.name}</strong>
-                      <span>{candidate.address}</span>
-                      <em>
-                        {candidate.latestPriceEok ? formatEok(candidate.latestPriceEok) : '주소 확인'}
-                        {candidate.pyeong ? ` · ${candidate.pyeong}평` : ''}
-                        {candidate.latestDealDate ? ` · ${formatShortDate(candidate.latestDealDate)}` : ''}
-                      </em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </label>
-            <div className="listing-address-preview">
-              <Building2 size={16} />
-              <span>{address || selectedApartmentCandidate?.address || '아파트명을 선택하면 주소가 자동 입력됩니다'}</span>
-            </div>
-            {listingIntent === 'sell' && (
-              <div className="listing-form-row compact">
-                <label>
-                  <span>동</span>
+          {listingStep === 0 && (
+            <div className="listing-step-panel">
+              <label className="apartment-suggest-field">
+                <span>아파트명</span>
+                <div className="apartment-suggest-input">
+                  <Search size={18} />
                   <input
-                    inputMode="numeric"
-                    value={buildingDong}
-                    onChange={(event) => setBuildingDong(event.target.value)}
-                    placeholder="101"
+                    value={aptName}
+                    onChange={(event) => {
+                      setAptName(event.target.value)
+                      setAddress('')
+                      setAptSearchFocused(true)
+                    }}
+                    onFocus={() => setAptSearchFocused(true)}
+                    onBlur={() => window.setTimeout(() => setAptSearchFocused(false), 140)}
+                    placeholder="아파트명 검색"
                   />
-                  <em>동</em>
-                </label>
-                <label>
-                  <span>호수</span>
-                  <input
-                    inputMode="numeric"
-                    value={unitHo}
-                    onChange={(event) => setUnitHo(event.target.value)}
-                    placeholder="1103"
-                  />
-                  <em>호</em>
-                </label>
-              </div>
-            )}
-            <div className="listing-form-row">
-              <label>
-              <span>{listingIntent === 'want' ? '희망 예산' : '희망가'}</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  value={listingPriceEok}
-                  onChange={(event) => setListingPriceEok(Number(event.target.value))}
-                />
-                <em>억원</em>
-              </label>
-              <label>
-                <span>평형</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={listingPyeong}
-                  onChange={(event) => setListingPyeong(Number(event.target.value))}
-                />
-                <em>평</em>
-              </label>
-              <label>
-              <span>{listingIntent === 'want' ? '선호 층' : '층'}</span>
-                <input
-                  type="number"
-                  value={listingFloor}
-                  onChange={(event) => setListingFloor(Number(event.target.value))}
-                />
-                <em>층</em>
-              </label>
-            </div>
-            <label>
-              <span>{listingIntent === 'want' ? '이름' : '소유자 성명'}</span>
-              <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder={listingIntent === 'want' ? '연락 받을 이름' : '검증용'} />
-            </label>
-            <label>
-              <span>연락처</span>
-              <input value={ownerPhone} onChange={(event) => setOwnerPhone(event.target.value)} placeholder="검증용" />
-            </label>
-            {listingIntent === 'sell' && (
-              <div className="listing-section-card owner-relation-card">
-                <div className="listing-section-head">
-                  <span>권한 확인</span>
-                  <strong>필수</strong>
                 </div>
-                <p>
-                  집직구는 매물 등록 전 소유자·세입자·대리권을 먼저 확인합니다. 주민등록번호는 앱에
-                  저장하지 않고, 정부24·인증기관 확인이 필요한 경우 즉시 전달 후 파기하는 구조로 운영합니다.
-                </p>
-                <div className="listing-choice-grid" role="radiogroup" aria-label="실소유자와의 관계">
-                  {ownerRelationOptions.map((option) => (
-                    <button
-                      className={ownerRelation === option.value ? 'active' : ''}
-                      key={option.value}
-                      type="button"
-                      onClick={() => setOwnerRelation(option.value)}
-                    >
-                      <strong>{option.title}</strong>
-                      <span>{option.detail}</span>
-                    </button>
-                  ))}
-                </div>
-                {ownerRelation !== 'self' && (
-                  <label className="owner-relation-detail">
-                    <span>실소유자와의 관계</span>
-                    <input
-                      value={ownerRelationDetail}
-                      onChange={(event) => setOwnerRelationDetail(event.target.value)}
-                      placeholder="예: 배우자, 자녀, 세입자, 위임받은 대리인"
-                    />
-                  </label>
+                {aptSearchFocused && apartmentSuggestions.length > 0 && (
+                  <div className="listing-apartment-suggestions" role="listbox">
+                    {apartmentSuggestions.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleApartmentCandidateSelect(candidate)}
+                      >
+                        <strong>{candidate.name}</strong>
+                        <span>{candidate.address}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
+              </label>
+              <div className="listing-address-preview">
+                <MapPin size={16} />
+                <span>{address || '아파트를 선택하면 주소가 자동 입력됩니다'}</span>
               </div>
-            )}
-            <label>
-              <span>{listingIntent === 'want' ? '원하는 조건' : '매물 설명'}</span>
-              <textarea value={memo} onChange={(event) => setMemo(event.target.value)} rows={3} />
-            </label>
-          </div>
-
-          {listingIntent === 'sell' && (
-            <label className="photo-uploader">
-              <Camera size={18} />
-              <span>사진 업로드</span>
-              <input type="file" accept="image/*" multiple onChange={(event) => void handlePhotoChange(event.target.files)} />
-            </label>
-          )}
-
-          {listingIntent === 'sell' && photos.length > 0 && (
-            <div className="listing-photo-preview" aria-label="업로드 사진 미리보기">
-              {photos.map((photo) => (
-                <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
-              ))}
+              {listingIntent === 'sell' && (
+                <div className="listing-form-row compact">
+                  <label>
+                    <span>동</span>
+                    <input value={buildingDong} inputMode="numeric" onChange={(event) => setBuildingDong(event.target.value)} />
+                    <em>동</em>
+                  </label>
+                  <label>
+                    <span>호수</span>
+                    <input value={unitHo} inputMode="numeric" onChange={(event) => setUnitHo(event.target.value)} />
+                    <em>호</em>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
-          {listingIntent === 'sell' && (
-            <div className="listing-section-card document-check-card">
-              <div className="listing-section-head">
-                <span>증빙서류</span>
-                <strong>{requiresRelationProof ? '대리 등록 필수' : '확인 자료'}</strong>
-              </div>
-              <p>
-                본인 소유가 아니면 관계를 입증할 자료가 필요합니다. 제출 파일은 관리자 확인용으로만 쓰고,
-                공개 화면에는 노출하지 않습니다.
-              </p>
-              <div className="document-uploader-grid">
+          {listingStep === 1 && (
+            <div className="listing-step-panel">
+              <div className="listing-form-row">
                 <label>
+                  <span>매매가</span>
+                  <input type="number" min="1" step="0.1" value={listingPriceEok} onChange={(event) => setListingPriceEok(Number(event.target.value))} />
+                  <em>억원</em>
+                </label>
+                <label>
+                  <span>평형</span>
+                  <input type="number" min="1" value={listingPyeong} onChange={(event) => updatePyeong(Number(event.target.value))} />
+                  <em>평</em>
+                </label>
+              </div>
+              {listingIntent === 'sell' && (
+                <>
+                  <div className="area-chip-row">
+                    {[59, 74, 84, 108].map((area) => (
+                      <button key={area} type="button" onClick={() => setExclusiveAreaM2(area)}>
+                        전용 {area}m²
+                      </button>
+                    ))}
+                  </div>
+                  <div className="listing-form-row">
+                    <label>
+                      <span>전용면적</span>
+                      <input type="number" step="0.1" value={exclusiveAreaM2} onChange={(event) => setExclusiveAreaM2(Number(event.target.value))} />
+                      <em>m²</em>
+                    </label>
+                    <label>
+                      <span>공급면적</span>
+                      <input type="number" step="0.1" value={supplyAreaM2} onChange={(event) => setSupplyAreaM2(Number(event.target.value))} />
+                      <em>m²</em>
+                    </label>
+                  </div>
+                  <div className="listing-form-row">
+                    <label>
+                      <span>방</span>
+                      <input type="number" min="1" value={rooms} onChange={(event) => setRooms(Number(event.target.value))} />
+                      <em>개</em>
+                    </label>
+                    <label>
+                      <span>욕실</span>
+                      <input type="number" min="1" value={bathrooms} onChange={(event) => setBathrooms(Number(event.target.value))} />
+                      <em>개</em>
+                    </label>
+                    <label>
+                      <span>층</span>
+                      <input type="number" value={listingFloor} onChange={(event) => setListingFloor(Number(event.target.value))} />
+                      <em>층</em>
+                    </label>
+                  </div>
+                  <div className="listing-form-row">
+                    <label>
+                      <span>관리비</span>
+                      <input type="number" min="0" value={maintenanceFeeManwon} onChange={(event) => setMaintenanceFeeManwon(Number(event.target.value))} />
+                      <em>만원</em>
+                    </label>
+                    <label>
+                      <span>대출</span>
+                      <select value={loanAvailability} onChange={(event) => setLoanAvailability(event.target.value as ListingLoanAvailability)}>
+                        <option value="available">가능</option>
+                        <option value="unavailable">불가능</option>
+                        <option value="check">확인필요</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="listing-choice-row">
+                    {[
+                      ['immediate', '즉시 입주 가능'],
+                      ['date', '날짜 선택'],
+                      ['negotiable', '입주일 협의가능'],
+                    ].map(([value, label]) => (
+                      <button
+                        className={moveInType === value ? 'active' : ''}
+                        key={value}
+                        type="button"
+                        onClick={() => setMoveInType(value as ListingMoveInType)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {moveInType === 'date' && (
+                    <label>
+                      <span>입주가능일</span>
+                      <input type="date" value={moveInDate} onChange={(event) => setMoveInDate(event.target.value)} />
+                    </label>
+                  )}
+                  <label className="listing-inline-check">
+                    <input type="checkbox" checked={hasJeonseTenant} onChange={(event) => setHasJeonseTenant(event.target.checked)} />
+                    <span>전세 있는 물건</span>
+                  </label>
+                  {hasJeonseTenant && (
+                    <label>
+                      <span>현재 전세금</span>
+                      <input type="number" min="0" step="0.1" value={jeonseDepositEok} onChange={(event) => setJeonseDepositEok(Number(event.target.value))} />
+                      <em>억원</em>
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {listingStep === 2 && listingIntent === 'sell' && (
+            <div className="listing-step-panel">
+              <label className="photo-uploader">
+                <Camera size={18} />
+                <span>사진 올리기</span>
+                <input type="file" accept="image/*" multiple onChange={(event) => void handlePhotoChange(event.target.files)} />
+              </label>
+              {photos.length > 0 && (
+                <div className="compact-photo-grid">
+                  {photos.map((photo) => (
+                    <img key={photo.id} src={photo.dataUrl} alt={photo.name} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {listingStep === 3 && (
+            <div className="listing-step-panel">
+              <label>
+                <span>소유자 이름</span>
+                <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="이름" />
+              </label>
+              <label>
+                <span>연락처</span>
+                <input value={ownerPhone} inputMode="tel" onChange={(event) => setOwnerPhone(event.target.value)} placeholder="010-0000-0000" />
+              </label>
+              <label>
+                <span>매물 소개</span>
+                <textarea value={memo} rows={4} onChange={(event) => setMemo(event.target.value)} placeholder="집의 장점만 짧게 적어주세요" />
+              </label>
+            </div>
+          )}
+
+          {listingIntent === 'sell' && listingStep === verificationStepIndex && (
+            <div className="listing-step-panel">
+              <div className="listing-choice-row relation">
+                {ownerRelationOptions.map((option) => (
+                  <button
+                    className={ownerRelation === option.value ? 'active' : ''}
+                    key={option.value}
+                    type="button"
+                    onClick={() => setOwnerRelation(option.value)}
+                  >
+                    {option.title}
+                  </button>
+                ))}
+              </div>
+              {ownerRelation !== 'self' && (
+                <label>
+                  <span>집주인과의 관계</span>
+                  <input value={ownerRelationDetail} onChange={(event) => setOwnerRelationDetail(event.target.value)} placeholder="예: 가족" />
+                </label>
+              )}
+              <div className="verification-method-grid">
+                {verificationOptions.map((option) => (
+                  <button
+                    className={verificationMethod === option.value ? 'active' : ''}
+                    key={option.value}
+                    type="button"
+                    onClick={() => setVerificationMethod(option.value)}
+                  >
+                    <strong>{option.title}</strong>
+                    <span>{option.detail}</span>
+                  </button>
+                ))}
+              </div>
+              {(verificationMethod === 'owner-request' || verificationMethod === 'other') && (
+                <div className="owner-request-fields">
+                  {verificationMethod === 'other' && (
+                    <label>
+                      <span>관계</span>
+                      <input value={verificationRelation} onChange={(event) => setVerificationRelation(event.target.value)} placeholder="예: 가족" />
+                    </label>
+                  )}
+                  <label>
+                    <span>집주인 휴대폰</span>
+                    <input value={ownerVerificationPhone} inputMode="tel" onChange={(event) => setOwnerVerificationPhone(event.target.value)} placeholder="010-0000-0000" />
+                  </label>
+                </div>
+              )}
+              {verificationMethod === 'lease' && (
+                <label className="photo-uploader document">
                   <FileText size={18} />
-                  <strong>신분·위임 확인</strong>
-                  <span>신분증, 위임장, 가족관계증명 등</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    multiple
-                    onChange={(event) => void handleDocumentChange(event.target.files, 'delegation')}
-                  />
+                  <span>임대차계약서 첨부</span>
+                  <input type="file" accept="image/*,.pdf" multiple onChange={(event) => void handleDocumentChange(event.target.files, 'lease')} />
                 </label>
-                <label>
-                  <Building2 size={18} />
-                  <strong>거주·권리 확인</strong>
-                  <span>임대차계약서, 등기부, 관리비 고지서 등</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    multiple
-                    onChange={(event) => void handleDocumentChange(event.target.files, 'registry')}
-                  />
-                </label>
-              </div>
-              {documents.length > 0 && (
-                <div className="document-chip-list" aria-label="첨부된 증빙서류">
-                  {documents.map((document) => (
-                    <button
-                      key={document.id}
-                      type="button"
-                      onClick={() => setDocuments((currentDocuments) => currentDocuments.filter((item) => item.id !== document.id))}
-                    >
-                      <FileText size={14} />
-                      <span>{document.name}</span>
-                      <em>삭제</em>
+              )}
+              {verificationMethod === 'resident' && (
+                <div className="listing-choice-row auth">
+                  {['네이버', '카카오톡', '토스'].map((label) => (
+                    <button key={label} type="button" onClick={() => setAgreements((current) => ({ ...current, gov24: true }))}>
+                      {label}
                     </button>
                   ))}
                 </div>
               )}
-              <div className="listing-check-list">
+              <div className="listing-check-list consent">
                 <label>
                   <input
                     type="checkbox"
-                    checked={registryCheckRequested}
-                    onChange={(event) => setRegistryCheckRequested(event.target.checked)}
+                    checked={agreements.privacy}
+                    onChange={(event) => setAgreements((current) => ({ ...current, privacy: event.target.checked }))}
                   />
-                  <span>등기부·권리관계 간편 확인을 요청합니다</span>
+                  <span>개인정보 수집·이용 동의</span>
                 </label>
                 <label>
                   <input
                     type="checkbox"
-                    checked={moveInHouseholdCheckRequested}
-                    onChange={(event) => setMoveInHouseholdCheckRequested(event.target.checked)}
+                    checked={agreements.antiFraud}
+                    onChange={(event) => setAgreements((current) => ({ ...current, antiFraud: event.target.checked }))}
                   />
-                  <span>전입세대 열람 등 정부24 확인 절차를 진행합니다</span>
+                  <span>허위매물 방지 검증 동의</span>
                 </label>
-              </div>
-            </div>
-          )}
-
-          <div className="listing-section-card listing-alert-card">
-            <div className="listing-section-head">
-              <span>알림 옵션</span>
-              <strong>추천</strong>
-            </div>
-            <div className="listing-option-grid">
-              <button
-                className={notificationPreferences.buyerLead ? 'active' : ''}
-                type="button"
-                onClick={() => toggleListingNotification('buyerLead')}
-              >
-                <MessageCircle size={17} />
-                <strong>{listingIntent === 'want' ? '매도 희망자 알림' : '매수 문의 알림'}</strong>
-                <span>{listingIntent === 'want' ? '조건에 맞는 매물이 등록되면 안내' : '문의가 들어오면 관리자에게 즉시 전달'}</span>
-              </button>
-              <button
-                className={notificationPreferences.similarListing ? 'active' : ''}
-                type="button"
-                onClick={() => toggleListingNotification('similarListing')}
-              >
-                <Bell size={17} />
-                <strong>유사 매물 알림</strong>
-                <span>같은 단지·비슷한 평형이 올라오면 확인</span>
-              </button>
-              <button
-                className={notificationPreferences.priceChange ? 'active' : ''}
-                type="button"
-                onClick={() => toggleListingNotification('priceChange')}
-              >
-                <TrendingUp size={17} />
-                <strong>가격 변화 알림</strong>
-                <span>같은 단지 실거래·등록가 변화를 추적</span>
-              </button>
-              <button
-                className={notificationPreferences.weeklyReport ? 'active' : ''}
-                type="button"
-                onClick={() => toggleListingNotification('weeklyReport')}
-              >
-                <FileText size={17} />
-                <strong>주간 리포트</strong>
-                <span>동네 실거래와 개발 이슈를 함께 확인</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="listing-section-card listing-consent-card">
-            <div className="listing-section-head">
-              <span>필수 동의</span>
-              <strong>가입·등록 전 확인</strong>
-            </div>
-            <div className="listing-check-list consent">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={agreements.privacy}
-                  onChange={() => toggleAgreement('privacy')}
-                />
-                <span>개인정보 수집·이용 및 연락처 확인에 동의합니다</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={agreements.antiFraud}
-                  onChange={() => toggleAgreement('antiFraud')}
-                />
-                <span>허위매물 방지와 실매물 검증을 위한 증빙 확인에 동의합니다</span>
-              </label>
-              {listingIntent === 'sell' && (
                 <label>
                   <input
                     type="checkbox"
                     checked={agreements.gov24}
-                    onChange={() => toggleAgreement('gov24')}
+                    onChange={(event) => setAgreements((current) => ({ ...current, gov24: event.target.checked }))}
                   />
-                  <span>정부24·전입세대 열람 등 필요한 확인 절차 진행에 동의합니다</span>
+                  <span>정부24 확인 동의</span>
                 </label>
-              )}
+              </div>
+              <div className="listing-check-list compact-alerts">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={notificationPreferences.buyerLead}
+                    onChange={(event) =>
+                      setNotificationPreferences((current) => ({
+                        ...current,
+                        buyerLead: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>문의·인증 알림</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={notificationPreferences.similarListing}
+                    onChange={(event) =>
+                      setNotificationPreferences((current) => ({
+                        ...current,
+                        similarListing: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>유사 매물 알림</span>
+                </label>
+              </div>
+              <div className="listing-choice-row auth">
+                <button
+                  className={moveInHouseholdCheckRequested ? 'active' : ''}
+                  type="button"
+                  onClick={() => setMoveInHouseholdCheckRequested((current) => !current)}
+                >
+                  전입세대 열람
+                </button>
+                <button
+                  className={registryCheckRequested ? 'active' : ''}
+                  type="button"
+                  onClick={() => setRegistryCheckRequested((current) => !current)}
+                >
+                  등기부 확인
+                </button>
+              </div>
             </div>
-            {requiresRelationProof && documents.length === 0 && (
-              <p className="listing-warning-note">본인 소유가 아닌 매물은 관계 증빙서류를 1개 이상 첨부해야 접수할 수 있습니다.</p>
+          )}
+
+          {listingStep === reviewStepIndex && (
+            <div className="listing-step-panel">
+              <div className="listing-summary-card">
+                <strong>{aptName}</strong>
+                <span>{address} {detailAddress}</span>
+                <div className="review-row">
+                  <em>매매가</em>
+                  <b>{formatEok(listingPriceEok)}</b>
+                </div>
+                <div className="review-row">
+                  <em>면적</em>
+                  <b>{listingPyeong}평 · 전용 {exclusiveAreaM2.toFixed(1)}m²</b>
+                </div>
+                {listingIntent === 'sell' && (
+                  <>
+                    <div className="review-row">
+                      <em>구조</em>
+                      <b>방 {rooms} · 욕실 {bathrooms} · {formatListingFloor(listingFloor)}</b>
+                    </div>
+                    <div className="review-row">
+                      <em>입주</em>
+                      <b>{formatListingMoveIn({ moveInType, moveInDate })}</b>
+                    </div>
+                  </>
+                )}
+                <p>{memo}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="listing-wizard-actions">
+            <button type="button" onClick={previousStep} disabled={listingStep === 0}>
+              이전
+            </button>
+            {listingStep < steps.length - 1 ? (
+              <button type="button" onClick={nextStep} disabled={!stepReady}>
+                다음
+              </button>
+            ) : (
+              <button type="button" onClick={handleSubmitListing} disabled={!canSubmitListing}>
+                등록하기
+              </button>
             )}
           </div>
-
-          <div className="owner-verification-flow">
-            <div className="active">
-              <strong>1</strong>
-              <span>{listingIntent === 'want' ? '희망조건 입력' : '매물정보 입력'}</span>
-            </div>
-            <div className="active">
-              <strong>2</strong>
-              <span>{listingIntent === 'want' ? '연락처 확인' : '등기·실소유자 확인'}</span>
-            </div>
-            <div>
-              <strong>3</strong>
-              <span>{listingIntent === 'want' ? '원해요 노출' : '지도 매물 노출'}</span>
-            </div>
-          </div>
-
-          <p className="listing-register-note">
-            {listingIntent === 'want'
-              ? '등록된 매수 희망 조건은 직거래 화면의 매물 원해요 목록에 함께 표시됩니다. 실제 운영에서는 연락처 확인 후 공개합니다.'
-              : '등록 즉시 지도에는 노란 매물 박스로 반영하고, 실제 운영에서는 등기부·신분확인·소유자 일치 검증을 통과한 매물만 공개합니다.'}
-          </p>
-
-          <button
-            className="primary-action"
-            type="button"
-            disabled={!canSubmitListing}
-            onClick={handleSubmitListing}
-          >
-            {listingIntent === 'want' ? '매물 원해요 등록' : '실소유자 확인 단계로 이동'}
-            <ChevronRight size={18} />
-          </button>
         </section>
       )}
 
-      <div className="safety-timeline">
-        {steps.map((step) => {
-          const Icon = step.icon
-          return (
-            <div className="timeline-step" key={step.title}>
-              <span>
-                <Icon size={18} />
-              </span>
-              <div>
-                <strong>{step.title}</strong>
-                <p>{step.detail}</p>
-              </div>
-              <CheckCircle2 size={18} />
-            </div>
-          )
-        })}
-      </div>
+      <section className="listing-fee-compact">
+        <span>수수료 예시</span>
+        <strong>{formatManwon(brokerage.savings)} 절약</strong>
+        <p>{formatEok(salePrice)} 기준 · 중개상한 대비 20% 계약 수수료</p>
+      </section>
     </div>
   )
 }
 
-function MembershipSignupCard() {
+function MyPageView({
+  favoriteCount,
+  isMemberSignedUp,
+  onSignupComplete,
+  onOpenReport,
+  onOpenListingRegistration,
+}: {
+  favoriteCount: number
+  isMemberSignedUp: boolean
+  onSignupComplete: () => void
+  onOpenReport: () => void
+  onOpenListingRegistration: () => void
+}) {
+  const [loginId, setLoginId] = useState('jwchoi1206')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [neighborhoods, setNeighborhoods] = useState(['내손동', '평촌동'])
+  const [nextNeighborhood, setNextNeighborhood] = useState('')
+  const canAddNeighborhood = nextNeighborhood.trim().length > 1 && neighborhoods.length < 2
+
+  const handleLogin = () => {
+    if (loginId.trim() === 'jwchoi1206' && loginPassword === 'b3356choi!') {
+      setLoggedIn(true)
+      setLoginError('')
+      return
+    }
+    setLoginError('아이디 또는 비밀번호를 확인해주세요.')
+  }
+
+  const addNeighborhood = () => {
+    if (!canAddNeighborhood) return
+    setNeighborhoods((current) => [...current, nextNeighborhood.trim()].slice(0, 2))
+    setNextNeighborhood('')
+  }
+
+  return (
+    <div className="view-stack my-page-view">
+      <section className="my-profile-card">
+        <div className="profile-avatar">
+          <UserRound size={28} />
+        </div>
+        <div>
+          <span>나의 페이지</span>
+          <strong>{loggedIn ? '관리자 장우' : isMemberSignedUp ? '집직구 회원' : '간편 회원가입'}</strong>
+          <p>{loggedIn ? 'jwchoi1206' : isMemberSignedUp ? '관심매물과 우리동네를 관리하세요' : '회원가입 후 매물 등록을 시작할 수 있어요'}</p>
+        </div>
+      </section>
+
+      {!isMemberSignedUp ? (
+        <MembershipSignupCard onSignupComplete={onSignupComplete} />
+      ) : (
+        <section className="my-neighborhood-card">
+          <div className="detail-section-head">
+            <span>
+              <MapPinned size={15} />
+              나의 동네
+            </span>
+            <em>최대 2개</em>
+          </div>
+          <div className="neighborhood-chip-list">
+            {neighborhoods.map((neighborhood) => (
+              <button
+                key={neighborhood}
+                type="button"
+                onClick={() => setNeighborhoods((current) => current.filter((item) => item !== neighborhood))}
+              >
+                {neighborhood}
+                <X size={14} />
+              </button>
+            ))}
+          </div>
+          <div className="neighborhood-add-row">
+            <input
+              value={nextNeighborhood}
+              onChange={(event) => setNextNeighborhood(event.target.value)}
+              placeholder={neighborhoods.length >= 2 ? '최대 2개까지 설정' : '동네 입력'}
+              disabled={neighborhoods.length >= 2}
+            />
+            <button type="button" onClick={addNeighborhood} disabled={!canAddNeighborhood}>
+              추가
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="my-service-grid">
+        <button type="button">
+          <Heart size={20} />
+          <span>관심 {favoriteCount}</span>
+        </button>
+        <button type="button" onClick={onOpenListingRegistration}>
+          <Home size={20} />
+          <span>매물 등록</span>
+        </button>
+        <button type="button" onClick={onOpenReport}>
+          <FileText size={20} />
+          <span>리포트</span>
+        </button>
+        <button type="button">
+          <Bell size={20} />
+          <span>약관 및 정책</span>
+        </button>
+      </section>
+
+      {!loggedIn && (
+        <section className="my-login-card admin-login-card">
+          <div className="detail-section-head">
+            <span>관리자 로그인</span>
+          </div>
+          <label>
+            <span>아이디</span>
+            <input value={loginId} onChange={(event) => setLoginId(event.target.value)} />
+          </label>
+          <label>
+            <span>비밀번호</span>
+            <input
+              value={loginPassword}
+              type="password"
+              onChange={(event) => setLoginPassword(event.target.value)}
+              placeholder="비밀번호"
+            />
+          </label>
+          {loginError && <p role="alert">{loginError}</p>}
+          <button className="primary-action" type="button" onClick={handleLogin}>
+            관리자 로그인
+            <ChevronRight size={18} />
+          </button>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function MembershipSignupCard({ onSignupComplete }: { onSignupComplete?: () => void }) {
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -9303,6 +9662,7 @@ function MembershipSignupCard() {
       마케팅수신동의: agreements.marketing ? '동의' : '미동의',
     })
     setSubmitted(true)
+    onSignupComplete?.()
   }
 
   return (
@@ -9433,16 +9793,13 @@ function MembershipSignupCard() {
 function ComplexListingsPanel({
   group,
   onBack,
-  onRegister,
   onOpenListing,
 }: {
   group: ListingComplexGroup
   onBack: () => void
-  onRegister: () => void
   onOpenListing: (listing: UserListing) => void
 }) {
   const sortedListings = [...group.listings].sort((a, b) => Number(b.priceEok) - Number(a.priceEok))
-  const hasPhotos = sortedListings.some((listing) => listing.photos.length > 0)
 
   return (
     <div className="view-stack complex-listings-view">
@@ -9468,71 +9825,55 @@ function ComplexListingsPanel({
         </button>
       </div>
 
-      <p className="complex-listings-caption">
-        단지 안에 접수된 직거래 매물입니다. 실소유자 관계와 허위매물 여부를 확인한 뒤 계약 전 중개사가 함께 점검합니다.
-      </p>
-
       <div className="complex-listing-list">
         {sortedListings.map((listing) => {
-          const thumbnail = listing.photos[0]?.dataUrl
+          const placeholderPhoto = createListingPlaceholderPhoto(listing)
+          const thumbnail = getListingPhotoSrc(listing.photos[0]) || placeholderPhoto.dataUrl
 
           return (
             <button key={listing.id} className="complex-listing-card" type="button" onClick={() => onOpenListing(listing)}>
               <div>
-                <strong>{listing.intent === 'want' ? `매수희망 ${formatEok(listing.priceEok)} 이하` : `매매 ${formatEok(listing.priceEok)}`}</strong>
+                <strong>매매 {formatEok(listing.priceEok)}</strong>
                 <span>
                   {formatListingArea(listing)}, {listing.buildingDong || '-'}동 {formatListingFloor(listing.floor)}
                 </span>
                 <em>{summarizeListingMemo(listing)}</em>
               </div>
-              <figure className={thumbnail ? 'complex-listing-thumb' : 'complex-listing-thumb empty'}>
-                {thumbnail ? <img src={thumbnail} alt={`${listing.aptName} 매물 사진`} /> : <Camera size={28} />}
+              <figure className="complex-listing-thumb">
+                <img
+                  src={thumbnail}
+                  alt={`${listing.aptName} 매물 사진`}
+                  loading="lazy"
+                  onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+                />
               </figure>
             </button>
           )
         })}
       </div>
 
-      {!hasPhotos && (
-        <p className="complex-photo-note">사진이 없는 매물도 등록 후 실소유자 확인을 거쳐 공개됩니다. 사진을 추가하면 노출 신뢰도가 올라갑니다.</p>
-      )}
-
-      <button className="complex-floating-cta" type="button" onClick={onRegister}>
-        <Plus size={20} />
-        집 내놓기
-      </button>
-
-      <button className="complex-contact-button" type="button" onClick={onRegister}>
-        중개사에게 문의하기
-      </button>
     </div>
   )
 }
 
 function DirectListingsView({
   userListings,
-  liveDeals,
   initialComplexTarget,
+  favoriteListingIds,
   onRegister,
-  onRegisterWanted,
+  onToggleFavoriteListing,
   onOpenListing,
-  onOpenDeal,
 }: {
   userListings: UserListing[]
-  liveDeals: LiveRtmsDeal[]
   initialComplexTarget?: ListingComplexTarget | null
+  favoriteListingIds: string[]
   onRegister: () => void
-  onRegisterWanted: () => void
+  onToggleFavoriteListing: (listingId: string) => void
   onOpenListing: (listing: UserListing) => void
-  onOpenDeal: (deal: LiveRtmsDeal) => void
 }) {
   const [selectedComplexKey, setSelectedComplexKey] = useState<string | null>(null)
   const saleListings = useMemo(
     () => userListings.filter((listing) => (listing.intent ?? 'sell') === 'sell'),
-    [userListings],
-  )
-  const wantedListings = useMemo(
-    () => userListings.filter((listing) => listing.intent === 'want'),
     [userListings],
   )
   const sortedSaleListings = useMemo(
@@ -9578,21 +9919,11 @@ function DirectListingsView({
     setSelectedComplexKey(matchingGroup?.key ?? null)
   }, [initialComplexTarget, listingGroups])
 
-  const directDeals = useMemo(
-    () =>
-      liveDeals
-        .filter((deal) => deal.tradeType === 'direct' && deal.status === 'active')
-        .sort((a, b) => dealTimestamp(b) - dealTimestamp(a))
-        .slice(0, 6),
-    [liveDeals],
-  )
-
   if (selectedComplexGroup) {
     return (
       <ComplexListingsPanel
         group={selectedComplexGroup}
         onBack={() => setSelectedComplexKey(null)}
-        onRegister={onRegister}
         onOpenListing={onOpenListing}
       />
     )
@@ -9600,19 +9931,10 @@ function DirectListingsView({
 
   return (
     <div className="view-stack direct-listings-stack">
-      <section className="listing-entry-hero" aria-label="직거래 매물 등록">
-        <div>
-          <span>집직구 안심 직거래</span>
-          <h2>매물 등록하기</h2>
-          <p>아파트명만 고르면 주소는 자동 입력됩니다. 등록 후 실소유자와 허위매물 확인을 거쳐 공개됩니다.</p>
-        </div>
+      <section className="listing-entry-hero listing-entry-simple" aria-label="직거래 매물 등록">
         <button className="primary-action" type="button" onClick={onRegister}>
           매물 등록하기
           <ChevronRight size={18} />
-        </button>
-        <button className="secondary-action listing-want-inline" type="button" onClick={onRegisterWanted}>
-          매물 원해요 등록
-          <Plus size={16} />
         </button>
       </section>
 
@@ -9622,93 +9944,50 @@ function DirectListingsView({
             <span>등록 매물</span>
             <h2>매물 {sortedSaleListings.length}</h2>
           </div>
-          <button type="button" onClick={onRegister}>
-            집 내놓기
-            <Plus size={16} />
-          </button>
         </div>
 
         {sortedSaleListings.length > 0 ? (
           <div className="listing-feed-list">
             {sortedSaleListings.map((listing) => {
-              const photo = listing.photos[0]?.dataUrl
+              const placeholderPhoto = createListingPlaceholderPhoto(listing)
+              const photo = getListingPhotoSrc(listing.photos[0]) || placeholderPhoto.dataUrl
+              const isFavorite = favoriteListingIds.includes(listing.id)
               return (
-                <button className="listing-feed-card" key={listing.id} type="button" onClick={() => onOpenListing(listing)}>
-                  <div className="listing-feed-copy">
-                    {listing.verificationStatus === 'verified' && <span className="listing-verify-chip">실매물 확인</span>}
-                    <strong>매매 {formatEok(listing.priceEok)}</strong>
-                    <em>
-                      {formatListingArea(listing)}, {listing.buildingDong || '-'}동 {formatListingFloor(listing.floor)}
-                    </em>
-                    <p>{summarizeListingMemo(listing)}</p>
-                    <small>{listing.aptName}</small>
-                  </div>
-                  <figure className="listing-feed-thumb">
-                    {photo ? <img src={photo} alt={`${listing.aptName} 매물 사진`} loading="lazy" /> : <Camera size={24} />}
-                  </figure>
-                </button>
+                <article className="listing-feed-card" key={listing.id}>
+                  <button className="listing-feed-open" type="button" onClick={() => onOpenListing(listing)}>
+                    <div className="listing-feed-copy">
+                      {listing.verificationStatus === 'verified' && <span className="listing-verify-chip">실매물 확인</span>}
+                      <strong>매매 {formatEok(listing.priceEok)}</strong>
+                      <em>
+                        {formatListingArea(listing)}, {listing.buildingDong || '-'}동 {formatListingFloor(listing.floor)}
+                      </em>
+                      <p>{summarizeListingMemo(listing)}</p>
+                      <small>{listing.aptName}</small>
+                    </div>
+                    <figure className="listing-feed-thumb">
+                      <img
+                        src={photo}
+                        alt={`${listing.aptName} 매물 사진`}
+                        loading="lazy"
+                        onError={(event) => handleListingImageError(event, placeholderPhoto.dataUrl)}
+                      />
+                    </figure>
+                  </button>
+                  <button
+                    className={isFavorite ? 'listing-favorite-button active' : 'listing-favorite-button'}
+                    type="button"
+                    onClick={() => onToggleFavoriteListing(listing.id)}
+                    aria-label={isFavorite ? '관심매물 해제' : '관심매물 등록'}
+                  >
+                    <Heart size={20} fill={isFavorite ? 'currentColor' : 'none'} />
+                  </button>
+                </article>
               )
             })}
           </div>
         ) : (
-          <div className="listing-market-empty listing-feed-empty">
-            <strong>아직 공개된 직거래 매물이 없습니다</strong>
-            <span>첫 매물을 등록하면 실소유자 확인 후 지도와 매물 목록에 함께 노출됩니다.</span>
-            <button className="secondary-action" type="button" onClick={onRegister}>
-              첫 매물 등록하기
-              <Plus size={16} />
-            </button>
-          </div>
+          <div className="listing-feed-quiet-empty" aria-label="등록 매물 없음" />
         )}
-      </section>
-
-      {wantedListings.length > 0 && (
-        <section className="listing-wanted-strip" aria-label="매수 희망 등록">
-          <div>
-            <span>매물 원해요</span>
-            <strong>{wantedListings.length}명이 원하는 단지를 기다리는 중</strong>
-          </div>
-          <button type="button" onClick={onRegisterWanted}>
-            등록
-            <Plus size={15} />
-          </button>
-        </section>
-      )}
-
-      <MembershipSignupCard />
-
-      <section className="listing-market-section direct-deal-slim" aria-label="최근 직거래 신고 사례">
-        <div className="detail-section-head">
-          <span>
-            <BarChart3 size={15} />
-            최근 직거래 신고 사례
-          </span>
-          <em>국토부 RTMS</em>
-        </div>
-
-        <div className="listing-market-list compact">
-          {directDeals.length > 0 ? (
-            directDeals.map((deal) => (
-              <button key={deal.id} type="button" onClick={() => onOpenDeal(deal)}>
-                <div>
-                  <strong>{deal.aptName}</strong>
-                  <span>
-                    {deal.address} · {deal.pyeong}평 · {formatShortDate(deal.dealDate)}
-                  </span>
-                  <em>
-                    {deal.buyerType} 매수 · {deal.sellerType} 매도
-                  </em>
-                </div>
-                <b>{formatEok(deal.priceEok)}</b>
-              </button>
-            ))
-          ) : (
-            <div className="listing-market-empty">
-              <strong>최근 직거래 신고 사례를 모으고 있습니다</strong>
-              <span>새벽 1시 RTMS 캐시 갱신 후 직거래 신고 건이 있으면 자동 표시됩니다.</span>
-            </div>
-          )}
-        </div>
       </section>
     </div>
   )
